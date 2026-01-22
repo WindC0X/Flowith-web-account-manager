@@ -2,6 +2,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AccountSummary,
   ConnectivityCheck,
+  DownloadEvent,
+  DownloadPreferencesPublic,
+  DownloadSaveMode,
   ImportRefreshTokensResult,
   ProxyMode,
   UaMode,
@@ -24,6 +27,17 @@ type AccountInfoEntry = {
   credits: string | null;
   updatedAt: number | null;
   error: string | null;
+};
+
+type DownloadToastState = {
+  id: string;
+  accountId: string;
+  filename: string;
+  receivedBytes: number;
+  totalBytes: number;
+  state: "progressing" | "completed" | "cancelled" | "interrupted";
+  copiedAt: number | null;
+  updatedAt: number;
 };
 
 type UiPreferencesV1 = {
@@ -56,6 +70,23 @@ const UI_STRINGS = {
     langEn: "English",
     settings: "设置",
     settingsTitle: "设置",
+    downloadsSectionTitle: "下载",
+    downloadsSaveMode: "保存策略",
+    downloadsModeSaveAs: "每次另存为",
+    downloadsModeDownloads: "自动保存到 Downloads",
+    downloadsModeCustomDir: "自动保存到自定义目录",
+    downloadsCustomDir: "自定义目录",
+    downloadsPickDirectory: "选择目录",
+    downloadsDirectoryNotSet: "未选择",
+    downloadShowInFolder: "在文件夹中显示",
+    downloadOpenFile: "打开",
+    downloadCancelDownload: "取消下载",
+    downloadCopyPath: "复制路径",
+    downloadCopied: "已复制",
+    downloadStateProgress: "下载中",
+    downloadStateCompleted: "已完成",
+    downloadStateCancelled: "已取消",
+    downloadStateInterrupted: "已中断",
     searchPlaceholder: "搜索：displayName / id / tag",
 
     expandSidebar: "展开账号面板",
@@ -155,6 +186,23 @@ const UI_STRINGS = {
     langEn: "English",
     settings: "Settings",
     settingsTitle: "Settings",
+    downloadsSectionTitle: "Downloads",
+    downloadsSaveMode: "Save mode",
+    downloadsModeSaveAs: "Always Save As",
+    downloadsModeDownloads: "Auto to Downloads",
+    downloadsModeCustomDir: "Auto to Custom directory",
+    downloadsCustomDir: "Custom directory",
+    downloadsPickDirectory: "Pick directory",
+    downloadsDirectoryNotSet: "Not set",
+    downloadShowInFolder: "Show in folder",
+    downloadOpenFile: "Open",
+    downloadCancelDownload: "Cancel",
+    downloadCopyPath: "Copy path",
+    downloadCopied: "Copied",
+    downloadStateProgress: "Downloading",
+    downloadStateCompleted: "Completed",
+    downloadStateCancelled: "Cancelled",
+    downloadStateInterrupted: "Interrupted",
     searchPlaceholder: "Search: displayName / id / tag",
 
     expandSidebar: "Expand accounts",
@@ -272,6 +320,19 @@ function formatUpdatedAt(value: number, locale: Locale): string {
   }
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"] as const;
+  let value = bytes;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex++;
+  }
+  const digits = unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unitIndex]}`;
+}
+
 function formatProxyModeLabel(mode: ProxyMode, t: (key: StringKey) => string): string {
   if (mode === "system") return t("proxySystem");
   if (mode === "custom") return t("proxyCustom");
@@ -282,6 +343,13 @@ function formatUaModeLabel(mode: UaMode, t: (key: StringKey) => string): string 
   if (mode === "default") return t("uaDefault");
   if (mode === "preset") return t("uaPreset");
   return t("uaCustom");
+}
+
+function formatDownloadStateLabel(state: DownloadToastState["state"], t: (key: StringKey) => string): string {
+  if (state === "progressing") return t("downloadStateProgress");
+  if (state === "completed") return t("downloadStateCompleted");
+  if (state === "cancelled") return t("downloadStateCancelled");
+  return t("downloadStateInterrupted");
 }
 
 function toErrorMessage(error: unknown): string {
@@ -406,6 +474,8 @@ export default function WorkspaceShell() {
   const [connectivityPopoverOpen, setConnectivityPopoverOpen] = useState(false);
 
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
+  const [downloadPrefs, setDownloadPrefs] = useState<DownloadPreferencesPublic | null>(null);
+  const [downloadToasts, setDownloadToasts] = useState<DownloadToastState[]>([]);
 
   const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>({});
 
@@ -653,6 +723,138 @@ export default function WorkspaceShell() {
       document.removeEventListener("mousedown", onDown, true);
     };
   }, [settingsPopoverOpen]);
+
+  useEffect(() => {
+    void window.desktop.downloads
+      .getPreferences()
+      .then((prefs) => setDownloadPrefs(prefs))
+      .catch(() => void 0);
+  }, []);
+
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = window.desktop.downloads.subscribe((event: DownloadEvent) => {
+        const now = Date.now();
+        setDownloadToasts((prev) => {
+          if (event.type === "start") {
+            const next: DownloadToastState = {
+              id: event.id,
+              accountId: event.accountId,
+              filename: event.filename,
+              receivedBytes: 0,
+              totalBytes: Math.max(0, event.totalBytes),
+              state: "progressing",
+              copiedAt: null,
+              updatedAt: now,
+            };
+            const rest = prev.filter((d) => d.id !== event.id);
+            return [next, ...rest].slice(0, 6);
+          }
+
+          const index = prev.findIndex((d) => d.id === event.id);
+          if (index < 0) return prev;
+
+          const current = prev[index];
+          if (!current) return prev;
+
+          const next = [...prev];
+          if (event.type === "progress") {
+            next[index] = {
+              ...current,
+              receivedBytes: Math.max(0, event.receivedBytes),
+              totalBytes: Math.max(0, event.totalBytes),
+              updatedAt: now,
+            };
+          } else {
+            next[index] = {
+              ...current,
+              state: event.state,
+              updatedAt: now,
+            };
+          }
+          return next;
+        });
+      });
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  const dismissDownloadToast = useCallback((id: string) => {
+    setDownloadToasts((prev) => prev.filter((d) => d.id !== id));
+  }, []);
+
+  const setDownloadMode = useCallback(async (mode: DownloadSaveMode) => {
+    setError(null);
+    try {
+      const next = await window.desktop.downloads.setMode(mode);
+      setDownloadPrefs(next);
+    } catch (e) {
+      setError(toErrorMessage(e));
+    }
+  }, []);
+
+  const pickDownloadDirectory = useCallback(async () => {
+    setError(null);
+    try {
+      const next = await window.desktop.downloads.pickCustomDirectory();
+      setDownloadPrefs(next);
+    } catch (e) {
+      setError(toErrorMessage(e));
+    }
+  }, []);
+
+  const showDownloadInFolder = useCallback(async (id: string) => {
+    setError(null);
+    try {
+      await window.desktop.downloads.showInFolder(id);
+    } catch (e) {
+      setError(toErrorMessage(e));
+    }
+  }, []);
+
+  const openDownloadedFile = useCallback(async (id: string) => {
+    setError(null);
+    try {
+      await window.desktop.downloads.open(id);
+    } catch (e) {
+      setError(toErrorMessage(e));
+    }
+  }, []);
+
+  const cancelDownloadToast = useCallback(async (id: string) => {
+    setError(null);
+    try {
+      await window.desktop.downloads.cancel(id);
+    } catch (e) {
+      setError(toErrorMessage(e));
+    }
+  }, []);
+
+  const copyDownloadPath = useCallback(async (id: string) => {
+    setError(null);
+    try {
+      await window.desktop.downloads.copyPath(id);
+      const copiedAt = Date.now();
+      setDownloadToasts((prev) => prev.map((d) => (d.id === id ? { ...d, copiedAt } : d)));
+      window.setTimeout(() => {
+        setDownloadToasts((prev) =>
+          prev.map((d) => (d.id === id && d.copiedAt === copiedAt ? { ...d, copiedAt: null } : d))
+        );
+      }, 1800);
+    } catch (e) {
+      setError(toErrorMessage(e));
+    }
+  }, []);
 
   const runImport = useCallback(async () => {
     setError(null);
@@ -940,6 +1142,49 @@ export default function WorkspaceShell() {
                       <option value="dark">{t("themeDark")}</option>
                       <option value="light">{t("themeLight")}</option>
                     </select>
+                  </div>
+                </div>
+
+                <div className="popover-title" style={{ marginTop: 10 }}>
+                  {t("downloadsSectionTitle")}
+                </div>
+                <div className="setting-grid">
+                  <div className="setting-row">
+                    <div className="muted">{t("downloadsSaveMode")}</div>
+                    <select
+                      value={downloadPrefs?.mode ?? "saveAs"}
+                      onChange={(e) => setDownloadMode(e.target.value as DownloadSaveMode)}
+                      aria-label={t("downloadsSaveMode")}
+                      disabled={busy}
+                    >
+                      <option value="saveAs">{t("downloadsModeSaveAs")}</option>
+                      <option value="downloads">{t("downloadsModeDownloads")}</option>
+                      <option value="customDir">{t("downloadsModeCustomDir")}</option>
+                    </select>
+                  </div>
+
+                  <div className="setting-row">
+                    <div className="muted">{t("downloadsCustomDir")}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                      <div
+                        className="muted"
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                        title={downloadPrefs?.customDirName ?? undefined}
+                      >
+                        {downloadPrefs?.hasCustomDir
+                          ? downloadPrefs.customDirName ?? "-"
+                          : t("downloadsDirectoryNotSet")}
+                      </div>
+                      <button className="btn" onClick={pickDownloadDirectory} disabled={busy}>
+                        {t("downloadsPickDirectory")}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1496,6 +1741,80 @@ export default function WorkspaceShell() {
           </aside>
         ) : null}
       </div>
+
+      {downloadToasts.length > 0 ? (
+        <div className="download-toasts" aria-label={t("downloadsSectionTitle")}>
+          {downloadToasts.map((d) => {
+            const percent = d.totalBytes > 0 ? Math.min(1, d.receivedBytes / d.totalBytes) : null;
+            const progressText =
+              d.state === "progressing"
+                ? d.totalBytes > 0 && percent !== null
+                  ? `${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)} (${Math.round(percent * 100)}%)`
+                  : formatBytes(d.receivedBytes)
+                : formatDownloadStateLabel(d.state, t);
+
+            const barClass = clsx(
+              "download-progress-bar",
+              d.state === "completed" && "download-progress-bar-ok",
+              (d.state === "cancelled" || d.state === "interrupted") && "download-progress-bar-bad"
+            );
+
+            const barWidth =
+              percent !== null
+                ? `${Math.round(percent * 100)}%`
+                : d.state === "progressing"
+                  ? "20%"
+                  : "100%";
+
+            return (
+              <div key={d.id} className="download-toast glass">
+                <div className="download-toast-head">
+                  <div className="download-toast-title" title={d.filename}>
+                    {d.filename}
+                  </div>
+                  <button
+                    className="btn btn-ghost btn-icon"
+                    title={t("close")}
+                    aria-label={t("close")}
+                    onClick={() => dismissDownloadToast(d.id)}
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="download-toast-meta muted">
+                  <span>{progressText}</span>
+                  {d.copiedAt ? <span className="chip download-chip">{t("downloadCopied")}</span> : null}
+                </div>
+
+                <div className="download-progress">
+                  <div className={barClass} style={{ width: barWidth }} />
+                </div>
+
+                <div className="download-actions">
+                  {d.state === "progressing" ? (
+                    <button className="btn" onClick={() => cancelDownloadToast(d.id)}>
+                      {t("downloadCancelDownload")}
+                    </button>
+                  ) : d.state === "completed" ? (
+                    <>
+                      <button className="btn" onClick={() => showDownloadInFolder(d.id)}>
+                        {t("downloadShowInFolder")}
+                      </button>
+                      <button className="btn btn-primary" onClick={() => openDownloadedFile(d.id)}>
+                        {t("downloadOpenFile")}
+                      </button>
+                      <button className="btn" onClick={() => copyDownloadPath(d.id)}>
+                        {t("downloadCopyPath")}
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
 
       <dialog
         ref={importDialogRef}

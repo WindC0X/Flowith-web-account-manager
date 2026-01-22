@@ -968,3 +968,80 @@ dialog::backdrop {
   white-space: pre-wrap;
   line-height: 1.45;
 }
+
+.download-toasts {
+  position: fixed;
+  right: 12px;
+  bottom: 12px;
+  width: 340px;
+  display: grid;
+  gap: 10px;
+  z-index: 60;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.download-toast {
+  pointer-events: auto;
+  padding: 10px;
+  border-radius: var(--radius-md);
+  display: grid;
+  gap: 8px;
+}
+
+.download-toast-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.download-toast-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.download-toast-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+}
+
+.download-chip {
+  padding: 2px 6px;
+}
+
+.download-progress {
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--color-border-subtle);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.download-progress-bar {
+  height: 100%;
+  background: var(--color-accent-primary);
+  transition: width 0.2s ease;
+}
+
+.download-progress-bar-ok {
+  background: #10b981;
+}
+
+.download-progress-bar-bad {
+  background: #ef4444;
+}
+
+.download-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}

@@ -63,6 +63,35 @@ export type Preferences = {
 
 export type PreferencesPatch = Partial<Preferences>;
 
+export type DownloadSaveMode = "saveAs" | "downloads" | "customDir";
+
+export type DownloadPreferencesPublic = {
+  mode: DownloadSaveMode;
+  hasCustomDir: boolean;
+  customDirName?: string | null;
+};
+
+export type DownloadEvent =
+  | {
+      type: "start";
+      id: string;
+      accountId: string;
+      filename: string;
+      totalBytes: number;
+    }
+  | {
+      type: "progress";
+      id: string;
+      receivedBytes: number;
+      totalBytes: number;
+    }
+  | {
+      type: "done";
+      id: string;
+      state: "completed" | "cancelled" | "interrupted";
+      error?: string;
+    };
+
 export type DesktopApi = {
   workspace: {
     openTab(accountId: string): Promise<void>;
@@ -70,6 +99,16 @@ export type DesktopApi = {
     setActiveTab(accountId: string): Promise<void>;
     setViewportBounds(bounds: Rect): Promise<void>;
     reloadActive(): Promise<void>;
+  };
+  downloads: {
+    subscribe(listener: (event: DownloadEvent) => void): () => void;
+    getPreferences(): Promise<DownloadPreferencesPublic>;
+    setMode(mode: DownloadSaveMode): Promise<DownloadPreferencesPublic>;
+    pickCustomDirectory(): Promise<DownloadPreferencesPublic>;
+    showInFolder(downloadId: string): Promise<void>;
+    open(downloadId: string): Promise<void>;
+    cancel(downloadId: string): Promise<void>;
+    copyPath(downloadId: string): Promise<void>;
   };
   window: {
     minimize(): Promise<void>;
@@ -100,6 +139,14 @@ export const IPC_CHANNELS = {
   WORKSPACE_SET_VIEWPORT_BOUNDS: "workspace:setViewportBounds",
   WORKSPACE_RELOAD_ACTIVE: "workspace:reloadActive",
 
+  DOWNLOADS_GET_PREFERENCES: "downloads:getPreferences",
+  DOWNLOADS_SET_MODE: "downloads:setMode",
+  DOWNLOADS_PICK_CUSTOM_DIRECTORY: "downloads:pickCustomDirectory",
+  DOWNLOADS_SHOW_IN_FOLDER: "downloads:showInFolder",
+  DOWNLOADS_OPEN: "downloads:open",
+  DOWNLOADS_CANCEL: "downloads:cancel",
+  DOWNLOADS_COPY_PATH: "downloads:copyPath",
+
   WINDOW_MINIMIZE: "window:minimize",
   WINDOW_TOGGLE_MAXIMIZE: "window:toggleMaximize",
   WINDOW_IS_MAXIMIZED: "window:isMaximized",
@@ -113,6 +160,10 @@ export const IPC_CHANNELS = {
 
   PREFERENCES_GET: "preferences:get",
   PREFERENCES_UPDATE: "preferences:update",
+} as const;
+
+export const IPC_EVENTS = {
+  DOWNLOAD_EVENT: "downloads:event",
 } as const;
 
 export type IpcInvokeMap = {
@@ -130,6 +181,14 @@ export type IpcInvokeMap = {
     result: void;
   };
   [IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE]: { args: []; result: void };
+
+  [IPC_CHANNELS.DOWNLOADS_GET_PREFERENCES]: { args: []; result: DownloadPreferencesPublic };
+  [IPC_CHANNELS.DOWNLOADS_SET_MODE]: { args: [mode: DownloadSaveMode]; result: DownloadPreferencesPublic };
+  [IPC_CHANNELS.DOWNLOADS_PICK_CUSTOM_DIRECTORY]: { args: []; result: DownloadPreferencesPublic };
+  [IPC_CHANNELS.DOWNLOADS_SHOW_IN_FOLDER]: { args: [downloadId: string]; result: void };
+  [IPC_CHANNELS.DOWNLOADS_OPEN]: { args: [downloadId: string]; result: void };
+  [IPC_CHANNELS.DOWNLOADS_CANCEL]: { args: [downloadId: string]; result: void };
+  [IPC_CHANNELS.DOWNLOADS_COPY_PATH]: { args: [downloadId: string]; result: void };
 
   [IPC_CHANNELS.WINDOW_MINIMIZE]: { args: []; result: void };
   [IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE]: { args: []; result: void };

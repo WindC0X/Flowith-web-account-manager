@@ -2,6 +2,7 @@ import { BrowserWindow, ipcMain } from "electron";
 import {
   IPC_CHANNELS,
   type AccountMetaPatch,
+  type DownloadSaveMode,
   type Preferences,
   type PreferencesPatch,
   type Rect,
@@ -9,6 +10,15 @@ import {
 import { importRefreshTokens } from "./accounts/import";
 import { normalizeAccountMetaPatch } from "./accounts/normalize";
 import { getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
+import {
+  cancelDownload,
+  copyDownloadedPath,
+  getDownloadsPreferencesPublic,
+  openDownloadedFile,
+  pickDownloadsCustomDirectory,
+  setDownloadsSaveMode,
+  showDownloadInFolder,
+} from "./downloads/service";
 import { testConnectivity } from "./network/connectivity";
 import { validateProxyConfig } from "./network/proxy";
 import { validateUaConfig } from "./network/userAgent";
@@ -56,6 +66,11 @@ function assertRect(value: unknown): asserts value is Rect {
 
 function assertObject(value: unknown, name: string): asserts value is Record<string, unknown> {
   if (!value || typeof value !== "object") throw new Error(`Invalid ${name}: expected object`);
+}
+
+function assertDownloadSaveMode(value: unknown, name: string): asserts value is DownloadSaveMode {
+  if (value === "saveAs" || value === "downloads" || value === "customDir") return;
+  throw new Error(`Invalid ${name}: expected saveAs|downloads|customDir`);
 }
 
 function validateAccountMetaPatch(patch: AccountMetaPatch) {
@@ -110,6 +125,64 @@ export function registerIpcHandlers(deps: IpcDeps) {
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE, async () => {
     deps.workspace.reloadActive();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOADS_GET_PREFERENCES, async () => {
+    return getDownloadsPreferencesPublic();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOADS_SET_MODE, async (_event, mode: unknown) => {
+    try {
+      assertDownloadSaveMode(mode, "mode");
+      return setDownloadsSaveMode(mode);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOADS_PICK_CUSTOM_DIRECTORY, async (event) => {
+    try {
+      const win = BrowserWindow.fromWebContents(event.sender);
+      return await pickDownloadsCustomDirectory(win ?? null);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOADS_SHOW_IN_FOLDER, async (_event, downloadId: unknown) => {
+    try {
+      assertString(downloadId, "downloadId");
+      showDownloadInFolder(downloadId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOADS_OPEN, async (_event, downloadId: unknown) => {
+    try {
+      assertString(downloadId, "downloadId");
+      await openDownloadedFile(downloadId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOADS_CANCEL, async (_event, downloadId: unknown) => {
+    try {
+      assertString(downloadId, "downloadId");
+      cancelDownload(downloadId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOADS_COPY_PATH, async (_event, downloadId: unknown) => {
+    try {
+      assertString(downloadId, "downloadId");
+      copyDownloadedPath(downloadId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
   });
 
   ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async (event) => {

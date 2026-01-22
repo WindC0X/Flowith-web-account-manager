@@ -1,6 +1,7 @@
 import { BrowserView, BrowserWindow, Menu, shell } from "electron";
 import type { Rect } from "../../shared/ipc";
 import { getAccount } from "../accounts/vault";
+import { attachDownloadsToSession } from "../downloads/service";
 import { applyProxy } from "../network/proxy";
 import { resolveUserAgent } from "../network/userAgent";
 
@@ -91,6 +92,7 @@ export class WebWorkspaceService {
     });
 
     this.hardenWebContents(view);
+    attachDownloadsToSession(view.webContents.session, accountId, () => this.window);
     void (async () => {
       try {
         const account = getAccount(accountId);
