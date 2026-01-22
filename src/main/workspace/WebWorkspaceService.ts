@@ -71,6 +71,10 @@ export class WebWorkspaceService {
     view?.webContents.reload();
   }
 
+  getWebContents(accountId: string) {
+    return this.views.get(accountId)?.webContents ?? null;
+  }
+
   private ensureView(accountId: string) {
     if (this.views.has(accountId)) return;
 

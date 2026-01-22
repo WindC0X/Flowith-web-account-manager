@@ -1,6 +1,7 @@
 import { app, BrowserWindow } from "electron";
 import { join } from "node:path";
 import { registerIpcHandlers } from "./ipc";
+import { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
 import { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 
 function createWindow(): BrowserWindow {
@@ -34,7 +35,8 @@ function createWindow(): BrowserWindow {
 app.whenReady().then(() => {
   const mainWindow = createWindow();
   const workspace = new WebWorkspaceService(mainWindow);
-  registerIpcHandlers({ workspace });
+  const loginBootstrap = new FlowithLoginBootstrapService(workspace);
+  registerIpcHandlers({ workspace, loginBootstrap });
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {

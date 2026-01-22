@@ -10,6 +10,7 @@ import { importRefreshTokens } from "./accounts/import";
 import { getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
 import { redactSensitive } from "./security/redact";
 import type { WebWorkspaceService } from "./workspace/WebWorkspaceService";
+import type { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
 
 const preferences: Preferences = {
   locale: "zh-CN",
@@ -19,6 +20,7 @@ const preferences: Preferences = {
 
 type IpcDeps = {
   workspace: WebWorkspaceService;
+  loginBootstrap: FlowithLoginBootstrapService;
 };
 
 function safeErrorMessage(error: unknown): string {
@@ -57,6 +59,7 @@ export function registerIpcHandlers(deps: IpcDeps) {
     try {
       assertString(accountId, "accountId");
       deps.workspace.openTab(accountId);
+      await deps.loginBootstrap.bootstrap(accountId);
     } catch (e) {
       throw new Error(safeErrorMessage(e));
     }
