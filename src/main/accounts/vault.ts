@@ -1,5 +1,5 @@
 import { safeStorage } from "electron";
-import Store from "electron-store";
+import StoreImport from "electron-store";
 import type { AccountMetaPatch, AccountSummary } from "../../shared/ipc";
 import { normalizeTags } from "../../shared/tags";
 
@@ -22,7 +22,9 @@ type VaultStoreSchema = {
   vault: VaultStateV1;
 };
 
-let store: Store<VaultStoreSchema> | null = null;
+type VaultStore = StoreImport<VaultStoreSchema>;
+
+let store: VaultStore | null = null;
 const runtimeTokens = new Map<string, string>();
 
 export function isTokenEncryptionAvailable(): boolean {
@@ -103,9 +105,10 @@ export function getRefreshToken(accountId: string): string | null {
   return runtimeTokens.get(accountId) ?? null;
 }
 
-function getStore(): Store<VaultStoreSchema> {
+function getStore(): VaultStore {
   if (!store) {
-    store = new Store<VaultStoreSchema>({
+    const StoreCtor = (StoreImport as unknown as { default?: typeof StoreImport }).default ?? StoreImport;
+    store = new StoreCtor<VaultStoreSchema>({
       defaults: {
         vault: {
           version: 1,

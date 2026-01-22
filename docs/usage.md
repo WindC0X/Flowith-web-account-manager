@@ -9,6 +9,10 @@ npm install
 npm run dev
 ```
 
+Runbook:
+
+- `docs/dev-runbook.md`
+
 Quality checks:
 
 ```bash
