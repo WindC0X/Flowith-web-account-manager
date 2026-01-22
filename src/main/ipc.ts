@@ -7,7 +7,7 @@ import {
   type Rect,
 } from "../shared/ipc";
 import { importRefreshTokens } from "./accounts/import";
-import { listAccounts, upsertAccountMeta } from "./accounts/vault";
+import { getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
 import { redactSensitive } from "./security/redact";
 
 const preferences: Preferences = {
@@ -119,7 +119,31 @@ export function registerIpcHandlers() {
     async (_event, accountIds: unknown) => {
       try {
         assertStringArray(accountIds, "accountIds");
-        return "";
+        const ids = accountIds.map((id) => id.trim()).filter(Boolean);
+        if (ids.length === 0) return "";
+
+        const unique = new Set(ids);
+        if (unique.size !== ids.length) throw new Error("Invalid accountIds: duplicate ids.");
+
+        const missing: string[] = [];
+        const tokens: string[] = [];
+
+        for (const id of ids) {
+          const token = getRefreshToken(id);
+          if (!token) {
+            missing.push(id);
+            continue;
+          }
+          tokens.push(token);
+        }
+
+        if (missing.length > 0) {
+          throw new Error(
+            `Token unavailable for ${missing.length} selected account(s). If safeStorage encryption is unavailable, you must re-import tokens after restart.`
+          );
+        }
+
+        return tokens.join("\n");
       } catch (e) {
         throw new Error(safeErrorMessage(e));
       }
