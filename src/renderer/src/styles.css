@@ -263,10 +263,11 @@ textarea:focus {
 .topbar {
   min-height: 54px;
   height: auto;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 12px;
+  column-gap: 12px;
   row-gap: 10px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--color-border-default);
@@ -278,6 +279,8 @@ textarea:focus {
   align-items: center;
   gap: 10px;
   min-width: 220px;
+  grid-column: 1;
+  grid-row: 1;
 }
 
 .brand-dot {
@@ -309,9 +312,23 @@ textarea:focus {
   min-width: 0;
 }
 
+.topbar-group-net {
+  grid-column: 1 / -1;
+  grid-row: 2;
+}
+
 .topbar-group-right {
-  flex: 1 1 520px;
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
   justify-content: flex-end;
+  max-width: 100%;
+}
+
+.topbar-hint {
+  flex-basis: 100%;
+  font-size: 11px;
+  color: var(--color-text-tertiary);
 }
 
 .topbar-proxy-rules {
@@ -406,10 +423,6 @@ textarea:focus {
 .sidebar.collapsed .sidebar-header {
   justify-content: center;
   padding: 12px 10px;
-}
-
-.sidebar.collapsed .sidebar-header-right {
-  display: none;
 }
 
 .sidebar-header {

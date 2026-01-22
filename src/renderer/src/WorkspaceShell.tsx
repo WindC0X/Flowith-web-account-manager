@@ -807,24 +807,11 @@ export default function WorkspaceShell() {
           </div>
         </div>
 
-        <button
-          className="btn btn-ghost btn-icon"
-          title={t("expandSidebar")}
-          aria-label={t("expandSidebar")}
-          style={{ display: sidebarCollapsed ? "inline-flex" : "none" }}
-          onClick={() => updateUiPrefs({ sidebarCollapsed: false })}
-          disabled={busy}
-        >
-          ☰
-        </button>
-
-        <div className="divider" />
-
-        <div className="topbar-group" aria-label="Proxy and connectivity">
+        <div className="topbar-group topbar-group-net" aria-label="Proxy and connectivity">
           <select
             value={proxyMode}
             onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
-            disabled={busy || !focusedAccountId}
+            disabled={busy}
             aria-label={t("proxyMode")}
             title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
           >
@@ -897,6 +884,7 @@ export default function WorkspaceShell() {
               </div>
             ) : null}
           </div>
+          {!focusedAccountId ? <span className="topbar-hint">{t("proxyDisabledHint")}</span> : null}
         </div>
 
         <div className="topbar-group topbar-group-right" aria-label="Global actions">
@@ -974,22 +962,26 @@ export default function WorkspaceShell() {
               >
                 {sidebarCollapsed ? "»" : "«"}
               </button>
-              <button
-                className="btn btn-ghost btn-icon"
-                title={t("viewCards")}
-                onClick={() => updateUiPrefs({ accountListView: "cards" })}
-                disabled={busy}
-              >
-                ▦
-              </button>
-              <button
-                className="btn btn-ghost btn-icon"
-                title={t("viewTable")}
-                onClick={() => updateUiPrefs({ accountListView: "table" })}
-                disabled={busy}
-              >
-                ☰
-              </button>
+              {!sidebarCollapsed ? (
+                <>
+                  <button
+                    className="btn btn-ghost btn-icon"
+                    title={t("viewCards")}
+                    onClick={() => updateUiPrefs({ accountListView: "cards" })}
+                    disabled={busy}
+                  >
+                    ▦
+                  </button>
+                  <button
+                    className="btn btn-ghost btn-icon"
+                    title={t("viewTable")}
+                    onClick={() => updateUiPrefs({ accountListView: "table" })}
+                    disabled={busy}
+                  >
+                    ☰
+                  </button>
+                </>
+              ) : null}
             </div>
           </div>
 
