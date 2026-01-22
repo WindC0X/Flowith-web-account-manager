@@ -14,6 +14,7 @@ Quality checks:
 ```bash
 npm run lint
 npm run typecheck
+npm test
 ```
 
 ## Configure Supabase (required for token validation / login bootstrap)
@@ -67,3 +68,8 @@ Endpoints include:
 - Flowith edge (`https://edge.flowith.net`)
 - Supabase (from `FLOWITH_SUPABASE_URL`, when configured)
 
+## Smoke Checklist
+
+Run the end-to-end manual checklist before release:
+
+- `docs/smoke-checklist.md`
