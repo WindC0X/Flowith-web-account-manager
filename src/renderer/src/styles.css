@@ -185,6 +185,14 @@ textarea {
   resize: vertical;
 }
 
+.secret-textarea {
+  transition: filter 120ms ease;
+}
+
+.secret-textarea:not(:focus) {
+  filter: blur(6px);
+}
+
 .input:focus,
 select:focus,
 textarea:focus {
@@ -241,11 +249,13 @@ textarea:focus {
 }
 
 .topbar {
-  height: 54px;
+  min-height: 54px;
+  height: auto;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  padding: 0 14px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--color-border-default);
   background: var(--color-background-primary);
 }
@@ -283,10 +293,23 @@ textarea:focus {
   align-items: center;
   gap: 10px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
-.spacer {
-  flex: 1;
+.topbar-group-right {
+  margin-left: auto;
+}
+
+.topbar-proxy-rules {
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 320px;
+}
+
+.topbar-search {
+  flex: 1 1 220px;
+  min-width: 180px;
+  max-width: 260px;
 }
 
 .divider {

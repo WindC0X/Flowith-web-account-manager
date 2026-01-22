@@ -48,8 +48,8 @@ const UI_STRINGS = {
     subtitle: "桌面端 MVP · 工作区",
     language: "语言",
     theme: "主题",
-    themeDark: "Dark",
-    themeLight: "Light",
+    themeDark: "深色",
+    themeLight: "浅色",
     langZh: "简体中文",
     langEn: "English",
     searchPlaceholder: "搜索：displayName / id / tag",
@@ -67,9 +67,15 @@ const UI_STRINGS = {
     focusedChip: "当前",
 
     proxyMode: "代理模式",
+    proxySystem: "系统",
+    proxyCustom: "自定义",
+    proxyDirect: "直连",
     proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
     saveProxy: "保存代理",
     connectivity: "连通性测试",
+    connectivityTitle: "连通性",
+    statusOk: "OK",
+    statusFail: "FAIL",
 
     import: "导入",
     export: "导出",
@@ -102,12 +108,15 @@ const UI_STRINGS = {
     accountInfoUnavailable: "账号信息接口暂未接入（占位）",
     uaSectionTitle: "User-Agent",
     uaModeLabel: "模式",
+    uaDefault: "默认",
+    uaPreset: "预设",
+    uaCustom: "自定义",
     uaValueLabel: "值",
-    uaHint: "修改 User-Agent 通常需要 reload 当前 Tab 生效。",
+    uaHint: "修改 User-Agent 通常需要刷新当前 Tab 生效。",
     openTab: "打开 Tab",
     closeTab: "关闭 Tab",
     saveUa: "保存 UA",
-    reload: "Reload",
+    reload: "刷新",
     close: "关闭",
 
     importDialogTitle: "导入 refresh_token",
@@ -147,9 +156,15 @@ const UI_STRINGS = {
     focusedChip: "Focused",
 
     proxyMode: "Proxy mode",
+    proxySystem: "System",
+    proxyCustom: "Custom",
+    proxyDirect: "Direct",
     proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
     saveProxy: "Save proxy",
     connectivity: "Connectivity",
+    connectivityTitle: "Connectivity",
+    statusOk: "OK",
+    statusFail: "FAIL",
 
     import: "Import",
     export: "Export",
@@ -183,6 +198,9 @@ const UI_STRINGS = {
     accountInfoUnavailable: "Account info API not integrated yet (placeholder).",
     uaSectionTitle: "User-Agent",
     uaModeLabel: "Mode",
+    uaDefault: "Default",
+    uaPreset: "Preset",
+    uaCustom: "Custom",
     uaValueLabel: "Value",
     uaHint: "Changing User-Agent usually requires reloading the tab.",
     openTab: "Open tab",
@@ -230,6 +248,18 @@ function formatUpdatedAt(value: number, locale: Locale): string {
   } catch {
     return new Date(value).toISOString();
   }
+}
+
+function formatProxyModeLabel(mode: ProxyMode, t: (key: StringKey) => string): string {
+  if (mode === "system") return t("proxySystem");
+  if (mode === "custom") return t("proxyCustom");
+  return t("proxyDirect");
+}
+
+function formatUaModeLabel(mode: UaMode, t: (key: StringKey) => string): string {
+  if (mode === "default") return t("uaDefault");
+  if (mode === "preset") return t("uaPreset");
+  return t("uaCustom");
 }
 
 function toErrorMessage(error: unknown): string {
@@ -795,18 +825,18 @@ export default function WorkspaceShell() {
             disabled={busy || !focusedAccountId}
             aria-label={t("proxyMode")}
           >
-            <option value="system">System</option>
-            <option value="custom">Custom</option>
-            <option value="direct">Direct</option>
+            <option value="system">{t("proxySystem")}</option>
+            <option value="custom">{t("proxyCustom")}</option>
+            <option value="direct">{t("proxyDirect")}</option>
           </select>
 
           <input
-            className="input"
+            className="input topbar-proxy-rules"
             type="text"
             placeholder={t("proxyPlaceholder")}
             value={proxyRules}
             onChange={(e) => setProxyRules(e.target.value)}
-            style={{ display: proxyMode === "custom" ? "inline-flex" : "none", width: 260 }}
+            style={{ display: proxyMode === "custom" ? "inline-flex" : "none" }}
             disabled={busy || !focusedAccountId}
           />
 
@@ -820,7 +850,7 @@ export default function WorkspaceShell() {
             </button>
             {connectivityPopoverOpen && connectivity ? (
               <div className="popover" ref={connectivityPopoverRef}>
-                <div className="popover-title">Connectivity</div>
+                <div className="popover-title">{t("connectivityTitle")}</div>
                 <div style={{ display: "grid", gap: 8 }}>
                   {connectivity.map((c) => (
                     <div key={c.name} className="popover-row">
@@ -842,7 +872,7 @@ export default function WorkspaceShell() {
                         ) : null}
                       </div>
                       <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <div style={{ fontWeight: 750 }}>{c.ok ? "OK" : "FAIL"}</div>
+                        <div style={{ fontWeight: 750 }}>{c.ok ? t("statusOk") : t("statusFail")}</div>
                         <div className="muted" style={{ fontSize: 11 }}>
                           {c.latencyMs} ms{typeof c.status === "number" ? ` · HTTP ${c.status}` : ""}
                         </div>
@@ -855,9 +885,7 @@ export default function WorkspaceShell() {
           </div>
         </div>
 
-        <div className="spacer" />
-
-        <div className="topbar-group" aria-label="Global actions">
+        <div className="topbar-group topbar-group-right" aria-label="Global actions">
           <select
             value={uiPrefs.locale}
             onChange={(e) => updateUiPrefs({ locale: e.target.value as Locale })}
@@ -879,12 +907,11 @@ export default function WorkspaceShell() {
             <option value="light">{t("themeLight")}</option>
           </select>
           <input
-            className="input"
+            className="input topbar-search"
             type="text"
             placeholder={t("searchPlaceholder")}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 220 }}
             disabled={busy}
           />
           <button className="btn" onClick={() => setImportDialogOpen(true)} disabled={busy}>
@@ -983,7 +1010,11 @@ export default function WorkspaceShell() {
                     tabIndex={0}
                     onClick={() => focusAccount(a.id)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") focusAccount(a.id);
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        focusAccount(a.id);
+                      }
                     }}
                   >
                     <div className="account-row">
@@ -1000,14 +1031,17 @@ export default function WorkspaceShell() {
                         <div className="account-subtitle">id: {a.id}</div>
                         <div className="account-subtitle">fp: {maskFingerprint(a.fingerprint)}</div>
                       </div>
-                      <div className="chip" title={`Proxy: ${a.net.proxy.mode}`}>
+                      <div
+                        className="chip"
+                        title={`${t("proxyMode")}: ${formatProxyModeLabel(a.net.proxy.mode, t)}`}
+                      >
                         <span className="dot dot-net" />
-                        <span>{a.net.proxy.mode}</span>
+                        <span>{formatProxyModeLabel(a.net.proxy.mode, t)}</span>
                       </div>
                     </div>
 
                     <div className="account-meta">
-                      <span className="chip">UA: {a.ua.mode}</span>
+                      <span className="chip">UA: {formatUaModeLabel(a.ua.mode, t)}</span>
                       {focused ? <span className="chip">{t("focusedChip")}</span> : null}
                     </div>
 
@@ -1040,8 +1074,8 @@ export default function WorkspaceShell() {
                         </div>
                       </div>
                       <span className="mono">{maskFingerprint(a.fingerprint)}</span>
-                      <span className="mono">{a.net.proxy.mode}</span>
-                      <span className="mono">{a.ua.mode}</span>
+                      <span className="mono">{formatProxyModeLabel(a.net.proxy.mode, t)}</span>
+                      <span className="mono">{formatUaModeLabel(a.ua.mode, t)}</span>
                       <button
                         className="btn btn-ghost btn-icon"
                         title={t("openDetails")}
@@ -1098,7 +1132,11 @@ export default function WorkspaceShell() {
                     tabIndex={0}
                     onClick={() => activateTab(id)}
                     onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") void activateTab(id);
+                      if (e.target !== e.currentTarget) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        void activateTab(id);
+                      }
                     }}
                   >
                     <span className="tab-title">{label}</span>
@@ -1258,17 +1296,17 @@ export default function WorkspaceShell() {
                   <div className="setting-grid">
                     <div className="setting-row">
                       <div className="muted">{t("uaModeLabel")}</div>
-                      <select
-                        value={uaMode}
-                        onChange={(e) => setUaMode(e.target.value as UaMode)}
-                        disabled={busy}
-                        aria-label="User-Agent mode"
-                      >
-                        <option value="default">default</option>
-                        <option value="preset">preset</option>
-                        <option value="custom">custom</option>
-                      </select>
-                    </div>
+                  <select
+                    value={uaMode}
+                    onChange={(e) => setUaMode(e.target.value as UaMode)}
+                    disabled={busy}
+                    aria-label="User-Agent mode"
+                  >
+                    <option value="default">{t("uaDefault")}</option>
+                    <option value="preset">{t("uaPreset")}</option>
+                    <option value="custom">{t("uaCustom")}</option>
+                  </select>
+                </div>
 
                     {uaMode === "default" ? null : (
                       <div className="setting-row">
@@ -1344,6 +1382,7 @@ export default function WorkspaceShell() {
 
           <div className="modal-grid">
             <textarea
+              className="secret-textarea"
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
               placeholder={t("importPlaceholder")}
