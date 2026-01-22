@@ -9,6 +9,7 @@ import {
 import { importRefreshTokens } from "./accounts/import";
 import { getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
 import { redactSensitive } from "./security/redact";
+import type { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 
 const preferences: Preferences = {
   locale: "zh-CN",
@@ -16,7 +17,9 @@ const preferences: Preferences = {
   sidebarCollapsed: false,
 };
 
-let activeAccountId: string | null = null;
+type IpcDeps = {
+  workspace: WebWorkspaceService;
+};
 
 function safeErrorMessage(error: unknown): string {
   if (error instanceof Error && typeof error.message === "string") {
@@ -49,11 +52,11 @@ function assertObject(value: unknown, name: string): asserts value is Record<str
   if (!value || typeof value !== "object") throw new Error(`Invalid ${name}: expected object`);
 }
 
-export function registerIpcHandlers() {
+export function registerIpcHandlers(deps: IpcDeps) {
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_OPEN_TAB, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
-      activeAccountId = accountId;
+      deps.workspace.openTab(accountId);
     } catch (e) {
       throw new Error(safeErrorMessage(e));
     }
@@ -62,7 +65,7 @@ export function registerIpcHandlers() {
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_CLOSE_TAB, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
-      if (activeAccountId === accountId) activeAccountId = null;
+      deps.workspace.closeTab(accountId);
     } catch (e) {
       throw new Error(safeErrorMessage(e));
     }
@@ -73,7 +76,7 @@ export function registerIpcHandlers() {
     async (_event, accountId: unknown) => {
       try {
         assertString(accountId, "accountId");
-        activeAccountId = accountId;
+        deps.workspace.setActiveTab(accountId);
       } catch (e) {
         throw new Error(safeErrorMessage(e));
       }
@@ -85,6 +88,7 @@ export function registerIpcHandlers() {
     async (_event, bounds: unknown) => {
       try {
         assertRect(bounds);
+        deps.workspace.setViewportBounds(bounds);
       } catch (e) {
         throw new Error(safeErrorMessage(e));
       }
@@ -92,7 +96,7 @@ export function registerIpcHandlers() {
   );
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE, async () => {
-    return;
+    deps.workspace.reloadActive();
   });
 
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_LIST, async () => {

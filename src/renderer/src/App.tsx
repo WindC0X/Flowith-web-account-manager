@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AccountSummary, ImportRefreshTokensResult } from "../../shared/ipc";
 
 type ExportModalState =
@@ -19,6 +19,7 @@ export default function App() {
   const [importResult, setImportResult] = useState<ImportRefreshTokensResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportModal, setExportModal] = useState<ExportModalState>({ open: false });
+  const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => [...selectedIds], [selectedIds]);
 
@@ -71,6 +72,92 @@ export default function App() {
       setBusy(false);
     }
   }, [selected]);
+
+  const pushViewportBounds = useCallback(async () => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    await window.desktop.workspace.setViewportBounds({
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+    });
+  }, []);
+
+  const openWorkspaceForSelected = useCallback(async () => {
+    setError(null);
+    if (selected.length !== 1) {
+      setError("Select exactly 1 account to open a workspace tab.");
+      return;
+    }
+    const accountId = selected[0];
+    if (!accountId) return;
+    setBusy(true);
+    try {
+      await pushViewportBounds();
+      await window.desktop.workspace.openTab(accountId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [pushViewportBounds, selected]);
+
+  const closeWorkspaceForSelected = useCallback(async () => {
+    setError(null);
+    if (selected.length !== 1) {
+      setError("Select exactly 1 account to close a workspace tab.");
+      return;
+    }
+    const accountId = selected[0];
+    if (!accountId) return;
+    setBusy(true);
+    try {
+      await window.desktop.workspace.closeTab(accountId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [selected]);
+
+  const reloadWorkspace = useCallback(async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      await window.desktop.workspace.reloadActive();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+
+    let frame = 0;
+    const schedule = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        void pushViewportBounds();
+      });
+    };
+
+    const ro = new ResizeObserver(schedule);
+    ro.observe(el);
+    window.addEventListener("resize", schedule);
+
+    schedule();
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", schedule);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [pushViewportBounds]);
 
   return (
     <main style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
@@ -193,6 +280,41 @@ export default function App() {
           </button>
           <div style={{ opacity: 0.7, fontSize: 12 }}>
             Sensitive: export returns plaintext refresh_token. Nothing is auto-copied.
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
+          <div style={{ fontWeight: 600 }}>Web Workspace (BrowserView)</div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <button onClick={openWorkspaceForSelected} disabled={busy || selected.length !== 1}>
+              Open tab for selected
+            </button>
+            <button onClick={closeWorkspaceForSelected} disabled={busy || selected.length !== 1}>
+              Close tab for selected
+            </button>
+            <button onClick={reloadWorkspace} disabled={busy}>
+              Reload active
+            </button>
+          </div>
+          <div style={{ opacity: 0.7, fontSize: 12 }}>
+            Web content is confined to the viewport below; resize should not block UI controls.
+          </div>
+          <div
+            ref={viewportRef}
+            style={{
+              height: 360,
+              borderRadius: 12,
+              border: "1px solid #2a2f3c",
+              background: "#0f1320",
+              overflow: "hidden",
+              position: "relative",
+            }}
+          >
+            <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center" }}>
+              <div style={{ opacity: 0.7, fontSize: 12 }}>
+                Viewport target (BrowserView overlays this area)
+              </div>
+            </div>
           </div>
         </div>
       </section>

@@ -1,8 +1,9 @@
 import { app, BrowserWindow } from "electron";
 import { join } from "node:path";
 import { registerIpcHandlers } from "./ipc";
+import { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 
-function createWindow() {
+function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -26,14 +27,20 @@ function createWindow() {
   } else {
     mainWindow.loadFile(join(__dirname, "../renderer/index.html"));
   }
+
+  return mainWindow;
 }
 
 app.whenReady().then(() => {
-  registerIpcHandlers();
-  createWindow();
+  const mainWindow = createWindow();
+  const workspace = new WebWorkspaceService(mainWindow);
+  registerIpcHandlers({ workspace });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      const w = createWindow();
+      workspace.setWindow(w);
+    }
   });
 });
 
