@@ -6,7 +6,9 @@ import {
   type PreferencesPatch,
   type Rect,
 } from "../shared/ipc";
-import { isTokenEncryptionAvailable, listAccounts, upsertAccountMeta } from "./accounts/vault";
+import { importRefreshTokens } from "./accounts/import";
+import { listAccounts, upsertAccountMeta } from "./accounts/vault";
+import { redactSensitive } from "./security/redact";
 
 const preferences: Preferences = {
   locale: "zh-CN",
@@ -21,12 +23,6 @@ function safeErrorMessage(error: unknown): string {
     return redactSensitive(error.message);
   }
   return "Unknown error";
-}
-
-function redactSensitive(text: string): string {
-  return text
-    .replace(/\\b[a-zA-Z0-9_\\-]{24,}\\b/g, "[REDACTED]")
-    .slice(0, 400);
 }
 
 function assertString(value: unknown, name: string): asserts value is string {
@@ -107,27 +103,12 @@ export function registerIpcHandlers() {
     try {
       assertString(text, "text");
       const trimmed = text.trim();
-      if (!trimmed) return { imported: 0, failed: 0, errors: [] };
+      if (!trimmed) return { imported: 0, failed: 0, warnings: [], errors: [] };
 
       const lines = trimmed.split(/\\r?\\n/).map((l) => l.trim()).filter(Boolean);
-      if (lines.length === 0) return { imported: 0, failed: 0, errors: [] };
+      if (lines.length === 0) return { imported: 0, failed: 0, warnings: [], errors: [] };
 
-      if (!isTokenEncryptionAvailable()) {
-        return {
-          imported: 0,
-          failed: lines.length,
-          errors: [
-            "Token encryption is unavailable on this host. Tokens will not be persisted and must be re-imported after restart.",
-            "Import is not implemented yet.",
-          ],
-        };
-      }
-
-      return {
-        imported: 0,
-        failed: lines.length,
-        errors: ["Import is not implemented yet."],
-      };
+      return await importRefreshTokens(lines);
     } catch (e) {
       throw new Error(safeErrorMessage(e));
     }

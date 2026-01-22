@@ -28,6 +28,7 @@ export type AccountMeta = {
 
 export type AccountSummary = {
   id: string;
+  fingerprint: string;
   displayName: string;
   tags: string[];
   net: {
@@ -41,6 +42,7 @@ export type AccountMetaPatch = Partial<AccountMeta>;
 export type ImportRefreshTokensResult = {
   imported: number;
   failed: number;
+  warnings: string[];
   errors: string[];
 };
 
@@ -131,4 +133,3 @@ export type IpcInvokeMap = {
 export type IpcChannel = keyof IpcInvokeMap;
 export type IpcArgs<K extends IpcChannel> = IpcInvokeMap[K]["args"];
 export type IpcResult<K extends IpcChannel> = IpcInvokeMap[K]["result"];
-

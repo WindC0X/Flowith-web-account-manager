@@ -4,6 +4,7 @@ import type { AccountMetaPatch, AccountSummary } from "../../shared/ipc";
 
 type StoredAccountV1 = {
   id: string;
+  fingerprint?: string;
   displayName?: string;
   tags?: string[];
   net?: AccountSummary["net"];
@@ -43,6 +44,21 @@ export function upsertAccountMeta(accountId: string, patch: AccountMetaPatch): A
   vault.accounts[accountId] = next;
   setVault(vault);
   return toAccountSummary(next);
+}
+
+export function findAccountIdByFingerprint(fingerprint: string): string | null {
+  const vault = getVault();
+  for (const [id, account] of Object.entries(vault.accounts)) {
+    if (account.fingerprint === fingerprint) return id;
+  }
+  return null;
+}
+
+export function upsertAccountFingerprint(accountId: string, fingerprint: string) {
+  const vault = getVault();
+  const current = vault.accounts[accountId] ?? { id: accountId };
+  vault.accounts[accountId] = { ...current, fingerprint };
+  setVault(vault);
 }
 
 export function setRefreshToken(accountId: string, refreshToken: string): { persisted: boolean } {
@@ -110,6 +126,7 @@ function setVault(vault: VaultStateV1) {
 function toAccountSummary(account: StoredAccountV1): AccountSummary {
   return {
     id: account.id,
+    fingerprint: account.fingerprint ?? "",
     displayName: account.displayName ?? "Account",
     tags: account.tags ?? [],
     net: account.net ?? { proxy: { mode: "system" } },
@@ -124,6 +141,7 @@ function applyPatch(current: StoredAccountV1, patch: AccountMetaPatch): StoredAc
   const ua = patch.ua ?? current.ua;
 
   const next: StoredAccountV1 = { id: current.id };
+  if (current.fingerprint !== undefined) next.fingerprint = current.fingerprint;
   if (displayName !== undefined) next.displayName = displayName;
   if (tags !== undefined) next.tags = tags;
   if (net !== undefined) next.net = net;
