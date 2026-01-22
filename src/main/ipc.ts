@@ -2,11 +2,11 @@ import { ipcMain } from "electron";
 import {
   IPC_CHANNELS,
   type AccountMetaPatch,
-  type AccountSummary,
   type Preferences,
   type PreferencesPatch,
   type Rect,
 } from "../shared/ipc";
+import { isTokenEncryptionAvailable, listAccounts, upsertAccountMeta } from "./accounts/vault";
 
 const preferences: Preferences = {
   locale: "zh-CN",
@@ -14,7 +14,6 @@ const preferences: Preferences = {
   sidebarCollapsed: false,
 };
 
-const accounts = new Map<string, AccountSummary>();
 let activeAccountId: string | null = null;
 
 function safeErrorMessage(error: unknown): string {
@@ -101,7 +100,7 @@ export function registerIpcHandlers() {
   });
 
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_LIST, async () => {
-    return [...accounts.values()];
+    return listAccounts();
   });
 
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS, async (_event, text: unknown) => {
@@ -112,6 +111,17 @@ export function registerIpcHandlers() {
 
       const lines = trimmed.split(/\\r?\\n/).map((l) => l.trim()).filter(Boolean);
       if (lines.length === 0) return { imported: 0, failed: 0, errors: [] };
+
+      if (!isTokenEncryptionAvailable()) {
+        return {
+          imported: 0,
+          failed: lines.length,
+          errors: [
+            "Token encryption is unavailable on this host. Tokens will not be persisted and must be re-imported after restart.",
+            "Import is not implemented yet.",
+          ],
+        };
+      }
 
       return {
         imported: 0,
@@ -141,16 +151,7 @@ export function registerIpcHandlers() {
       try {
         assertString(accountId, "accountId");
         assertObject(patch, "patch");
-        const current = accounts.get(accountId) ?? {
-          id: accountId,
-          displayName: "Account",
-          tags: [],
-          net: { proxy: { mode: "system" } },
-          ua: { mode: "default" },
-        };
-        const next = applyAccountMetaPatch(current, patch as AccountMetaPatch);
-        accounts.set(accountId, next);
-        return next;
+        return upsertAccountMeta(accountId, patch as AccountMetaPatch);
       } catch (e) {
         throw new Error(safeErrorMessage(e));
       }
@@ -173,19 +174,6 @@ export function registerIpcHandlers() {
       throw new Error(safeErrorMessage(e));
     }
   });
-}
-
-function applyAccountMetaPatch(current: AccountSummary, patch: AccountMetaPatch): AccountSummary {
-  const next: AccountSummary = {
-    ...current,
-    displayName: patch.displayName ?? current.displayName,
-    tags: patch.tags ?? current.tags,
-    net: patch.net ?? current.net,
-    ua: patch.ua ?? current.ua,
-  };
-
-  if (next.id === current.id) return next;
-  return { ...next, id: current.id };
 }
 
 function applyPreferencesPatch(current: Preferences, patch: PreferencesPatch): Preferences {
