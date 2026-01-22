@@ -1,4 +1,4 @@
-import { BrowserView, BrowserWindow, shell } from "electron";
+import { BrowserView, BrowserWindow, Menu, shell } from "electron";
 import type { Rect } from "../../shared/ipc";
 import { getAccount } from "../accounts/vault";
 import { applyProxy } from "../network/proxy";
@@ -117,6 +117,19 @@ export class WebWorkspaceService {
       if (isTrustedUrl(url)) return;
       event.preventDefault();
       void shell.openExternal(url);
+    });
+
+    view.webContents.on("context-menu", (_event, params) => {
+      const menu = Menu.buildFromTemplate([
+        {
+          label: "Reload",
+          accelerator: "CmdOrCtrl+R",
+          click: () => {
+            view.webContents.reload();
+          },
+        },
+      ]);
+      menu.popup({ window: this.window, x: Math.round(params.x), y: Math.round(params.y) });
     });
   }
 
