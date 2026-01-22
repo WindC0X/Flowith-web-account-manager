@@ -22,6 +22,8 @@ export default function App() {
   const [connectivity, setConnectivity] = useState<ConnectivityCheck[] | null>(null);
   const [proxyMode, setProxyMode] = useState<"system" | "direct" | "custom">("system");
   const [proxyRules, setProxyRules] = useState("");
+  const [uaMode, setUaMode] = useState<"default" | "preset" | "custom">("default");
+  const [uaValue, setUaValue] = useState("");
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => [...selectedIds], [selectedIds]);
@@ -39,6 +41,8 @@ export default function App() {
     if (!selectedAccount) return;
     setProxyMode(selectedAccount.net.proxy.mode);
     setProxyRules(selectedAccount.net.proxy.rules ?? "");
+    setUaMode(selectedAccount.ua.mode);
+    setUaValue(selectedAccount.ua.value ?? "");
   }, [selectedAccount]);
 
   const refreshAccounts = useCallback(async () => {
@@ -126,6 +130,24 @@ export default function App() {
       setBusy(false);
     }
   }, [selectedAccountId]);
+
+  const saveUserAgent = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const ua =
+        uaMode === "default"
+          ? { mode: "default" as const }
+          : { mode: uaMode, value: uaValue };
+      await window.desktop.accounts.updateAccountMeta(selectedAccountId, { ua });
+      await refreshAccounts();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [refreshAccounts, selectedAccountId, uaMode, uaValue]);
 
   const pushViewportBounds = useCallback(async () => {
     const el = viewportRef.current;
@@ -293,7 +315,7 @@ export default function App() {
                 <span style={{ opacity: 0.8, fontSize: 12 }}>Mode</span>
                 <select
                   value={proxyMode}
-                  onChange={(e) => setProxyMode(e.target.value as typeof proxyMode)}
+                  onChange={(e) => setProxyMode(e.target.value as "system" | "direct" | "custom")}
                   disabled={busy}
                   style={{
                     height: 34,
@@ -334,9 +356,60 @@ export default function App() {
                 </label>
               ) : null}
 
+              <div style={{ display: "grid", gap: 8, marginTop: 4 }}>
+                <div style={{ fontWeight: 600 }}>User-Agent</div>
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ opacity: 0.8, fontSize: 12 }}>Mode</span>
+                  <select
+                    value={uaMode}
+                    onChange={(e) => setUaMode(e.target.value as "default" | "preset" | "custom")}
+                    disabled={busy}
+                    style={{
+                      height: 34,
+                      borderRadius: 8,
+                      border: "1px solid #2a2f3c",
+                      background: "#0f1320",
+                      color: "inherit",
+                      padding: "0 10px",
+                    }}
+                  >
+                    <option value="default">default</option>
+                    <option value="preset">preset</option>
+                    <option value="custom">custom</option>
+                  </select>
+                </label>
+
+                {uaMode === "default" ? null : (
+                  <label style={{ display: "grid", gap: 6 }}>
+                    <span style={{ opacity: 0.8, fontSize: 12 }}>User-Agent value</span>
+                    <input
+                      value={uaValue}
+                      onChange={(e) => setUaValue(e.target.value)}
+                      placeholder={"Mozilla/5.0 ..."}
+                      disabled={busy}
+                      style={{
+                        height: 34,
+                        borderRadius: 8,
+                        border: "1px solid #2a2f3c",
+                        background: "#0f1320",
+                        color: "inherit",
+                        padding: "0 10px",
+                        fontFamily: "ui-monospace, monospace",
+                      }}
+                    />
+                    <div style={{ opacity: 0.7, fontSize: 12 }}>
+                      Changing User-Agent usually requires reloading the tab to take effect.
+                    </div>
+                  </label>
+                )}
+              </div>
+
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button onClick={saveProxy} disabled={busy}>
                   Save proxy
+                </button>
+                <button onClick={saveUserAgent} disabled={busy}>
+                  Save User-Agent
                 </button>
                 <button onClick={runConnectivity} disabled={busy}>
                   Test connectivity

@@ -10,6 +10,7 @@ import { importRefreshTokens } from "./accounts/import";
 import { getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
 import { testConnectivity } from "./network/connectivity";
 import { validateProxyConfig } from "./network/proxy";
+import { validateUaConfig } from "./network/userAgent";
 import { redactSensitive } from "./security/redact";
 import type { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 import type { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
@@ -59,6 +60,7 @@ function assertObject(value: unknown, name: string): asserts value is Record<str
 function validateAccountMetaPatch(patch: AccountMetaPatch) {
   const proxy = patch.net?.proxy;
   if (proxy) validateProxyConfig(proxy);
+  if (patch.ua) validateUaConfig(patch.ua);
 }
 
 export function registerIpcHandlers(deps: IpcDeps) {

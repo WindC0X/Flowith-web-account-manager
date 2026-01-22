@@ -2,6 +2,7 @@ import { BrowserView, BrowserWindow, shell } from "electron";
 import type { Rect } from "../../shared/ipc";
 import { getAccount } from "../accounts/vault";
 import { applyProxy } from "../network/proxy";
+import { resolveUserAgent } from "../network/userAgent";
 
 const FLOWITH_URL = "https://flowith.io";
 
@@ -94,6 +95,8 @@ export class WebWorkspaceService {
       try {
         const account = getAccount(accountId);
         const proxy = account?.net.proxy ?? { mode: "system" };
+        const userAgent = account?.ua ? resolveUserAgent(account.ua) : null;
+        if (userAgent) view.webContents.setUserAgent(userAgent);
         await applyProxy(view.webContents.session, proxy);
       } catch {
         void 0;
