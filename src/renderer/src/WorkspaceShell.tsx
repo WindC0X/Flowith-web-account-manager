@@ -71,6 +71,7 @@ const UI_STRINGS = {
     proxyCustom: "自定义",
     proxyDirect: "直连",
     proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
+    proxyDisabledHint: "请选择一个账号后再配置代理/连通性。",
     saveProxy: "保存代理",
     connectivity: "连通性测试",
     connectivityTitle: "连通性",
@@ -160,6 +161,7 @@ const UI_STRINGS = {
     proxyCustom: "Custom",
     proxyDirect: "Direct",
     proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
+    proxyDisabledHint: "Select an account to configure proxy/connectivity.",
     saveProxy: "Save proxy",
     connectivity: "Connectivity",
     connectivityTitle: "Connectivity",
@@ -824,6 +826,7 @@ export default function WorkspaceShell() {
             onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
             disabled={busy || !focusedAccountId}
             aria-label={t("proxyMode")}
+            title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
           >
             <option value="system">{t("proxySystem")}</option>
             <option value="custom">{t("proxyCustom")}</option>
@@ -838,14 +841,25 @@ export default function WorkspaceShell() {
             onChange={(e) => setProxyRules(e.target.value)}
             style={{ display: proxyMode === "custom" ? "inline-flex" : "none" }}
             disabled={busy || !focusedAccountId}
+            title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
           />
 
-          <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
+          <button
+            className="btn"
+            onClick={saveProxy}
+            disabled={busy || !focusedAccountId}
+            title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
+          >
             {t("saveProxy")}
           </button>
 
           <div style={{ position: "relative" }}>
-            <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
+            <button
+              className="btn"
+              onClick={runConnectivity}
+              disabled={busy || !focusedAccountId}
+              title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
+            >
               {t("connectivity")}
             </button>
             {connectivityPopoverOpen && connectivity ? (

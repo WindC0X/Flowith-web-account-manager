@@ -173,6 +173,18 @@ textarea {
   font-size: 12px;
 }
 
+.btn:disabled,
+.input:disabled,
+select:disabled,
+textarea:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.btn:disabled {
+  transform: none;
+}
+
 .input,
 select {
   height: 32px;
@@ -255,6 +267,7 @@ textarea:focus {
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
+  row-gap: 10px;
   padding: 8px 14px;
   border-bottom: 1px solid var(--color-border-default);
   background: var(--color-background-primary);
@@ -297,7 +310,8 @@ textarea:focus {
 }
 
 .topbar-group-right {
-  margin-left: auto;
+  flex: 1 1 520px;
+  justify-content: flex-end;
 }
 
 .topbar-proxy-rules {
@@ -392,6 +406,10 @@ textarea:focus {
 .sidebar.collapsed .sidebar-header {
   justify-content: center;
   padding: 12px 10px;
+}
+
+.sidebar.collapsed .sidebar-header-right {
+  display: none;
 }
 
 .sidebar-header {
