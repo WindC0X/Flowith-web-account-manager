@@ -371,6 +371,12 @@ textarea:focus {
   box-shadow: var(--shadow-popover);
   padding: 10px;
   z-index: 50;
+  -webkit-app-region: no-drag;
+}
+
+.popover-end {
+  left: auto;
+  right: 0;
 }
 
 .popover-title {

@@ -54,6 +54,8 @@ const UI_STRINGS = {
     themeLight: "浅色",
     langZh: "简体中文",
     langEn: "English",
+    settings: "设置",
+    settingsTitle: "设置",
     searchPlaceholder: "搜索：displayName / id / tag",
 
     expandSidebar: "展开账号面板",
@@ -89,7 +91,7 @@ const UI_STRINGS = {
 
     import: "导入",
     export: "导出",
-    batchOpen: "批量打开（Tab）",
+    batchOpen: "批量打开",
     refresh: "刷新",
 
     errorTitle: "错误",
@@ -151,6 +153,8 @@ const UI_STRINGS = {
     themeLight: "Light",
     langZh: "简体中文",
     langEn: "English",
+    settings: "Settings",
+    settingsTitle: "Settings",
     searchPlaceholder: "Search: displayName / id / tag",
 
     expandSidebar: "Expand accounts",
@@ -186,7 +190,7 @@ const UI_STRINGS = {
 
     import: "Import",
     export: "Export",
-    batchOpen: "Batch open (Tab)",
+    batchOpen: "Open tabs",
     refresh: "Refresh",
 
     errorTitle: "Error",
@@ -401,6 +405,8 @@ export default function WorkspaceShell() {
   const [connectivity, setConnectivity] = useState<ConnectivityCheck[] | null>(null);
   const [connectivityPopoverOpen, setConnectivityPopoverOpen] = useState(false);
 
+  const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
+
   const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>({});
 
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
@@ -411,6 +417,8 @@ export default function WorkspaceShell() {
   const importDialogRef = useRef<HTMLDialogElement | null>(null);
   const exportDialogRef = useRef<HTMLDialogElement | null>(null);
   const connectivityPopoverRef = useRef<HTMLDivElement | null>(null);
+  const settingsPopoverRef = useRef<HTMLDivElement | null>(null);
+  const settingsContainerRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => [...selectedIds], [selectedIds]);
 
@@ -631,6 +639,20 @@ export default function WorkspaceShell() {
       document.removeEventListener("mousedown", onDown, true);
     };
   }, [connectivityPopoverOpen]);
+
+  useEffect(() => {
+    if (!settingsPopoverOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (settingsContainerRef.current?.contains(target)) return;
+      setSettingsPopoverOpen(false);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+    };
+  }, [settingsPopoverOpen]);
 
   const runImport = useCallback(async () => {
     setError(null);
@@ -864,26 +886,6 @@ export default function WorkspaceShell() {
         </div>
 
         <div className="topbar-group topbar-group-right" aria-label="Global actions">
-          <select
-            value={uiPrefs.locale}
-            onChange={(e) => updateUiPrefs({ locale: e.target.value as Locale })}
-            aria-label={t("language")}
-            style={{ width: 112 }}
-            disabled={busy}
-          >
-            <option value="zh-CN">{t("langZh")}</option>
-            <option value="en">{t("langEn")}</option>
-          </select>
-          <select
-            value={uiPrefs.theme}
-            onChange={(e) => updateUiPrefs({ theme: e.target.value as Theme })}
-            aria-label={t("theme")}
-            style={{ width: 92 }}
-            disabled={busy}
-          >
-            <option value="dark">{t("themeDark")}</option>
-            <option value="light">{t("themeLight")}</option>
-          </select>
           <input
             className="input topbar-search"
             type="text"
@@ -898,16 +900,51 @@ export default function WorkspaceShell() {
           <button className="btn" onClick={runExport} disabled={busy || selected.length === 0}>
             {t("export")}
           </button>
-          <button
-            className="btn btn-primary"
-            onClick={batchOpenTabs}
-            disabled={busy || selected.length === 0}
-          >
-            {t("batchOpen")}
-          </button>
           <button className="btn" onClick={refreshAccounts} disabled={busy}>
             {t("refresh")}
           </button>
+          <div style={{ position: "relative" }} ref={settingsContainerRef}>
+            <button
+              className="btn btn-ghost btn-icon"
+              title={t("settings")}
+              aria-label={t("settings")}
+              onClick={() => setSettingsPopoverOpen((prev) => !prev)}
+              disabled={busy}
+            >
+              ⚙
+            </button>
+            {settingsPopoverOpen ? (
+              <div className="popover popover-end" ref={settingsPopoverRef}>
+                <div className="popover-title">{t("settingsTitle")}</div>
+                <div className="setting-grid">
+                  <div className="setting-row">
+                    <div className="muted">{t("language")}</div>
+                    <select
+                      value={uiPrefs.locale}
+                      onChange={(e) => updateUiPrefs({ locale: e.target.value as Locale })}
+                      aria-label={t("language")}
+                      disabled={busy}
+                    >
+                      <option value="zh-CN">{t("langZh")}</option>
+                      <option value="en">{t("langEn")}</option>
+                    </select>
+                  </div>
+                  <div className="setting-row">
+                    <div className="muted">{t("theme")}</div>
+                    <select
+                      value={uiPrefs.theme}
+                      onChange={(e) => updateUiPrefs({ theme: e.target.value as Theme })}
+                      aria-label={t("theme")}
+                      disabled={busy}
+                    >
+                      <option value="dark">{t("themeDark")}</option>
+                      <option value="light">{t("themeLight")}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {isWindows ? (
@@ -1004,7 +1041,16 @@ export default function WorkspaceShell() {
               />
               <span>{t("selectAll")}</span>
             </label>
-            <div className="muted">{format(t("selectedCount"), { count: selected.length })}</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="muted">{format(t("selectedCount"), { count: selected.length })}</div>
+              <button
+                className="btn btn-primary"
+                onClick={batchOpenTabs}
+                disabled={busy || selected.length === 0}
+              >
+                {t("batchOpen")}
+              </button>
+            </div>
           </div>
 
           <div className={clsx("account-list", viewMode === "table" && "view-table")}>
