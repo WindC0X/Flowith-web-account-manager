@@ -11,6 +11,180 @@ type ExportDialogState =
   | { open: false }
   | { open: true; tokenText: string; selectedCount: number };
 
+type Theme = "dark" | "light";
+type Locale = "zh-CN" | "en";
+type AccountListViewMode = "cards" | "table";
+
+type UiPreferencesV1 = {
+  version: 1;
+  theme: Theme;
+  locale: Locale;
+  sidebarCollapsed: boolean;
+  accountListView: AccountListViewMode;
+};
+
+const UI_PREFERENCES_KEY = "fwd_ui_preferences_v1";
+const LEGACY_SIDEBAR_COLLAPSED_KEY = "fwd_sidebar_collapsed";
+
+const UI_STRINGS = {
+  "zh-CN": {
+    subtitle: "桌面端 MVP · 工作区",
+    language: "语言",
+    theme: "主题",
+    themeDark: "Dark",
+    themeLight: "Light",
+    langZh: "简体中文",
+    langEn: "English",
+    searchPlaceholder: "搜索：displayName / id / tag",
+
+    expandSidebar: "展开账号面板",
+    collapseSidebar: "折叠账号面板",
+    sidebarTitle: "账号",
+    viewCards: "卡片视图",
+    viewTable: "表格视图",
+    selectAll: "全选",
+    selectedCount: "已选择 {count} 个",
+    noAccounts: "暂无账号。请先导入 refresh_token。",
+    noMatch: "无匹配结果。",
+    openDetails: "打开详情",
+    focusedChip: "当前",
+
+    proxyMode: "代理模式",
+    proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
+    saveProxy: "保存代理",
+    connectivity: "连通性测试",
+
+    import: "导入",
+    export: "导出",
+    batchOpen: "批量打开（Tab）",
+    refresh: "刷新",
+
+    errorTitle: "错误",
+
+    tabsAria: "账号标签页",
+    noTabs: "暂无 Tab",
+    workspaceTitle: "Flowith Web 工作区",
+    workspaceSubtitle: "BrowserView 将覆盖此区域。折叠侧边栏 / 调整窗口尺寸不应遮挡顶栏与侧边栏控件。",
+    openFocused: "打开（Focused）",
+    closeFocused: "关闭（Focused）",
+    reloadActive: "刷新当前 Tab",
+    importResultChip: "导入结果：成功 {ok} · 失败 {fail}",
+    openCloseHint: "选择一个账号以打开/关闭 Tab。",
+
+    inspectorTitle: "账号详情",
+    inspectorSelectHint: "选择一个账号以查看详情。",
+    displayNameLabel: "显示名",
+    accountIdLabel: "账号 ID",
+    fingerprintLabel: "指纹",
+    tagsLabel: "标签",
+    uaSectionTitle: "User-Agent",
+    uaModeLabel: "模式",
+    uaValueLabel: "值",
+    uaHint: "修改 User-Agent 通常需要 reload 当前 Tab 生效。",
+    openTab: "打开 Tab",
+    closeTab: "关闭 Tab",
+    saveUa: "保存 UA",
+    reload: "Reload",
+    close: "关闭",
+
+    importDialogTitle: "导入 refresh_token",
+    importDialogNote: "每行一个 refresh_token。导入后账号状态为“未校验”。",
+    importPlaceholder: "每行一个 refresh_token",
+    importHint: "UI 中只显示 token 指纹/掩码；导出才会输出明文。",
+    cancel: "取消",
+    confirmImport: "导入",
+
+    exportDialogTitle: "导出 refresh_token",
+    exportDialogNote: "将导出当前勾选账号的 refresh_token（每行一个）。",
+    exportDanger: "注意：导出内容属于敏感凭据。UI 与日志中必须始终脱敏；请勿分享或粘贴到日志/工单中。",
+    exportHint: "已导出 {count} 个账号的 token。默认不自动复制。",
+    done: "完成",
+    closeTabTitle: "关闭 Tab",
+  },
+  en: {
+    subtitle: "Desktop MVP · Workspace UI",
+    language: "Language",
+    theme: "Theme",
+    themeDark: "Dark",
+    themeLight: "Light",
+    langZh: "简体中文",
+    langEn: "English",
+    searchPlaceholder: "Search: displayName / id / tag",
+
+    expandSidebar: "Expand accounts",
+    collapseSidebar: "Collapse accounts",
+    sidebarTitle: "Accounts",
+    viewCards: "Cards view",
+    viewTable: "Table view",
+    selectAll: "Select all",
+    selectedCount: "Selected {count}",
+    noAccounts: "No accounts yet. Import refresh_token to create accounts.",
+    noMatch: "No results.",
+    openDetails: "Open details",
+    focusedChip: "Focused",
+
+    proxyMode: "Proxy mode",
+    proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
+    saveProxy: "Save proxy",
+    connectivity: "Connectivity",
+
+    import: "Import",
+    export: "Export",
+    batchOpen: "Batch open (Tab)",
+    refresh: "Refresh",
+
+    errorTitle: "Error",
+
+    tabsAria: "Account tabs",
+    noTabs: "No tabs",
+    workspaceTitle: "Flowith Web Workspace",
+    workspaceSubtitle:
+      "BrowserView overlays this area. Sidebar collapse / window resize should not block controls.",
+    openFocused: "Open (Focused)",
+    closeFocused: "Close (Focused)",
+    reloadActive: "Reload active",
+    importResultChip: "Import: ok {ok} · failed {fail}",
+    openCloseHint: "Select an account to open/close a tab.",
+
+    inspectorTitle: "Account details",
+    inspectorSelectHint: "Select an account to view details.",
+    displayNameLabel: "Display name",
+    accountIdLabel: "Account id",
+    fingerprintLabel: "Fingerprint",
+    tagsLabel: "Tags",
+    uaSectionTitle: "User-Agent",
+    uaModeLabel: "Mode",
+    uaValueLabel: "Value",
+    uaHint: "Changing User-Agent usually requires reloading the tab.",
+    openTab: "Open tab",
+    closeTab: "Close tab",
+    saveUa: "Save UA",
+    reload: "Reload",
+    close: "Close",
+
+    importDialogTitle: "Import refresh_token",
+    importDialogNote: "One refresh_token per line. Imported accounts are unverified.",
+    importPlaceholder: "One refresh_token per line",
+    importHint: "UI never displays tokens. Export is the only plaintext flow.",
+    cancel: "Cancel",
+    confirmImport: "Import",
+
+    exportDialogTitle: "Export refresh_token",
+    exportDialogNote: "Exports refresh_token for selected accounts (one per line).",
+    exportDanger:
+      "Sensitive: export contains credentials. Never paste into logs or tickets. UI/logs must remain redacted.",
+    exportHint: "Exported token(s) for {count} account(s). Nothing is auto-copied.",
+    done: "Done",
+    closeTabTitle: "Close tab",
+  },
+} as const;
+
+type StringKey = keyof (typeof UI_STRINGS)["zh-CN"];
+
+function format(template: string, vars: Record<string, string | number>): string {
+  return template.replace(/\{(\w+)\}/g, (_match, key: string) => String(vars[key] ?? `{${key}}`));
+}
+
 function clsx(...parts: Array<string | false | null | undefined>): string {
   return parts.filter(Boolean).join(" ");
 }
@@ -26,7 +200,87 @@ function toErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object";
+}
+
+function normalizeTheme(value: unknown): Theme | null {
+  return value === "dark" || value === "light" ? value : null;
+}
+
+function normalizeLocale(value: unknown): Locale | null {
+  return value === "zh-CN" || value === "en" ? value : null;
+}
+
+function normalizeViewMode(value: unknown): AccountListViewMode | null {
+  return value === "cards" || value === "table" ? value : null;
+}
+
+function normalizeBoolean(value: unknown): boolean | null {
+  return value === true || value === false ? value : null;
+}
+
+function loadUiPreferences(): UiPreferencesV1 {
+  const defaults: UiPreferencesV1 = {
+    version: 1,
+    theme: "dark",
+    locale: "zh-CN",
+    sidebarCollapsed: false,
+    accountListView: "cards",
+  };
+
+  const next: UiPreferencesV1 = { ...defaults };
+
+  try {
+    const raw = window.localStorage.getItem(UI_PREFERENCES_KEY);
+    if (raw) {
+      const parsed: unknown = JSON.parse(raw);
+      if (isRecord(parsed)) {
+        const theme = normalizeTheme(parsed.theme);
+        if (theme) next.theme = theme;
+
+        const locale = normalizeLocale(parsed.locale);
+        if (locale) next.locale = locale;
+
+        const sidebarCollapsed = normalizeBoolean(parsed.sidebarCollapsed);
+        if (sidebarCollapsed !== null) next.sidebarCollapsed = sidebarCollapsed;
+
+        const view = normalizeViewMode(parsed.accountListView ?? parsed.viewMode);
+        if (view) next.accountListView = view;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  try {
+    const legacy = window.localStorage.getItem(LEGACY_SIDEBAR_COLLAPSED_KEY);
+    if (legacy === "1") next.sidebarCollapsed = true;
+    if (legacy === "0") next.sidebarCollapsed = false;
+  } catch {
+    // ignore
+  }
+
+  return next;
+}
+
+function persistUiPreferences(prefs: UiPreferencesV1): void {
+  try {
+    window.localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify(prefs));
+  } catch {
+    // ignore
+  }
+
+  try {
+    window.localStorage.setItem(LEGACY_SIDEBAR_COLLAPSED_KEY, prefs.sidebarCollapsed ? "1" : "0");
+  } catch {
+    // ignore
+  }
+}
+
 export default function WorkspaceShell() {
+  const [uiPrefs, setUiPrefs] = useState<UiPreferencesV1>(() => loadUiPreferences());
+
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [focusedAccountId, setFocusedAccountId] = useState<string | null>(null);
@@ -35,11 +289,16 @@ export default function WorkspaceShell() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [searchText, setSearchText] = useState("");
-  const [viewMode, setViewMode] = useState<"cards" | "table">("cards");
 
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
-    return window.localStorage.getItem("fwd_sidebar_collapsed") === "1";
-  });
+  const strings = UI_STRINGS[uiPrefs.locale];
+  const t = useCallback((key: StringKey) => strings[key], [strings]);
+
+  const viewMode = uiPrefs.accountListView;
+  const sidebarCollapsed = uiPrefs.sidebarCollapsed;
+
+  const updateUiPrefs = useCallback((patch: Partial<Omit<UiPreferencesV1, "version">>) => {
+    setUiPrefs((prev) => ({ ...prev, ...patch, version: 1 }));
+  }, []);
 
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importText, setImportText] = useState("");
@@ -80,8 +339,10 @@ export default function WorkspaceShell() {
   }, [focusedAccount]);
 
   useEffect(() => {
-    window.localStorage.setItem("fwd_sidebar_collapsed", sidebarCollapsed ? "1" : "0");
-  }, [sidebarCollapsed]);
+    document.documentElement.setAttribute("data-theme", uiPrefs.theme);
+    document.documentElement.lang = uiPrefs.locale;
+    persistUiPreferences(uiPrefs);
+  }, [uiPrefs]);
 
   const filteredAccounts = useMemo(() => {
     const q = searchText.trim().toLowerCase();
@@ -432,16 +693,16 @@ export default function WorkspaceShell() {
           <div className="brand-dot" />
           <div>
             <div className="brand-title">Flowith Web Account Manager</div>
-            <div className="brand-subtitle">Desktop MVP · Workspace UI Shell</div>
+            <div className="brand-subtitle">{t("subtitle")}</div>
           </div>
         </div>
 
         <button
           className="btn btn-ghost btn-icon"
-          title="展开账号面板"
-          aria-label="展开账号面板"
+          title={t("expandSidebar")}
+          aria-label={t("expandSidebar")}
           style={{ display: sidebarCollapsed ? "inline-flex" : "none" }}
-          onClick={() => setSidebarCollapsed(false)}
+          onClick={() => updateUiPrefs({ sidebarCollapsed: false })}
           disabled={busy}
         >
           ☰
@@ -454,7 +715,7 @@ export default function WorkspaceShell() {
             value={proxyMode}
             onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
             disabled={busy || !focusedAccountId}
-            aria-label="代理模式"
+            aria-label={t("proxyMode")}
           >
             <option value="system">System</option>
             <option value="custom">Custom</option>
@@ -464,7 +725,7 @@ export default function WorkspaceShell() {
           <input
             className="input"
             type="text"
-            placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:7891"
+            placeholder={t("proxyPlaceholder")}
             value={proxyRules}
             onChange={(e) => setProxyRules(e.target.value)}
             style={{ display: proxyMode === "custom" ? "inline-flex" : "none", width: 260 }}
@@ -472,12 +733,12 @@ export default function WorkspaceShell() {
           />
 
           <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
-            保存代理
+            {t("saveProxy")}
           </button>
 
           <div style={{ position: "relative" }}>
             <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
-              连通性测试
+              {t("connectivity")}
             </button>
             {connectivityPopoverOpen && connectivity ? (
               <div className="popover" ref={connectivityPopoverRef}>
@@ -519,37 +780,57 @@ export default function WorkspaceShell() {
         <div className="spacer" />
 
         <div className="topbar-group" aria-label="Global actions">
+          <select
+            value={uiPrefs.locale}
+            onChange={(e) => updateUiPrefs({ locale: e.target.value as Locale })}
+            aria-label={t("language")}
+            style={{ width: 112 }}
+            disabled={busy}
+          >
+            <option value="zh-CN">{t("langZh")}</option>
+            <option value="en">{t("langEn")}</option>
+          </select>
+          <select
+            value={uiPrefs.theme}
+            onChange={(e) => updateUiPrefs({ theme: e.target.value as Theme })}
+            aria-label={t("theme")}
+            style={{ width: 92 }}
+            disabled={busy}
+          >
+            <option value="dark">{t("themeDark")}</option>
+            <option value="light">{t("themeLight")}</option>
+          </select>
           <input
             className="input"
             type="text"
-            placeholder="搜索：displayName / id / tag"
+            placeholder={t("searchPlaceholder")}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             style={{ width: 220 }}
             disabled={busy}
           />
           <button className="btn" onClick={() => setImportDialogOpen(true)} disabled={busy}>
-            导入
+            {t("import")}
           </button>
           <button className="btn" onClick={runExport} disabled={busy || selected.length === 0}>
-            导出
+            {t("export")}
           </button>
           <button
             className="btn btn-primary"
             onClick={batchOpenTabs}
             disabled={busy || selected.length === 0}
           >
-            批量打开（Tab）
+            {t("batchOpen")}
           </button>
           <button className="btn" onClick={refreshAccounts} disabled={busy}>
-            刷新
+            {t("refresh")}
           </button>
         </div>
       </header>
 
       {error ? (
         <div className="error-banner" role="status">
-          <div className="error-banner-title">Error</div>
+          <div className="error-banner-title">{t("errorTitle")}</div>
           <div className="error-banner-body">{error}</div>
         </div>
       ) : null}
@@ -563,29 +844,29 @@ export default function WorkspaceShell() {
       >
         <aside className={clsx("sidebar", sidebarCollapsed && "collapsed")} id="sidebar">
           <div className="sidebar-header">
-            <div className="sidebar-title">账号</div>
+            <div className="sidebar-title">{t("sidebarTitle")}</div>
             <div className="sidebar-header-right">
               <button
                 className="btn btn-ghost btn-icon"
-                title={sidebarCollapsed ? "展开账号面板" : "折叠账号面板"}
-                aria-label={sidebarCollapsed ? "展开账号面板" : "折叠账号面板"}
-                onClick={() => setSidebarCollapsed((v) => !v)}
+                title={sidebarCollapsed ? t("expandSidebar") : t("collapseSidebar")}
+                aria-label={sidebarCollapsed ? t("expandSidebar") : t("collapseSidebar")}
+                onClick={() => updateUiPrefs({ sidebarCollapsed: !sidebarCollapsed })}
                 disabled={busy}
               >
                 {sidebarCollapsed ? "»" : "«"}
               </button>
               <button
                 className="btn btn-ghost btn-icon"
-                title="卡片视图"
-                onClick={() => setViewMode("cards")}
+                title={t("viewCards")}
+                onClick={() => updateUiPrefs({ accountListView: "cards" })}
                 disabled={busy}
               >
                 ▦
               </button>
               <button
                 className="btn btn-ghost btn-icon"
-                title="表格视图"
-                onClick={() => setViewMode("table")}
+                title={t("viewTable")}
+                onClick={() => updateUiPrefs({ accountListView: "table" })}
                 disabled={busy}
               >
                 ☰
@@ -602,15 +883,15 @@ export default function WorkspaceShell() {
                 onChange={toggleSelectAllFiltered}
                 disabled={busy || filteredAccounts.length === 0}
               />
-              <span>全选</span>
+              <span>{t("selectAll")}</span>
             </label>
-            <div className="muted">已选择 {selected.length} 个</div>
+            <div className="muted">{format(t("selectedCount"), { count: selected.length })}</div>
           </div>
 
           <div className={clsx("account-list", viewMode === "table" && "view-table")}>
             {filteredAccounts.length === 0 ? (
               <div className="muted" style={{ padding: 10, fontSize: 12 }}>
-                {accounts.length === 0 ? "暂无账号。请先导入 refresh_token。" : "无匹配结果。"}
+                {accounts.length === 0 ? t("noAccounts") : t("noMatch")}
               </div>
             ) : (
               filteredAccounts.map((a) => {
@@ -649,7 +930,7 @@ export default function WorkspaceShell() {
 
                     <div className="account-meta">
                       <span className="chip">UA: {a.ua.mode}</span>
-                      {focused ? <span className="chip">Focused</span> : null}
+                      {focused ? <span className="chip">{t("focusedChip")}</span> : null}
                     </div>
 
                     {a.tags.length ? (
@@ -685,7 +966,7 @@ export default function WorkspaceShell() {
                       <span className="mono">{a.ua.mode}</span>
                       <button
                         className="btn btn-ghost btn-icon"
-                        title="打开详情"
+                        title={t("openDetails")}
                         onClick={(e) => {
                           e.stopPropagation();
                           focusAccount(a.id);
@@ -703,16 +984,16 @@ export default function WorkspaceShell() {
 
           {selected.length > 0 ? (
             <div className="batchbar">
-              <div className="batchbar-left">已选择 {selected.length} 个</div>
+              <div className="batchbar-left">{format(t("selectedCount"), { count: selected.length })}</div>
               <div className="batchbar-actions">
                 <button className="btn btn-primary" onClick={batchOpenTabs} disabled={busy}>
-                  打开 Tab
+                  {t("openTab")}
                 </button>
                 <button className="btn" onClick={batchCloseTabs} disabled={busy}>
-                  关闭 Tab
+                  {t("closeTab")}
                 </button>
                 <button className="btn" onClick={runExport} disabled={busy}>
-                  导出
+                  {t("export")}
                 </button>
               </div>
             </div>
@@ -720,10 +1001,10 @@ export default function WorkspaceShell() {
         </aside>
 
         <main className="workspace">
-          <div className="tabs" role="tablist" aria-label="账号标签页">
+          <div className="tabs" role="tablist" aria-label={t("tabsAria")}>
             {openTabIds.length === 0 ? (
               <div className="tab active" role="tab" aria-selected="true">
-                <span className="tab-title">No tabs</span>
+                <span className="tab-title">{t("noTabs")}</span>
               </div>
             ) : (
               openTabIds.map((id) => {
@@ -745,7 +1026,7 @@ export default function WorkspaceShell() {
                     <span className="tab-title">{label}</span>
                     <button
                       className="tab-close"
-                      title="关闭 Tab"
+                      title={t("closeTabTitle")}
                       onClick={(e) => {
                         e.stopPropagation();
                         void closeTab(id);
@@ -763,10 +1044,8 @@ export default function WorkspaceShell() {
           <div className="tab-content">
             <div className="workspace-viewport glass" ref={viewportRef}>
               <div className="workspace-viewport-placeholder">
-                <div className="content-title">Flowith Web 工作区</div>
-                <div className="content-subtitle">
-                  BrowserView 将覆盖此区域。折叠侧边栏 / 调整窗口尺寸不应遮挡顶栏与侧边栏控件。
-                </div>
+                <div className="content-title">{t("workspaceTitle")}</div>
+                <div className="content-subtitle">{t("workspaceSubtitle")}</div>
                 <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {focusedAccountId ? (
                     <>
@@ -775,26 +1054,29 @@ export default function WorkspaceShell() {
                         onClick={() => openTab(focusedAccountId)}
                         disabled={busy}
                       >
-                        打开（Focused）
+                        {t("openFocused")}
                       </button>
                       <button className="btn" onClick={() => closeTab(focusedAccountId)} disabled={busy}>
-                        关闭（Focused）
+                        {t("closeFocused")}
                       </button>
                     </>
                   ) : (
                     <div className="muted" style={{ fontSize: 12 }}>
-                      选择一个账号以打开/关闭 Tab。
+                      {t("openCloseHint")}
                     </div>
                   )}
                   <button className="btn" onClick={reloadWorkspace} disabled={busy}>
-                    Reload active
+                    {t("reloadActive")}
                   </button>
                 </div>
 
                 {importResult ? (
                   <div style={{ marginTop: 12 }}>
                     <div className="chip">
-                      导入结果：成功 {importResult.imported} · 失败 {importResult.failed}
+                      {format(t("importResultChip"), {
+                        ok: importResult.imported,
+                        fail: importResult.failed,
+                      })}
                     </div>
                   </div>
                 ) : null}
@@ -806,10 +1088,10 @@ export default function WorkspaceShell() {
         {inspectorOpen ? (
           <aside className="inspector" id="inspector">
             <div className="inspector-header">
-              <div className="inspector-title">账号详情</div>
+              <div className="inspector-title">{t("inspectorTitle")}</div>
               <button
                 className="btn btn-icon"
-                title="关闭"
+                title={t("close")}
                 onClick={() => setInspectorOpen(false)}
                 disabled={busy}
               >
@@ -820,34 +1102,34 @@ export default function WorkspaceShell() {
             <div className="inspector-body">
               {!focusedAccount ? (
                 <div className="muted" style={{ fontSize: 12 }}>
-                  选择一个账号以查看详情。
+                  {t("inspectorSelectHint")}
                 </div>
               ) : (
                 <>
                   <div className="field">
-                    <div className="field-label">Display name</div>
+                    <div className="field-label">{t("displayNameLabel")}</div>
                     <div className="field-value">{focusedAccount.displayName}</div>
                   </div>
                   <div className="field">
-                    <div className="field-label">Account id</div>
+                    <div className="field-label">{t("accountIdLabel")}</div>
                     <div className="field-value mono">{focusedAccount.id}</div>
                   </div>
                   <div className="field">
-                    <div className="field-label">Fingerprint</div>
+                    <div className="field-label">{t("fingerprintLabel")}</div>
                     <div className="field-value mono">{maskFingerprint(focusedAccount.fingerprint)}</div>
                   </div>
                   <div className="field">
-                    <div className="field-label">Tags</div>
+                    <div className="field-label">{t("tagsLabel")}</div>
                     <div className="field-value">
                       {focusedAccount.tags.length ? focusedAccount.tags.join(", ") : <span className="muted">-</span>}
                     </div>
                   </div>
 
                   <div className="section-divider" />
-                  <div className="section-title">User-Agent</div>
+                  <div className="section-title">{t("uaSectionTitle")}</div>
                   <div className="setting-grid">
                     <div className="setting-row">
-                      <div className="muted">Mode</div>
+                      <div className="muted">{t("uaModeLabel")}</div>
                       <select
                         value={uaMode}
                         onChange={(e) => setUaMode(e.target.value as UaMode)}
@@ -862,7 +1144,7 @@ export default function WorkspaceShell() {
 
                     {uaMode === "default" ? null : (
                       <div className="setting-row">
-                        <div className="muted">Value</div>
+                        <div className="muted">{t("uaValueLabel")}</div>
                         <input
                           className="input mono"
                           value={uaValue}
@@ -875,7 +1157,7 @@ export default function WorkspaceShell() {
                   </div>
 
                   <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
-                    修改 User-Agent 通常需要 reload 当前 Tab 生效。
+                    {t("uaHint")}
                   </div>
                 </>
               )}
@@ -887,20 +1169,20 @@ export default function WorkspaceShell() {
                 onClick={() => focusedAccountId && openTab(focusedAccountId)}
                 disabled={busy || !focusedAccountId}
               >
-                打开 Tab
+                {t("openTab")}
               </button>
               <button
                 className="btn"
                 onClick={() => focusedAccountId && closeTab(focusedAccountId)}
                 disabled={busy || !focusedAccountId}
               >
-                关闭 Tab
+                {t("closeTab")}
               </button>
               <button className="btn" onClick={saveUserAgent} disabled={busy || !focusedAccountId}>
-                保存 UA
+                {t("saveUa")}
               </button>
               <button className="btn" onClick={reloadWorkspace} disabled={busy}>
-                Reload
+                {t("reload")}
               </button>
             </div>
           </aside>
@@ -914,19 +1196,17 @@ export default function WorkspaceShell() {
           setImportDialogOpen(false);
         }}
         onClose={() => setImportDialogOpen(false)}
-        aria-label="导入 refresh_token"
+        aria-label={t("importDialogTitle")}
       >
         <div className="modal">
           <div className="modal-header">
             <div>
-              <div className="modal-title">导入 refresh_token</div>
-              <div className="modal-note">
-                每行一个 <span className="mono">refresh_token</span>。导入后账号状态为“未校验”。
-              </div>
+              <div className="modal-title">{t("importDialogTitle")}</div>
+              <div className="modal-note">{t("importDialogNote")}</div>
             </div>
             <button
               className="btn btn-icon"
-              title="关闭"
+              title={t("close")}
               onClick={() => setImportDialogOpen(false)}
               disabled={busy}
             >
@@ -938,24 +1218,24 @@ export default function WorkspaceShell() {
             <textarea
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
-              placeholder="每行一个 refresh_token"
+              placeholder={t("importPlaceholder")}
               disabled={busy}
             />
             <div className="muted" style={{ fontSize: 12 }}>
-              UI 中只显示 token 指纹/掩码；导出才会输出明文。
+              {t("importHint")}
             </div>
           </div>
 
           <div className="modal-actions">
             <button className="btn" onClick={() => setImportDialogOpen(false)} disabled={busy}>
-              取消
+              {t("cancel")}
             </button>
             <button
               className="btn btn-primary"
               onClick={runImport}
               disabled={busy || importText.trim().length === 0}
             >
-              导入
+              {t("confirmImport")}
             </button>
           </div>
         </div>
@@ -968,20 +1248,18 @@ export default function WorkspaceShell() {
           setExportDialog({ open: false });
         }}
         onClose={() => setExportDialog({ open: false })}
-        aria-label="导出 refresh_token"
+        aria-label={t("exportDialogTitle")}
       >
         {exportDialog.open ? (
           <div className="modal">
             <div className="modal-header">
               <div>
-                <div className="modal-title">导出 refresh_token</div>
-                <div className="modal-note">
-                  将导出当前勾选账号的 <span className="mono">refresh_token</span>（每行一个）。
-                </div>
+                <div className="modal-title">{t("exportDialogTitle")}</div>
+                <div className="modal-note">{t("exportDialogNote")}</div>
               </div>
               <button
                 className="btn btn-icon"
-                title="关闭"
+                title={t("close")}
                 onClick={() => setExportDialog({ open: false })}
                 disabled={busy}
               >
@@ -989,20 +1267,18 @@ export default function WorkspaceShell() {
               </button>
             </div>
 
-            <div className="danger-note">
-              注意：导出内容属于敏感凭据。UI 与日志中必须始终脱敏；请勿分享或粘贴到日志/工单中。
-            </div>
+            <div className="danger-note">{t("exportDanger")}</div>
 
             <div className="modal-grid">
               <textarea className="mono" readOnly value={exportDialog.tokenText} />
               <div className="muted" style={{ fontSize: 12 }}>
-                已导出 {exportDialog.selectedCount} 个账号的 token。默认不自动复制。
+                {format(t("exportHint"), { count: exportDialog.selectedCount })}
               </div>
             </div>
 
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={() => setExportDialog({ open: false })}>
-                完成
+                {t("done")}
               </button>
             </div>
           </div>
