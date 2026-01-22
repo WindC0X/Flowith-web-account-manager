@@ -71,6 +71,12 @@ export type DesktopApi = {
     setViewportBounds(bounds: Rect): Promise<void>;
     reloadActive(): Promise<void>;
   };
+  window: {
+    minimize(): Promise<void>;
+    toggleMaximize(): Promise<void>;
+    isMaximized(): Promise<boolean>;
+    close(): Promise<void>;
+  };
   accounts: {
     list(): Promise<AccountSummary[]>;
     importRefreshTokens(text: string): Promise<ImportRefreshTokensResult>;
@@ -93,6 +99,11 @@ export const IPC_CHANNELS = {
   WORKSPACE_SET_ACTIVE_TAB: "workspace:setActiveTab",
   WORKSPACE_SET_VIEWPORT_BOUNDS: "workspace:setViewportBounds",
   WORKSPACE_RELOAD_ACTIVE: "workspace:reloadActive",
+
+  WINDOW_MINIMIZE: "window:minimize",
+  WINDOW_TOGGLE_MAXIMIZE: "window:toggleMaximize",
+  WINDOW_IS_MAXIMIZED: "window:isMaximized",
+  WINDOW_CLOSE: "window:close",
 
   ACCOUNTS_LIST: "accounts:list",
   ACCOUNTS_IMPORT_REFRESH_TOKENS: "accounts:importRefreshTokens",
@@ -119,6 +130,11 @@ export type IpcInvokeMap = {
     result: void;
   };
   [IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE]: { args: []; result: void };
+
+  [IPC_CHANNELS.WINDOW_MINIMIZE]: { args: []; result: void };
+  [IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE]: { args: []; result: void };
+  [IPC_CHANNELS.WINDOW_IS_MAXIMIZED]: { args: []; result: boolean };
+  [IPC_CHANNELS.WINDOW_CLOSE]: { args: []; result: void };
 
   [IPC_CHANNELS.ACCOUNTS_LIST]: { args: []; result: AccountSummary[] };
   [IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS]: {

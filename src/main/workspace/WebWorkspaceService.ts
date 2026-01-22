@@ -149,12 +149,12 @@ export class WebWorkspaceService {
     const view = this.views.get(accountId);
     if (!view) return;
 
-    const bounds = this.viewportBounds ?? {
-      x: 0,
-      y: 0,
-      width: Math.max(0, this.window.getContentBounds().width),
-      height: Math.max(0, this.window.getContentBounds().height),
-    };
+	    const bounds = this.viewportBounds ?? {
+	      x: 0,
+	      y: 0,
+	      width: 0,
+	      height: 0,
+	    };
 
     view.setBounds({
       x: Math.round(bounds.x),

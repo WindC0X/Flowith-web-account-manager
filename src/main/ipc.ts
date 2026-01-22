@@ -1,4 +1,4 @@
-import { ipcMain } from "electron";
+import { BrowserWindow, ipcMain } from "electron";
 import {
   IPC_CHANNELS,
   type AccountMetaPatch,
@@ -110,6 +110,28 @@ export function registerIpcHandlers(deps: IpcDeps) {
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE, async () => {
     deps.workspace.reloadActive();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_MINIMIZE, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.minimize();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_IS_MAXIMIZED, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return win?.isMaximized() ?? false;
+  });
+
+  ipcMain.handle(IPC_CHANNELS.WINDOW_CLOSE, async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    win?.close();
   });
 
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_LIST, async () => {

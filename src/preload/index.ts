@@ -13,6 +13,12 @@ const api: DesktopApi = {
     setViewportBounds: (bounds) => invoke(IPC_CHANNELS.WORKSPACE_SET_VIEWPORT_BOUNDS, bounds),
     reloadActive: () => invoke(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE),
   },
+  window: {
+    minimize: () => invoke(IPC_CHANNELS.WINDOW_MINIMIZE),
+    toggleMaximize: () => invoke(IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE),
+    isMaximized: () => invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
+    close: () => invoke(IPC_CHANNELS.WINDOW_CLOSE),
+  },
   accounts: {
     list: () => invoke(IPC_CHANNELS.ACCOUNTS_LIST),
     importRefreshTokens: (text) => invoke(IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS, text),

@@ -265,18 +265,31 @@ textarea:focus {
   height: auto;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 14px;
+  justify-content: flex-start;
+  gap: 8px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--color-border-default);
   background: var(--color-background-primary);
+  -webkit-app-region: drag;
 }
 
 .brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-width: 220px;
+  gap: 8px;
+  min-width: 0;
+  max-width: 320px;
+}
+
+.brand > div {
+  min-width: 0;
+}
+
+.brand-logo {
+  width: 18px;
+  height: 18px;
+  object-fit: contain;
+  flex: none;
 }
 
 .brand-dot {
@@ -287,17 +300,30 @@ textarea:focus {
   box-shadow: 0 0 18px rgba(139, 92, 246, 0.45);
 }
 
+.topbar .btn,
+.topbar select,
+.topbar input,
+.topbar textarea {
+  -webkit-app-region: no-drag;
+}
+
 .brand-title {
   font-weight: 700;
   font-size: 13px;
   line-height: 1.05;
   letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-subtitle {
   font-size: 10px;
   color: var(--color-text-tertiary);
   margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .topbar-group {
@@ -313,9 +339,17 @@ textarea:focus {
   justify-content: flex-end;
 }
 
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  -webkit-app-region: no-drag;
+}
+
 .topbar-search {
-  flex: 1 1 220px;
-  min-width: 180px;
+  flex: 1 1 180px;
+  min-width: 140px;
   max-width: 260px;
 }
 
@@ -397,8 +431,8 @@ textarea:focus {
 }
 
 .sidebar.collapsed .sidebar-header {
-  justify-content: flex-end;
-  padding: 12px 10px;
+  justify-content: center;
+  padding: 12px 0;
 }
 
 .sidebar-header {
@@ -408,6 +442,7 @@ textarea:focus {
   justify-content: space-between;
   gap: 10px;
   border-bottom: 1px solid var(--color-border-subtle);
+  min-height: 54px;
 }
 
 .sidebar-title {
@@ -738,6 +773,7 @@ textarea:focus {
   flex-direction: column;
   position: relative;
   z-index: 2;
+  -webkit-app-region: no-drag;
 }
 
 .inspector-header {
@@ -747,6 +783,7 @@ textarea:focus {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  min-height: 54px;
 }
 
 .inspector-title {

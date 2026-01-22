@@ -15,6 +15,5 @@
     "types": ["node"],
     "baseUrl": "."
   },
-  "include": ["electron.vite.config.ts", "src/**/*.ts", "src/**/*.tsx"]
+  "include": ["electron.vite.config.ts", "src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"]
 }
-

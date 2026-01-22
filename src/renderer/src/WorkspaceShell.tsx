@@ -6,6 +6,8 @@ import type {
   ProxyMode,
   UaMode,
 } from "../../shared/ipc";
+import logoOnDark from "./assets/logo-on-dark.png";
+import logoOnLight from "./assets/logo-on-light.png";
 
 type ExportDialogState =
   | { open: false }
@@ -67,19 +69,23 @@ const UI_STRINGS = {
     focusedChip: "当前",
 
     proxyMode: "代理模式",
-	    proxySystem: "系统",
-	    proxyCustom: "自定义",
-	    proxyDirect: "直连",
-	    proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
-	    proxyDisabledHint: "请选择一个账号后再配置代理/连通性。",
-	    networkSectionTitle: "网络",
-	    proxyRulesLabel: "代理地址",
-	    proxyHint: "代理设置按账号生效。修改后通常需要刷新当前 Tab 生效。",
-	    saveProxy: "保存代理",
-	    connectivity: "连通性测试",
-	    connectivityTitle: "连通性",
-	    statusOk: "OK",
+    proxySystem: "系统",
+    proxyCustom: "自定义",
+    proxyDirect: "直连",
+    proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
+    proxyDisabledHint: "请选择一个账号后再配置代理/连通性。",
+    networkSectionTitle: "网络",
+    proxyRulesLabel: "代理地址",
+    proxyHint: "代理设置按账号生效。修改后通常需要刷新当前 Tab 生效。",
+    saveProxy: "保存代理",
+    connectivity: "连通性测试",
+    connectivityTitle: "连通性",
+    statusOk: "OK",
     statusFail: "FAIL",
+    windowMinimize: "最小化",
+    windowMaximize: "最大化",
+    windowRestore: "还原",
+    windowClose: "关闭",
 
     import: "导入",
     export: "导出",
@@ -160,19 +166,23 @@ const UI_STRINGS = {
     focusedChip: "Focused",
 
     proxyMode: "Proxy mode",
-	    proxySystem: "System",
-	    proxyCustom: "Custom",
-	    proxyDirect: "Direct",
-	    proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
-	    proxyDisabledHint: "Select an account to configure proxy/connectivity.",
-	    networkSectionTitle: "Network",
-	    proxyRulesLabel: "Proxy",
-	    proxyHint: "Proxy settings apply per-account. Reload the active tab to apply.",
-	    saveProxy: "Save proxy",
-	    connectivity: "Connectivity",
-	    connectivityTitle: "Connectivity",
-	    statusOk: "OK",
+    proxySystem: "System",
+    proxyCustom: "Custom",
+    proxyDirect: "Direct",
+    proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
+    proxyDisabledHint: "Select an account to configure proxy/connectivity.",
+    networkSectionTitle: "Network",
+    proxyRulesLabel: "Proxy",
+    proxyHint: "Proxy settings apply per-account. Reload the active tab to apply.",
+    saveProxy: "Save proxy",
+    connectivity: "Connectivity",
+    connectivityTitle: "Connectivity",
+    statusOk: "OK",
     statusFail: "FAIL",
+    windowMinimize: "Minimize",
+    windowMaximize: "Maximize",
+    windowRestore: "Restore",
+    windowClose: "Close",
 
     import: "Import",
     export: "Export",
@@ -367,6 +377,8 @@ export default function WorkspaceShell() {
 
   const strings = UI_STRINGS[uiPrefs.locale];
   const t = useCallback((key: StringKey) => strings[key], [strings]);
+  const isWindows = useMemo(() => /windows/i.test(navigator.userAgent), []);
+  const [windowMaximized, setWindowMaximized] = useState(false);
 
   const viewMode = uiPrefs.accountListView;
   const sidebarCollapsed = uiPrefs.sidebarCollapsed;
@@ -425,6 +437,40 @@ export default function WorkspaceShell() {
     document.documentElement.lang = uiPrefs.locale;
     persistUiPreferences(uiPrefs);
   }, [uiPrefs]);
+
+  useEffect(() => {
+    if (!isWindows) return;
+    void window.desktop.window
+      .isMaximized()
+      .then((max) => setWindowMaximized(max))
+      .catch(() => void 0);
+  }, [isWindows]);
+
+  const minimizeWindow = useCallback(async () => {
+    try {
+      await window.desktop.window.minimize();
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleMaximizeWindow = useCallback(async () => {
+    try {
+      await window.desktop.window.toggleMaximize();
+      const max = await window.desktop.window.isMaximized();
+      setWindowMaximized(max);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const closeWindow = useCallback(async () => {
+    try {
+      await window.desktop.window.close();
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const filteredAccounts = useMemo(() => {
     const q = searchText.trim().toLowerCase();
@@ -806,16 +852,20 @@ export default function WorkspaceShell() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <div className="brand-dot" />
+          <img
+            className="brand-logo"
+            src={uiPrefs.theme === "dark" ? logoOnDark : logoOnLight}
+            alt="Flowith"
+          />
           <div>
             <div className="brand-title">Flowith Web Account Manager</div>
             <div className="brand-subtitle">{t("subtitle")}</div>
           </div>
-	        </div>
+        </div>
 
-	        <div className="topbar-group topbar-group-right" aria-label="Global actions">
-	          <select
-	            value={uiPrefs.locale}
+        <div className="topbar-group topbar-group-right" aria-label="Global actions">
+          <select
+            value={uiPrefs.locale}
             onChange={(e) => updateUiPrefs({ locale: e.target.value as Locale })}
             aria-label={t("language")}
             style={{ width: 112 }}
@@ -859,6 +909,38 @@ export default function WorkspaceShell() {
             {t("refresh")}
           </button>
         </div>
+
+        {isWindows ? (
+          <div className="window-controls" aria-label="Window controls">
+            <button
+              className="btn btn-ghost btn-icon"
+              title={t("windowMinimize")}
+              aria-label={t("windowMinimize")}
+              onClick={minimizeWindow}
+              disabled={busy}
+            >
+              —
+            </button>
+            <button
+              className="btn btn-ghost btn-icon"
+              title={windowMaximized ? t("windowRestore") : t("windowMaximize")}
+              aria-label={windowMaximized ? t("windowRestore") : t("windowMaximize")}
+              onClick={toggleMaximizeWindow}
+              disabled={busy}
+            >
+              {windowMaximized ? "❐" : "□"}
+            </button>
+            <button
+              className="btn btn-danger btn-icon"
+              title={t("windowClose")}
+              aria-label={t("windowClose")}
+              onClick={closeWindow}
+              disabled={busy}
+            >
+              ×
+            </button>
+          </div>
+        ) : null}
       </header>
 
       {error ? (
@@ -1214,113 +1296,113 @@ export default function WorkspaceShell() {
                       </span>
                     ) : null}
                   </div>
-	                  {focusedAccountInfo.error ? (
-	                    <div
-	                      className="muted"
-	                      style={{ marginTop: 8, fontSize: 11, whiteSpace: "pre-wrap" }}
-	                    >
-	                      {focusedAccountInfo.error}
-	                    </div>
-	                  ) : null}
+                  {focusedAccountInfo.error ? (
+                    <div
+                      className="muted"
+                      style={{ marginTop: 8, fontSize: 11, whiteSpace: "pre-wrap" }}
+                    >
+                      {focusedAccountInfo.error}
+                    </div>
+                  ) : null}
 
-	                  <div className="section-divider" />
-	                  <div className="section-title">{t("networkSectionTitle")}</div>
-	                  <div className="setting-grid">
-	                    <div className="setting-row">
-	                      <div className="muted">{t("proxyMode")}</div>
-	                      <select
-	                        value={proxyMode}
-	                        onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
-	                        disabled={busy}
-	                        aria-label={t("proxyMode")}
-	                      >
-	                        <option value="system">{t("proxySystem")}</option>
-	                        <option value="custom">{t("proxyCustom")}</option>
-	                        <option value="direct">{t("proxyDirect")}</option>
-	                      </select>
-	                    </div>
+                  <div className="section-divider" />
+                  <div className="section-title">{t("networkSectionTitle")}</div>
+                  <div className="setting-grid">
+                    <div className="setting-row">
+                      <div className="muted">{t("proxyMode")}</div>
+                      <select
+                        value={proxyMode}
+                        onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
+                        disabled={busy}
+                        aria-label={t("proxyMode")}
+                      >
+                        <option value="system">{t("proxySystem")}</option>
+                        <option value="custom">{t("proxyCustom")}</option>
+                        <option value="direct">{t("proxyDirect")}</option>
+                      </select>
+                    </div>
 
-	                    {proxyMode === "custom" ? (
-	                      <div className="setting-row">
-	                        <div className="muted">{t("proxyRulesLabel")}</div>
-	                        <input
-	                          className="input mono"
-	                          type="text"
-	                          placeholder={t("proxyPlaceholder")}
-	                          value={proxyRules}
-	                          onChange={(e) => setProxyRules(e.target.value)}
-	                          disabled={busy}
-	                        />
-	                      </div>
-	                    ) : null}
-	                  </div>
+                    {proxyMode === "custom" ? (
+                      <div className="setting-row">
+                        <div className="muted">{t("proxyRulesLabel")}</div>
+                        <input
+                          className="input mono"
+                          type="text"
+                          placeholder={t("proxyPlaceholder")}
+                          value={proxyRules}
+                          onChange={(e) => setProxyRules(e.target.value)}
+                          disabled={busy}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
 
-	                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-	                    <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
-	                      {t("saveProxy")}
-	                    </button>
-	                    <div style={{ position: "relative" }}>
-	                      <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
-	                        {t("connectivity")}
-	                      </button>
-	                      {connectivityPopoverOpen && connectivity ? (
-	                        <div className="popover" ref={connectivityPopoverRef}>
-	                          <div className="popover-title">{t("connectivityTitle")}</div>
-	                          <div style={{ display: "grid", gap: 8 }}>
-	                            {connectivity.map((c) => (
-	                              <div key={c.name} className="popover-row">
-	                                <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-	                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-	                                    <span className={clsx("dot", c.ok ? "dot-ok" : "dot-bad")} />
-	                                    <span style={{ fontWeight: 650 }}>{c.name}</span>
-	                                  </div>
-	                                  <div
-	                                    className="muted"
-	                                    style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}
-	                                  >
-	                                    {c.url}
-	                                  </div>
-	                                  {c.error ? (
-	                                    <div className="muted" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
-	                                      {c.error}
-	                                    </div>
-	                                  ) : null}
-	                                </div>
-	                                <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-	                                  <div style={{ fontWeight: 750 }}>{c.ok ? t("statusOk") : t("statusFail")}</div>
-	                                  <div className="muted" style={{ fontSize: 11 }}>
-	                                    {c.latencyMs} ms
-	                                    {typeof c.status === "number" ? ` · HTTP ${c.status}` : ""}
-	                                  </div>
-	                                </div>
-	                              </div>
-	                            ))}
-	                          </div>
-	                        </div>
-	                      ) : null}
-	                    </div>
-	                  </div>
+                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
+                      {t("saveProxy")}
+                    </button>
+                    <div style={{ position: "relative" }}>
+                      <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
+                        {t("connectivity")}
+                      </button>
+                      {connectivityPopoverOpen && connectivity ? (
+                        <div className="popover" ref={connectivityPopoverRef}>
+                          <div className="popover-title">{t("connectivityTitle")}</div>
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {connectivity.map((c) => (
+                              <div key={c.name} className="popover-row">
+                                <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                    <span className={clsx("dot", c.ok ? "dot-ok" : "dot-bad")} />
+                                    <span style={{ fontWeight: 650 }}>{c.name}</span>
+                                  </div>
+                                  <div
+                                    className="muted"
+                                    style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}
+                                  >
+                                    {c.url}
+                                  </div>
+                                  {c.error ? (
+                                    <div className="muted" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
+                                      {c.error}
+                                    </div>
+                                  ) : null}
+                                </div>
+                                <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                                  <div style={{ fontWeight: 750 }}>{c.ok ? t("statusOk") : t("statusFail")}</div>
+                                  <div className="muted" style={{ fontSize: 11 }}>
+                                    {c.latencyMs} ms
+                                    {typeof c.status === "number" ? ` · HTTP ${c.status}` : ""}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
 
-	                  <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
-	                    {t("proxyHint")}
-	                  </div>
+                  <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+                    {t("proxyHint")}
+                  </div>
 
-	                  <div className="section-divider" />
-	                  <div className="section-title">{t("uaSectionTitle")}</div>
-	                  <div className="setting-grid">
-	                    <div className="setting-row">
-	                      <div className="muted">{t("uaModeLabel")}</div>
-	                      <select
-	                        value={uaMode}
-	                        onChange={(e) => setUaMode(e.target.value as UaMode)}
-	                        disabled={busy}
-	                        aria-label="User-Agent mode"
-	                      >
-	                        <option value="default">{t("uaDefault")}</option>
-	                        <option value="preset">{t("uaPreset")}</option>
-	                        <option value="custom">{t("uaCustom")}</option>
-	                      </select>
-	                    </div>
+                  <div className="section-divider" />
+                  <div className="section-title">{t("uaSectionTitle")}</div>
+                  <div className="setting-grid">
+                    <div className="setting-row">
+                      <div className="muted">{t("uaModeLabel")}</div>
+                      <select
+                        value={uaMode}
+                        onChange={(e) => setUaMode(e.target.value as UaMode)}
+                        disabled={busy}
+                        aria-label="User-Agent mode"
+                      >
+                        <option value="default">{t("uaDefault")}</option>
+                        <option value="preset">{t("uaPreset")}</option>
+                        <option value="custom">{t("uaCustom")}</option>
+                      </select>
+                    </div>
 
                     {uaMode === "default" ? null : (
                       <div className="setting-row">

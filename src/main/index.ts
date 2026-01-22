@@ -9,6 +9,7 @@ function createWindow(): BrowserWindow {
     width: 1280,
     height: 800,
     show: false,
+    ...(process.platform === "win32" ? { frame: false } : {}),
     webPreferences: {
       preload: join(__dirname, "../preload/index.js"),
       contextIsolation: true,
