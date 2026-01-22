@@ -8,6 +8,8 @@ import {
 } from "../shared/ipc";
 import { importRefreshTokens } from "./accounts/import";
 import { getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
+import { testConnectivity } from "./network/connectivity";
+import { validateProxyConfig } from "./network/proxy";
 import { redactSensitive } from "./security/redact";
 import type { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 import type { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
@@ -52,6 +54,11 @@ function assertRect(value: unknown): asserts value is Rect {
 
 function assertObject(value: unknown, name: string): asserts value is Record<string, unknown> {
   if (!value || typeof value !== "object") throw new Error(`Invalid ${name}: expected object`);
+}
+
+function validateAccountMetaPatch(patch: AccountMetaPatch) {
+  const proxy = patch.net?.proxy;
+  if (proxy) validateProxyConfig(proxy);
 }
 
 export function registerIpcHandlers(deps: IpcDeps) {
@@ -163,12 +170,23 @@ export function registerIpcHandlers(deps: IpcDeps) {
       try {
         assertString(accountId, "accountId");
         assertObject(patch, "patch");
-        return upsertAccountMeta(accountId, patch as AccountMetaPatch);
+        const metaPatch = patch as AccountMetaPatch;
+        validateAccountMetaPatch(metaPatch);
+        return upsertAccountMeta(accountId, metaPatch);
       } catch (e) {
         throw new Error(safeErrorMessage(e));
       }
     }
   );
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY, async (_event, accountId: unknown) => {
+    try {
+      assertString(accountId, "accountId");
+      return await testConnectivity(accountId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
 
   ipcMain.handle(IPC_CHANNELS.PREFERENCES_GET, async () => {
     return { ...preferences };

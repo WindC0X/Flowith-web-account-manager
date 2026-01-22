@@ -37,6 +37,13 @@ export function listAccounts(): AccountSummary[] {
   return Object.values(vault.accounts).map((a) => toAccountSummary(a));
 }
 
+export function getAccount(accountId: string): AccountSummary | null {
+  const vault = getVault();
+  const account = vault.accounts[accountId];
+  if (!account) return null;
+  return toAccountSummary(account);
+}
+
 export function upsertAccountMeta(accountId: string, patch: AccountMetaPatch): AccountSummary {
   const vault = getVault();
   const current = vault.accounts[accountId] ?? { id: accountId };

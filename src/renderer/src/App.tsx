@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AccountSummary, ImportRefreshTokensResult } from "../../shared/ipc";
+import type { AccountSummary, ConnectivityCheck, ImportRefreshTokensResult } from "../../shared/ipc";
 
 type ExportModalState =
   | { open: false }
@@ -19,9 +19,27 @@ export default function App() {
   const [importResult, setImportResult] = useState<ImportRefreshTokensResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [exportModal, setExportModal] = useState<ExportModalState>({ open: false });
+  const [connectivity, setConnectivity] = useState<ConnectivityCheck[] | null>(null);
+  const [proxyMode, setProxyMode] = useState<"system" | "direct" | "custom">("system");
+  const [proxyRules, setProxyRules] = useState("");
   const viewportRef = useRef<HTMLDivElement | null>(null);
 
   const selected = useMemo(() => [...selectedIds], [selectedIds]);
+  const selectedAccountId = useMemo(() => {
+    if (selected.length !== 1) return null;
+    return selected[0] ?? null;
+  }, [selected]);
+
+  const selectedAccount = useMemo(() => {
+    if (!selectedAccountId) return null;
+    return accounts.find((a) => a.id === selectedAccountId) ?? null;
+  }, [accounts, selectedAccountId]);
+
+  useEffect(() => {
+    if (!selectedAccount) return;
+    setProxyMode(selectedAccount.net.proxy.mode);
+    setProxyRules(selectedAccount.net.proxy.rules ?? "");
+  }, [selectedAccount]);
 
   const refreshAccounts = useCallback(async () => {
     setError(null);
@@ -72,6 +90,42 @@ export default function App() {
       setBusy(false);
     }
   }, [selected]);
+
+  const saveProxy = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const proxy =
+        proxyMode === "custom"
+          ? { mode: "custom" as const, rules: proxyRules }
+          : { mode: proxyMode };
+      await window.desktop.accounts.updateAccountMeta(selectedAccountId, {
+        net: {
+          proxy,
+        },
+      });
+      await refreshAccounts();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [proxyMode, proxyRules, refreshAccounts, selectedAccountId]);
+
+  const runConnectivity = useCallback(async () => {
+    if (!selectedAccountId) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const report = await window.desktop.accounts.testConnectivity(selectedAccountId);
+      setConnectivity(report);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [selectedAccountId]);
 
   const pushViewportBounds = useCallback(async () => {
     const el = viewportRef.current;
@@ -216,6 +270,118 @@ export default function App() {
                 </div>
               </label>
             ))
+          )}
+        </div>
+
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ fontWeight: 600 }}>Per-account proxy</div>
+          {selectedAccountId ? (
+            <div
+              style={{
+                border: "1px solid #2a2f3c",
+                borderRadius: 8,
+                padding: 12,
+                display: "grid",
+                gap: 8,
+              }}
+            >
+              <div style={{ opacity: 0.8, fontSize: 12 }}>
+                Editing account: <span style={{ fontFamily: "ui-monospace, monospace" }}>{selectedAccountId}</span>
+              </div>
+
+              <label style={{ display: "grid", gap: 6 }}>
+                <span style={{ opacity: 0.8, fontSize: 12 }}>Mode</span>
+                <select
+                  value={proxyMode}
+                  onChange={(e) => setProxyMode(e.target.value as typeof proxyMode)}
+                  disabled={busy}
+                  style={{
+                    height: 34,
+                    borderRadius: 8,
+                    border: "1px solid #2a2f3c",
+                    background: "#0f1320",
+                    color: "inherit",
+                    padding: "0 10px",
+                  }}
+                >
+                  <option value="system">system</option>
+                  <option value="direct">direct</option>
+                  <option value="custom">custom</option>
+                </select>
+              </label>
+
+              {proxyMode === "custom" ? (
+                <label style={{ display: "grid", gap: 6 }}>
+                  <span style={{ opacity: 0.8, fontSize: 12 }}>Proxy rules</span>
+                  <input
+                    value={proxyRules}
+                    onChange={(e) => setProxyRules(e.target.value)}
+                    placeholder={"Example: http=127.0.0.1:7890;https=127.0.0.1:7890"}
+                    disabled={busy}
+                    style={{
+                      height: 34,
+                      borderRadius: 8,
+                      border: "1px solid #2a2f3c",
+                      background: "#0f1320",
+                      color: "inherit",
+                      padding: "0 10px",
+                      fontFamily: "ui-monospace, monospace",
+                    }}
+                  />
+                  <div style={{ opacity: 0.7, fontSize: 12 }}>
+                    Credentials in proxy rules (username:password@host) will be rejected.
+                  </div>
+                </label>
+              ) : null}
+
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                <button onClick={saveProxy} disabled={busy}>
+                  Save proxy
+                </button>
+                <button onClick={runConnectivity} disabled={busy}>
+                  Test connectivity
+                </button>
+              </div>
+
+              {connectivity ? (
+                <div style={{ display: "grid", gap: 6 }}>
+                  {connectivity.map((c) => (
+                    <div
+                      key={c.name}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        padding: "8px 10px",
+                        border: "1px solid #2a2f3c",
+                        borderRadius: 8,
+                      }}
+                    >
+                      <div style={{ display: "grid", gap: 2 }}>
+                        <div style={{ fontWeight: 600 }}>{c.name}</div>
+                        <div style={{ opacity: 0.7, fontSize: 12 }}>{c.url}</div>
+                        {c.error ? (
+                          <div style={{ opacity: 0.85, fontSize: 12, whiteSpace: "pre-wrap" }}>
+                            {c.error}
+                          </div>
+                        ) : null}
+                      </div>
+                      <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                        <div style={{ fontWeight: 700, color: c.ok ? "#52d38a" : "#ff5c5c" }}>
+                          {c.ok ? "OK" : "FAIL"}
+                        </div>
+                        <div style={{ opacity: 0.8, fontSize: 12 }}>{c.latencyMs} ms</div>
+                        {typeof c.status === "number" ? (
+                          <div style={{ opacity: 0.7, fontSize: 12 }}>HTTP {c.status}</div>
+                        ) : null}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <div style={{ opacity: 0.7 }}>Select exactly 1 account to edit proxy and run tests.</div>
           )}
         </div>
 

@@ -1,5 +1,7 @@
 import { BrowserView, BrowserWindow, shell } from "electron";
 import type { Rect } from "../../shared/ipc";
+import { getAccount } from "../accounts/vault";
+import { applyProxy } from "../network/proxy";
 
 const FLOWITH_URL = "https://flowith.io";
 
@@ -14,7 +16,7 @@ function isTrustedUrl(rawUrl: string): boolean {
   }
 }
 
-function partitionForAccount(accountId: string): string {
+export function partitionForAccount(accountId: string): string {
   const safe = accountId.replace(/[^a-zA-Z0-9_-]/g, "_");
   return `persist:flowith-web-${safe}`;
 }
@@ -88,7 +90,14 @@ export class WebWorkspaceService {
     });
 
     this.hardenWebContents(view);
-    void view.webContents.loadURL(FLOWITH_URL);
+    void (async () => {
+      try {
+        const account = getAccount(accountId);
+        const proxy = account?.net.proxy ?? { mode: "system" };
+        await applyProxy(view.webContents.session, proxy);
+      } catch {}
+      await view.webContents.loadURL(FLOWITH_URL);
+    })();
     this.views.set(accountId, view);
   }
 

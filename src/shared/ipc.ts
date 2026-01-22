@@ -46,6 +46,15 @@ export type ImportRefreshTokensResult = {
   errors: string[];
 };
 
+export type ConnectivityCheck = {
+  name: string;
+  url: string;
+  ok: boolean;
+  latencyMs: number;
+  status?: number;
+  error?: string;
+};
+
 export type Preferences = {
   locale: "zh-CN" | "en";
   theme: "dark" | "light";
@@ -66,6 +75,7 @@ export type DesktopApi = {
     list(): Promise<AccountSummary[]>;
     importRefreshTokens(text: string): Promise<ImportRefreshTokensResult>;
     exportRefreshTokens(accountIds: string[]): Promise<string>;
+    testConnectivity(accountId: string): Promise<ConnectivityCheck[]>;
     updateAccountMeta(
       accountId: string,
       patch: AccountMetaPatch
@@ -87,6 +97,7 @@ export const IPC_CHANNELS = {
   ACCOUNTS_LIST: "accounts:list",
   ACCOUNTS_IMPORT_REFRESH_TOKENS: "accounts:importRefreshTokens",
   ACCOUNTS_EXPORT_REFRESH_TOKENS: "accounts:exportRefreshTokens",
+  ACCOUNTS_TEST_CONNECTIVITY: "accounts:testConnectivity",
   ACCOUNTS_UPDATE_META: "accounts:updateMeta",
 
   PREFERENCES_GET: "preferences:get",
@@ -117,6 +128,10 @@ export type IpcInvokeMap = {
   [IPC_CHANNELS.ACCOUNTS_EXPORT_REFRESH_TOKENS]: {
     args: [accountIds: string[]];
     result: string;
+  };
+  [IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY]: {
+    args: [accountId: string];
+    result: ConnectivityCheck[];
   };
   [IPC_CHANNELS.ACCOUNTS_UPDATE_META]: {
     args: [accountId: string, patch: AccountMetaPatch];
