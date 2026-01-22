@@ -72,6 +72,10 @@ Endpoints include:
 - Flowith edge (`https://edge.flowith.net`)
 - Supabase (from `FLOWITH_SUPABASE_URL`, when configured)
 
+## Account Info (Credits / Subscription)
+
+The Inspector includes a **Credits / Subscription** section. If the backend API is not integrated/available, clicking **Refresh credits** shows a placeholder message and does not crash the UI.
+
 ## Smoke Checklist
 
 Run the end-to-end manual checklist before release:

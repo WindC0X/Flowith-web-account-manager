@@ -15,6 +15,15 @@ type Theme = "dark" | "light";
 type Locale = "zh-CN" | "en";
 type AccountListViewMode = "cards" | "table";
 
+type AccountInfoStatus = "idle" | "loading" | "ready" | "unavailable";
+type AccountInfoEntry = {
+  status: AccountInfoStatus;
+  subscription: string | null;
+  credits: string | null;
+  updatedAt: number | null;
+  error: string | null;
+};
+
 type UiPreferencesV1 = {
   version: 1;
   theme: Theme;
@@ -25,6 +34,14 @@ type UiPreferencesV1 = {
 
 const UI_PREFERENCES_KEY = "fwd_ui_preferences_v1";
 const LEGACY_SIDEBAR_COLLAPSED_KEY = "fwd_sidebar_collapsed";
+
+const DEFAULT_ACCOUNT_INFO: AccountInfoEntry = {
+  status: "idle",
+  subscription: null,
+  credits: null,
+  updatedAt: null,
+  error: null,
+};
 
 const UI_STRINGS = {
   "zh-CN": {
@@ -77,6 +94,12 @@ const UI_STRINGS = {
     accountIdLabel: "账号 ID",
     fingerprintLabel: "指纹",
     tagsLabel: "标签",
+    accountInfoTitle: "账号信息",
+    subscriptionLabel: "订阅",
+    creditsLabel: "积分",
+    refreshCredits: "刷新积分",
+    updatedAtLabel: "更新时间",
+    accountInfoUnavailable: "账号信息接口暂未接入（占位）",
     uaSectionTitle: "User-Agent",
     uaModeLabel: "模式",
     uaValueLabel: "值",
@@ -152,6 +175,12 @@ const UI_STRINGS = {
     accountIdLabel: "Account id",
     fingerprintLabel: "Fingerprint",
     tagsLabel: "Tags",
+    accountInfoTitle: "Account info",
+    subscriptionLabel: "Subscription",
+    creditsLabel: "Credits",
+    refreshCredits: "Refresh credits",
+    updatedAtLabel: "Updated",
+    accountInfoUnavailable: "Account info API not integrated yet (placeholder).",
     uaSectionTitle: "User-Agent",
     uaModeLabel: "Mode",
     uaValueLabel: "Value",
@@ -193,6 +222,14 @@ function maskFingerprint(fingerprint: string): string {
   if (!fingerprint) return "-";
   if (fingerprint.length <= 6) return fingerprint;
   return `${fingerprint.slice(0, 6)}…${fingerprint.slice(-4)}`;
+}
+
+function formatUpdatedAt(value: number, locale: Locale): string {
+  try {
+    return new Date(value).toLocaleString(locale);
+  } catch {
+    return new Date(value).toISOString();
+  }
 }
 
 function toErrorMessage(error: unknown): string {
@@ -314,6 +351,8 @@ export default function WorkspaceShell() {
   const [connectivity, setConnectivity] = useState<ConnectivityCheck[] | null>(null);
   const [connectivityPopoverOpen, setConnectivityPopoverOpen] = useState(false);
 
+  const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>({});
+
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
 
@@ -329,6 +368,11 @@ export default function WorkspaceShell() {
     if (!focusedAccountId) return null;
     return accounts.find((a) => a.id === focusedAccountId) ?? null;
   }, [accounts, focusedAccountId]);
+
+  const focusedAccountInfo = useMemo(() => {
+    if (!focusedAccountId) return DEFAULT_ACCOUNT_INFO;
+    return accountInfoById[focusedAccountId] ?? DEFAULT_ACCOUNT_INFO;
+  }, [accountInfoById, focusedAccountId]);
 
   useEffect(() => {
     if (!focusedAccount) return;
@@ -385,6 +429,13 @@ export default function WorkspaceShell() {
         const allowed = new Set(list.map((a) => a.id));
         const next = new Set<string>();
         for (const id of prev) if (allowed.has(id)) next.add(id);
+        return next;
+      });
+
+      setAccountInfoById((prev) => {
+        const allowed = new Set(list.map((a) => a.id));
+        const next: Record<string, AccountInfoEntry> = {};
+        for (const [id, info] of Object.entries(prev)) if (allowed.has(id)) next[id] = info;
         return next;
       });
 
@@ -565,6 +616,33 @@ export default function WorkspaceShell() {
       setBusy(false);
     }
   }, [focusedAccountId, refreshAccounts, uaMode, uaValue]);
+
+  const refreshAccountInfo = useCallback(() => {
+    if (!focusedAccountId) return;
+    const accountId = focusedAccountId;
+
+    setAccountInfoById((prev) => {
+      const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
+      return {
+        ...prev,
+        [accountId]: { ...current, status: "loading", error: null },
+      };
+    });
+
+    const message = t("accountInfoUnavailable");
+    setAccountInfoById((prev) => {
+      const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
+      return {
+        ...prev,
+        [accountId]: {
+          ...current,
+          status: "unavailable",
+          error: message,
+          updatedAt: Date.now(),
+        },
+      };
+    });
+  }, [focusedAccountId, t]);
 
   const runConnectivity = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -1124,6 +1202,56 @@ export default function WorkspaceShell() {
                       {focusedAccount.tags.length ? focusedAccount.tags.join(", ") : <span className="muted">-</span>}
                     </div>
                   </div>
+
+                  <div className="section-divider" />
+                  <div className="section-title">{t("accountInfoTitle")}</div>
+                  <div className="field">
+                    <div className="field-label">{t("subscriptionLabel")}</div>
+                    <div className="field-value">
+                      {focusedAccountInfo.subscription ? (
+                        <span className="mono">{focusedAccountInfo.subscription}</span>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">{t("creditsLabel")}</div>
+                    <div className="field-value">
+                      {focusedAccountInfo.credits ? (
+                        <span className="mono">{focusedAccountInfo.credits}</span>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      className="btn"
+                      onClick={refreshAccountInfo}
+                      disabled={busy || !focusedAccountId || focusedAccountInfo.status === "loading"}
+                    >
+                      {t("refreshCredits")}
+                    </button>
+                    {focusedAccountInfo.updatedAt ? (
+                      <span className="muted" style={{ fontSize: 11 }}>
+                        {t("updatedAtLabel")}: {formatUpdatedAt(focusedAccountInfo.updatedAt, uiPrefs.locale)}
+                      </span>
+                    ) : null}
+                    {focusedAccountInfo.status === "loading" ? (
+                      <span className="muted" style={{ fontSize: 11 }}>
+                        …
+                      </span>
+                    ) : null}
+                  </div>
+                  {focusedAccountInfo.error ? (
+                    <div
+                      className="muted"
+                      style={{ marginTop: 8, fontSize: 11, whiteSpace: "pre-wrap" }}
+                    >
+                      {focusedAccountInfo.error}
+                    </div>
+                  ) : null}
 
                   <div className="section-divider" />
                   <div className="section-title">{t("uaSectionTitle")}</div>
