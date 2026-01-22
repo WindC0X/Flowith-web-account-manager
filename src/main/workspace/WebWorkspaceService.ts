@@ -95,7 +95,9 @@ export class WebWorkspaceService {
         const account = getAccount(accountId);
         const proxy = account?.net.proxy ?? { mode: "system" };
         await applyProxy(view.webContents.session, proxy);
-      } catch {}
+      } catch {
+        void 0;
+      }
       await view.webContents.loadURL(FLOWITH_URL);
     })();
     this.views.set(accountId, view);
