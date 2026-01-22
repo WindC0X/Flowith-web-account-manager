@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { AccountSummary, ConnectivityCheck, ImportRefreshTokensResult } from "../../shared/ipc";
+import type { AccountSummary, ConnectivityCheck } from "../../shared/ipc";
 
 type ExportModalState =
   | { open: false }
@@ -15,8 +15,9 @@ export default function App() {
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
-  const [importText, setImportText] = useState("");
-  const [importResult, setImportResult] = useState<ImportRefreshTokensResult | null>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    return window.localStorage.getItem("fwd_sidebar_collapsed") === "1";
+  });
   const [error, setError] = useState<string | null>(null);
   const [exportModal, setExportModal] = useState<ExportModalState>({ open: false });
   const [connectivity, setConnectivity] = useState<ConnectivityCheck[] | null>(null);
@@ -45,6 +46,10 @@ export default function App() {
     setUaValue(selectedAccount.ua.value ?? "");
   }, [selectedAccount]);
 
+  useEffect(() => {
+    window.localStorage.setItem("fwd_sidebar_collapsed", sidebarCollapsed ? "1" : "0");
+  }, [sidebarCollapsed]);
+
   const refreshAccounts = useCallback(async () => {
     setError(null);
     setBusy(true);
@@ -66,21 +71,6 @@ export default function App() {
       return next;
     });
   }, []);
-
-  const runImport = useCallback(async () => {
-    setError(null);
-    setBusy(true);
-    try {
-      const result = await window.desktop.accounts.importRefreshTokens(importText);
-      setImportResult(result);
-      setImportText("");
-      await refreshAccounts();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [importText, refreshAccounts]);
 
   const runExport = useCallback(async () => {
     setError(null);
@@ -236,21 +226,50 @@ export default function App() {
   }, [pushViewportBounds]);
 
   return (
-    <main style={{ padding: 24, maxWidth: 960, margin: "0 auto" }}>
-      <h1 style={{ margin: 0, fontSize: 20 }}>Workspace</h1>
-      <p style={{ marginTop: 8, opacity: 0.75 }}>
-        Minimal IPC demo panel for import/export. (No Node integration in renderer)
-      </p>
-
-      <section style={{ marginTop: 20, display: "grid", gap: 12 }}>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button onClick={refreshAccounts} disabled={busy}>
-            Refresh accounts
-          </button>
-          <span style={{ opacity: 0.8 }}>
-            {accounts.length} account(s) | selected {selected.length}
-          </span>
+    <main style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      <header
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+          padding: "10px 16px",
+          borderBottom: "1px solid #2a2f3c",
+          background: "#0f1320",
+        }}
+      >
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ fontWeight: 700 }}>Topbar</div>
+          <div style={{ opacity: 0.75, fontSize: 12 }}>
+            Flowith Web Account Manager (Desktop MVP)
+          </div>
         </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => setSidebarCollapsed((v) => !v)} disabled={busy}>
+            {sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          </button>
+          <button onClick={runExport} disabled={busy || selected.length === 0}>
+            Export ({selected.length})
+          </button>
+          <button onClick={refreshAccounts} disabled={busy}>
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      <section
+        style={{
+          flex: 1,
+          overflow: "auto",
+          padding: 24,
+          maxWidth: 1200,
+          width: "100%",
+          margin: "0 auto",
+          display: "grid",
+          gap: 12,
+        }}
+      >
 
         {error ? (
           <div style={{ padding: 12, border: "1px solid #ff5c5c", borderRadius: 8 }}>
@@ -260,7 +279,12 @@ export default function App() {
         ) : null}
 
         <div style={{ display: "grid", gap: 8 }}>
-          {accounts.length === 0 ? (
+          <div style={{ fontWeight: 600 }}>Sidebar</div>
+          {sidebarCollapsed ? (
+            <div style={{ opacity: 0.7 }}>
+              Sidebar is collapsed. Use the Topbar button to expand.
+            </div>
+          ) : accounts.length === 0 ? (
             <div style={{ opacity: 0.7 }}>
               No accounts yet. Import refresh_token to create accounts.
             </div>
@@ -296,7 +320,7 @@ export default function App() {
         </div>
 
         <div style={{ display: "grid", gap: 8 }}>
-          <div style={{ fontWeight: 600 }}>Per-account proxy</div>
+          <div style={{ fontWeight: 600 }}>Inspector</div>
           {selectedAccountId ? (
             <div
               style={{
@@ -458,60 +482,6 @@ export default function App() {
           )}
         </div>
 
-        <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
-          <div style={{ fontWeight: 600 }}>Import refresh_token(s)</div>
-          <textarea
-            value={importText}
-            onChange={(e) => setImportText(e.target.value)}
-            rows={6}
-            placeholder={"One refresh_token per line.\\n(No tokens will be logged.)"}
-            style={{
-              width: "100%",
-              resize: "vertical",
-              borderRadius: 8,
-              border: "1px solid #2a2f3c",
-              padding: 10,
-              background: "#0f1320",
-              color: "inherit",
-            }}
-            disabled={busy}
-          />
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={runImport} disabled={busy || !importText.trim()}>
-              Import
-            </button>
-            {importResult ? (
-              <span style={{ opacity: 0.8 }}>
-                imported {importResult.imported} | failed {importResult.failed}
-              </span>
-            ) : null}
-          </div>
-
-          {importResult?.warnings?.length ? (
-            <div style={{ padding: 12, border: "1px solid #caa53b", borderRadius: 8 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Warnings</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {importResult.warnings.map((w, idx) => (
-                  <li key={idx}>{w}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          {importResult?.errors?.length ? (
-            <div style={{ padding: 12, border: "1px solid #ff5c5c", borderRadius: 8 }}>
-              <div style={{ fontWeight: 600, marginBottom: 6 }}>Import errors</div>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {importResult.errors.map((w, idx) => (
-                  <li key={idx} style={{ whiteSpace: "pre-wrap" }}>
-                    {w}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-
         <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
           <div style={{ fontWeight: 600 }}>Export refresh_token(s)</div>
           <button onClick={runExport} disabled={busy || selected.length === 0}>
@@ -523,7 +493,7 @@ export default function App() {
         </div>
 
         <div style={{ display: "grid", gap: 8, marginTop: 10 }}>
-          <div style={{ fontWeight: 600 }}>Web Workspace (BrowserView)</div>
+          <div style={{ fontWeight: 600 }}>Tabs workspace</div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <button onClick={openWorkspaceForSelected} disabled={busy || selected.length !== 1}>
               Open tab for selected
