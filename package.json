@@ -8,6 +8,7 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -29,6 +30,7 @@
     "eslint-plugin-react-hooks": "^7.0.1",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.53.1",
+    "vitest": "^4.0.17",
     "vite": "^7.3.1"
   }
 }

@@ -17,3 +17,8 @@ export function resolveUserAgent(ua: UaConfig): string | null {
   return value;
 }
 
+export function normalizeUaConfig(ua: UaConfig): UaConfig {
+  if (ua.mode === "default") return { mode: "default" };
+  validateUaConfig(ua);
+  return { mode: ua.mode, value: ua.value!.trim() };
+}

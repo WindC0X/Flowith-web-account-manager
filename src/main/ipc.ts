@@ -7,6 +7,7 @@ import {
   type Rect,
 } from "../shared/ipc";
 import { importRefreshTokens } from "./accounts/import";
+import { normalizeAccountMetaPatch } from "./accounts/normalize";
 import { getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
 import { testConnectivity } from "./network/connectivity";
 import { validateProxyConfig } from "./network/proxy";
@@ -174,7 +175,8 @@ export function registerIpcHandlers(deps: IpcDeps) {
         assertObject(patch, "patch");
         const metaPatch = patch as AccountMetaPatch;
         validateAccountMetaPatch(metaPatch);
-        return upsertAccountMeta(accountId, metaPatch);
+        const normalized = normalizeAccountMetaPatch(metaPatch);
+        return upsertAccountMeta(accountId, normalized);
       } catch (e) {
         throw new Error(safeErrorMessage(e));
       }

@@ -1,6 +1,7 @@
 import { safeStorage } from "electron";
 import Store from "electron-store";
 import type { AccountMetaPatch, AccountSummary } from "../../shared/ipc";
+import { normalizeTags } from "../../shared/tags";
 
 type StoredAccountV1 = {
   id: string;
@@ -143,7 +144,7 @@ function toAccountSummary(account: StoredAccountV1): AccountSummary {
 
 function applyPatch(current: StoredAccountV1, patch: AccountMetaPatch): StoredAccountV1 {
   const displayName = patch.displayName ?? current.displayName;
-  const tags = patch.tags ?? current.tags;
+  const tags = patch.tags !== undefined ? normalizeTags(patch.tags) : current.tags;
   const net = patch.net ?? current.net;
   const ua = patch.ua ?? current.ua;
 
