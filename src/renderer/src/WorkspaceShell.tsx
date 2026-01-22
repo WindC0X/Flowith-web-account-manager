@@ -67,15 +67,18 @@ const UI_STRINGS = {
     focusedChip: "当前",
 
     proxyMode: "代理模式",
-    proxySystem: "系统",
-    proxyCustom: "自定义",
-    proxyDirect: "直连",
-    proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
-    proxyDisabledHint: "请选择一个账号后再配置代理/连通性。",
-    saveProxy: "保存代理",
-    connectivity: "连通性测试",
-    connectivityTitle: "连通性",
-    statusOk: "OK",
+	    proxySystem: "系统",
+	    proxyCustom: "自定义",
+	    proxyDirect: "直连",
+	    proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
+	    proxyDisabledHint: "请选择一个账号后再配置代理/连通性。",
+	    networkSectionTitle: "网络",
+	    proxyRulesLabel: "代理地址",
+	    proxyHint: "代理设置按账号生效。修改后通常需要刷新当前 Tab 生效。",
+	    saveProxy: "保存代理",
+	    connectivity: "连通性测试",
+	    connectivityTitle: "连通性",
+	    statusOk: "OK",
     statusFail: "FAIL",
 
     import: "导入",
@@ -157,15 +160,18 @@ const UI_STRINGS = {
     focusedChip: "Focused",
 
     proxyMode: "Proxy mode",
-    proxySystem: "System",
-    proxyCustom: "Custom",
-    proxyDirect: "Direct",
-    proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
-    proxyDisabledHint: "Select an account to configure proxy/connectivity.",
-    saveProxy: "Save proxy",
-    connectivity: "Connectivity",
-    connectivityTitle: "Connectivity",
-    statusOk: "OK",
+	    proxySystem: "System",
+	    proxyCustom: "Custom",
+	    proxyDirect: "Direct",
+	    proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
+	    proxyDisabledHint: "Select an account to configure proxy/connectivity.",
+	    networkSectionTitle: "Network",
+	    proxyRulesLabel: "Proxy",
+	    proxyHint: "Proxy settings apply per-account. Reload the active tab to apply.",
+	    saveProxy: "Save proxy",
+	    connectivity: "Connectivity",
+	    connectivityTitle: "Connectivity",
+	    statusOk: "OK",
     statusFail: "FAIL",
 
     import: "Import",
@@ -805,91 +811,11 @@ export default function WorkspaceShell() {
             <div className="brand-title">Flowith Web Account Manager</div>
             <div className="brand-subtitle">{t("subtitle")}</div>
           </div>
-        </div>
+	        </div>
 
-        <div className="topbar-group topbar-group-net" aria-label="Proxy and connectivity">
-          <select
-            value={proxyMode}
-            onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
-            disabled={busy}
-            aria-label={t("proxyMode")}
-            title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
-          >
-            <option value="system">{t("proxySystem")}</option>
-            <option value="custom">{t("proxyCustom")}</option>
-            <option value="direct">{t("proxyDirect")}</option>
-          </select>
-
-          <input
-            className="input topbar-proxy-rules"
-            type="text"
-            placeholder={t("proxyPlaceholder")}
-            value={proxyRules}
-            onChange={(e) => setProxyRules(e.target.value)}
-            style={{ display: proxyMode === "custom" ? "inline-flex" : "none" }}
-            disabled={busy || !focusedAccountId}
-            title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
-          />
-
-          <button
-            className="btn"
-            onClick={saveProxy}
-            disabled={busy || !focusedAccountId}
-            title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
-          >
-            {t("saveProxy")}
-          </button>
-
-          <div style={{ position: "relative" }}>
-            <button
-              className="btn"
-              onClick={runConnectivity}
-              disabled={busy || !focusedAccountId}
-              title={!focusedAccountId ? t("proxyDisabledHint") : undefined}
-            >
-              {t("connectivity")}
-            </button>
-            {connectivityPopoverOpen && connectivity ? (
-              <div className="popover" ref={connectivityPopoverRef}>
-                <div className="popover-title">{t("connectivityTitle")}</div>
-                <div style={{ display: "grid", gap: 8 }}>
-                  {connectivity.map((c) => (
-                    <div key={c.name} className="popover-row">
-                      <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span className={clsx("dot", c.ok ? "dot-ok" : "dot-bad")} />
-                          <span style={{ fontWeight: 650 }}>{c.name}</span>
-                        </div>
-                        <div
-                          className="muted"
-                          style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}
-                        >
-                          {c.url}
-                        </div>
-                        {c.error ? (
-                          <div className="muted" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
-                            {c.error}
-                          </div>
-                        ) : null}
-                      </div>
-                      <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                        <div style={{ fontWeight: 750 }}>{c.ok ? t("statusOk") : t("statusFail")}</div>
-                        <div className="muted" style={{ fontSize: 11 }}>
-                          {c.latencyMs} ms{typeof c.status === "number" ? ` · HTTP ${c.status}` : ""}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
-          {!focusedAccountId ? <span className="topbar-hint">{t("proxyDisabledHint")}</span> : null}
-        </div>
-
-        <div className="topbar-group topbar-group-right" aria-label="Global actions">
-          <select
-            value={uiPrefs.locale}
+	        <div className="topbar-group topbar-group-right" aria-label="Global actions">
+	          <select
+	            value={uiPrefs.locale}
             onChange={(e) => updateUiPrefs({ locale: e.target.value as Locale })}
             aria-label={t("language")}
             style={{ width: 112 }}
@@ -1288,31 +1214,113 @@ export default function WorkspaceShell() {
                       </span>
                     ) : null}
                   </div>
-                  {focusedAccountInfo.error ? (
-                    <div
-                      className="muted"
-                      style={{ marginTop: 8, fontSize: 11, whiteSpace: "pre-wrap" }}
-                    >
-                      {focusedAccountInfo.error}
-                    </div>
-                  ) : null}
+	                  {focusedAccountInfo.error ? (
+	                    <div
+	                      className="muted"
+	                      style={{ marginTop: 8, fontSize: 11, whiteSpace: "pre-wrap" }}
+	                    >
+	                      {focusedAccountInfo.error}
+	                    </div>
+	                  ) : null}
 
-                  <div className="section-divider" />
-                  <div className="section-title">{t("uaSectionTitle")}</div>
-                  <div className="setting-grid">
-                    <div className="setting-row">
-                      <div className="muted">{t("uaModeLabel")}</div>
-                  <select
-                    value={uaMode}
-                    onChange={(e) => setUaMode(e.target.value as UaMode)}
-                    disabled={busy}
-                    aria-label="User-Agent mode"
-                  >
-                    <option value="default">{t("uaDefault")}</option>
-                    <option value="preset">{t("uaPreset")}</option>
-                    <option value="custom">{t("uaCustom")}</option>
-                  </select>
-                </div>
+	                  <div className="section-divider" />
+	                  <div className="section-title">{t("networkSectionTitle")}</div>
+	                  <div className="setting-grid">
+	                    <div className="setting-row">
+	                      <div className="muted">{t("proxyMode")}</div>
+	                      <select
+	                        value={proxyMode}
+	                        onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
+	                        disabled={busy}
+	                        aria-label={t("proxyMode")}
+	                      >
+	                        <option value="system">{t("proxySystem")}</option>
+	                        <option value="custom">{t("proxyCustom")}</option>
+	                        <option value="direct">{t("proxyDirect")}</option>
+	                      </select>
+	                    </div>
+
+	                    {proxyMode === "custom" ? (
+	                      <div className="setting-row">
+	                        <div className="muted">{t("proxyRulesLabel")}</div>
+	                        <input
+	                          className="input mono"
+	                          type="text"
+	                          placeholder={t("proxyPlaceholder")}
+	                          value={proxyRules}
+	                          onChange={(e) => setProxyRules(e.target.value)}
+	                          disabled={busy}
+	                        />
+	                      </div>
+	                    ) : null}
+	                  </div>
+
+	                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+	                    <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
+	                      {t("saveProxy")}
+	                    </button>
+	                    <div style={{ position: "relative" }}>
+	                      <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
+	                        {t("connectivity")}
+	                      </button>
+	                      {connectivityPopoverOpen && connectivity ? (
+	                        <div className="popover" ref={connectivityPopoverRef}>
+	                          <div className="popover-title">{t("connectivityTitle")}</div>
+	                          <div style={{ display: "grid", gap: 8 }}>
+	                            {connectivity.map((c) => (
+	                              <div key={c.name} className="popover-row">
+	                                <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+	                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+	                                    <span className={clsx("dot", c.ok ? "dot-ok" : "dot-bad")} />
+	                                    <span style={{ fontWeight: 650 }}>{c.name}</span>
+	                                  </div>
+	                                  <div
+	                                    className="muted"
+	                                    style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}
+	                                  >
+	                                    {c.url}
+	                                  </div>
+	                                  {c.error ? (
+	                                    <div className="muted" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
+	                                      {c.error}
+	                                    </div>
+	                                  ) : null}
+	                                </div>
+	                                <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+	                                  <div style={{ fontWeight: 750 }}>{c.ok ? t("statusOk") : t("statusFail")}</div>
+	                                  <div className="muted" style={{ fontSize: 11 }}>
+	                                    {c.latencyMs} ms
+	                                    {typeof c.status === "number" ? ` · HTTP ${c.status}` : ""}
+	                                  </div>
+	                                </div>
+	                              </div>
+	                            ))}
+	                          </div>
+	                        </div>
+	                      ) : null}
+	                    </div>
+	                  </div>
+
+	                  <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+	                    {t("proxyHint")}
+	                  </div>
+
+	                  <div className="section-divider" />
+	                  <div className="section-title">{t("uaSectionTitle")}</div>
+	                  <div className="setting-grid">
+	                    <div className="setting-row">
+	                      <div className="muted">{t("uaModeLabel")}</div>
+	                      <select
+	                        value={uaMode}
+	                        onChange={(e) => setUaMode(e.target.value as UaMode)}
+	                        disabled={busy}
+	                        aria-label="User-Agent mode"
+	                      >
+	                        <option value="default">{t("uaDefault")}</option>
+	                        <option value="preset">{t("uaPreset")}</option>
+	                        <option value="custom">{t("uaCustom")}</option>
+	                      </select>
+	                    </div>
 
                     {uaMode === "default" ? null : (
                       <div className="setting-row">
