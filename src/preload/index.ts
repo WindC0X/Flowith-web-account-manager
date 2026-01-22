@@ -1,2 +1,29 @@
-export {};
+import { contextBridge, ipcRenderer } from "electron";
+import { IPC_CHANNELS, type DesktopApi, type IpcArgs, type IpcChannel, type IpcResult } from "../shared/ipc";
+
+function invoke<K extends IpcChannel>(channel: K, ...args: IpcArgs<K>): Promise<IpcResult<K>> {
+  return ipcRenderer.invoke(channel, ...args) as Promise<IpcResult<K>>;
+}
+
+const api: DesktopApi = {
+  workspace: {
+    openTab: (accountId) => invoke(IPC_CHANNELS.WORKSPACE_OPEN_TAB, accountId),
+    closeTab: (accountId) => invoke(IPC_CHANNELS.WORKSPACE_CLOSE_TAB, accountId),
+    setActiveTab: (accountId) => invoke(IPC_CHANNELS.WORKSPACE_SET_ACTIVE_TAB, accountId),
+    setViewportBounds: (bounds) => invoke(IPC_CHANNELS.WORKSPACE_SET_VIEWPORT_BOUNDS, bounds),
+    reloadActive: () => invoke(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE),
+  },
+  accounts: {
+    list: () => invoke(IPC_CHANNELS.ACCOUNTS_LIST),
+    importRefreshTokens: (text) => invoke(IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS, text),
+    exportRefreshTokens: (accountIds) => invoke(IPC_CHANNELS.ACCOUNTS_EXPORT_REFRESH_TOKENS, accountIds),
+    updateAccountMeta: (accountId, patch) => invoke(IPC_CHANNELS.ACCOUNTS_UPDATE_META, accountId, patch),
+  },
+  preferences: {
+    get: () => invoke(IPC_CHANNELS.PREFERENCES_GET),
+    update: (patch) => invoke(IPC_CHANNELS.PREFERENCES_UPDATE, patch),
+  },
+};
+
+contextBridge.exposeInMainWorld("desktop", api);
 
