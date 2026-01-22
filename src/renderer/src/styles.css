@@ -309,9 +309,7 @@ textarea:focus {
 
 .topbar-group-right {
   flex: 1;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  flex-wrap: wrap;
   justify-content: flex-end;
 }
 
