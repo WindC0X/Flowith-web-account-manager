@@ -1,0 +1,2975 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Flowith Web Account Manager — UI Demo</title>
+    <style>
+      :root {
+        color-scheme: dark;
+
+        --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+
+        --color-background-primary: #121516;
+        --color-background-elevated: rgba(255, 255, 255, 0.02);
+        --color-background-glass: rgba(255, 255, 255, 0.04);
+
+        --color-text-primary: #f1f1f2;
+        --color-text-secondary: #a3a3a3;
+        --color-text-tertiary: #737373;
+
+        --color-border-default: rgba(255, 255, 255, 0.06);
+        --color-border-hover: rgba(255, 255, 255, 0.1);
+        --color-border-subtle: rgba(255, 255, 255, 0.04);
+
+        --color-accent-primary: #8b5cf6;
+        --color-accent-hover: #7c3aed;
+        --color-accent-subtle: rgba(139, 92, 246, 0.12);
+
+        --color-bg-primary: var(--color-background-primary);
+        --color-bg-secondary: #0c0c0e;
+        --color-bg-tertiary: #1f1f23;
+        --color-bg-card: #1a1a1e;
+
+        --surface-workspace: #0b0b0d;
+        --surface-tabs: rgba(18, 21, 22, 0.9);
+        --surface-popover: rgba(18, 21, 22, 0.92);
+        --surface-tab-active: #0b0b0d;
+
+        --glass-highlight: rgba(255, 255, 255, 0.03);
+        --color-backdrop: rgba(0, 0, 0, 0.65);
+
+        --ease-spring-smooth: cubic-bezier(0.43, 0.195, 0.02, 1);
+
+        --shadow-glass: 0 20px 60px rgba(0, 0, 0, 0.35);
+        --shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.45);
+
+        --radius-sm: 6px;
+        --radius-md: 10px;
+        --radius-lg: 14px;
+      }
+
+      :root[data-theme="light"] {
+        color-scheme: light;
+
+        --color-background-primary: #f6f7f9;
+        --color-background-elevated: rgba(15, 23, 42, 0.02);
+        --color-background-glass: rgba(15, 23, 42, 0.04);
+
+        --color-text-primary: #0b0b0d;
+        --color-text-secondary: #334155;
+        --color-text-tertiary: #64748b;
+
+        --color-border-default: rgba(15, 23, 42, 0.12);
+        --color-border-hover: rgba(15, 23, 42, 0.2);
+        --color-border-subtle: rgba(15, 23, 42, 0.08);
+
+        --color-bg-primary: var(--color-background-primary);
+        --color-bg-secondary: #ffffff;
+        --color-bg-tertiary: #eef2f7;
+        --color-bg-card: rgba(255, 255, 255, 0.92);
+
+        --surface-workspace: #eef2f7;
+        --surface-tabs: rgba(255, 255, 255, 0.86);
+        --surface-popover: rgba(255, 255, 255, 0.92);
+        --surface-tab-active: #ffffff;
+
+        --glass-highlight: rgba(0, 0, 0, 0.025);
+        --color-backdrop: rgba(15, 23, 42, 0.35);
+
+        --shadow-glass: 0 20px 60px rgba(15, 23, 42, 0.14);
+        --shadow-popover: 0 14px 40px rgba(15, 23, 42, 0.16);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        height: 100%;
+      }
+
+      body {
+        margin: 0;
+        background: var(--color-background-primary);
+        color: var(--color-text-primary);
+        font-family: var(--font-sans);
+        overflow: hidden;
+      }
+
+      .glass {
+        background-color: var(--color-bg-card);
+        backdrop-filter: blur(16px);
+        border: 1px solid var(--color-border-subtle);
+        background-image: linear-gradient(to bottom, var(--glass-highlight), transparent);
+      }
+
+      .btn {
+        height: 32px;
+        padding: 0 10px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border-subtle);
+        background: var(--color-bg-tertiary);
+        color: var(--color-text-secondary);
+        font-size: 12px;
+        cursor: pointer;
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: center;
+        transition: transform 0.05s ease, background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+      }
+
+      .btn:hover {
+        border-color: var(--color-border-default);
+        color: var(--color-text-primary);
+      }
+
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .btn:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+        border-color: rgba(139, 92, 246, 0.6);
+      }
+
+      .btn-primary {
+        background: var(--color-accent-primary);
+        color: #ffffff;
+        border-color: rgba(255, 255, 255, 0.06);
+      }
+
+      .btn-primary:hover {
+        background: var(--color-accent-hover);
+      }
+
+      .btn-ghost {
+        background: transparent;
+      }
+
+      .btn-danger {
+        background: rgba(239, 68, 68, 0.1);
+        border-color: rgba(239, 68, 68, 0.25);
+        color: rgba(248, 113, 113, 1);
+      }
+
+      .btn-danger:hover {
+        background: rgba(239, 68, 68, 0.16);
+        border-color: rgba(239, 68, 68, 0.35);
+        color: rgba(254, 202, 202, 1);
+      }
+
+      .btn-icon {
+        width: 32px;
+        padding: 0;
+      }
+
+      .input,
+      select,
+      textarea {
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border-subtle);
+        background: var(--color-bg-tertiary);
+        color: var(--color-text-primary);
+        font-size: 12px;
+      }
+
+      .input,
+      select {
+        height: 32px;
+        padding: 0 10px;
+      }
+
+      textarea {
+        padding: 10px;
+        min-height: 140px;
+        resize: vertical;
+      }
+
+      .input:focus,
+      select:focus,
+      textarea:focus {
+        outline: none;
+        border-color: rgba(139, 92, 246, 0.6);
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+      }
+
+      .muted {
+        color: var(--color-text-secondary);
+      }
+
+      .mono {
+        font-family: var(--font-mono);
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border-subtle);
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 11px;
+        color: var(--color-text-secondary);
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+      }
+
+      .dot-ok {
+        background: #10b981;
+        box-shadow: 0 0 10px rgba(16, 185, 129, 0.35);
+      }
+
+      .dot-warn {
+        background: #f59e0b;
+        box-shadow: 0 0 10px rgba(245, 158, 11, 0.35);
+      }
+
+      .dot-bad {
+        background: #ef4444;
+        box-shadow: 0 0 10px rgba(239, 68, 68, 0.35);
+      }
+
+      .dot-net {
+        background: #60a5fa;
+        box-shadow: 0 0 10px rgba(96, 165, 250, 0.35);
+      }
+
+      .app {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .topbar {
+        height: 54px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 0 14px;
+        border-bottom: 1px solid var(--color-border-default);
+        background: var(--color-background-primary);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 220px;
+      }
+
+      .brand-dot {
+        width: 10px;
+        height: 10px;
+        border-radius: 999px;
+        background: var(--color-accent-primary);
+        box-shadow: 0 0 18px rgba(139, 92, 246, 0.45);
+      }
+
+      .brand-title {
+        font-weight: 700;
+        font-size: 13px;
+        line-height: 1.05;
+        letter-spacing: -0.01em;
+      }
+
+      .brand-subtitle {
+        font-size: 10px;
+        color: var(--color-text-tertiary);
+        margin-top: 1px;
+      }
+
+      .topbar-group {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      .divider {
+        width: 1px;
+        height: 20px;
+        background: var(--color-border-subtle);
+      }
+
+      .popover {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 0;
+        width: 320px;
+        border-radius: var(--radius-md);
+        background: var(--surface-popover);
+        border: 1px solid var(--color-border-default);
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow-popover);
+        padding: 10px;
+        z-index: 50;
+      }
+
+      .popover-title {
+        font-size: 11px;
+        color: var(--color-text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 8px;
+        font-weight: 700;
+      }
+
+      .popover-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 8px;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--color-border-subtle);
+        background: var(--color-background-glass);
+        font-size: 12px;
+      }
+
+      .popover-row + .popover-row {
+        margin-top: 8px;
+      }
+
+      .layout {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        --sidebar-width: 340px;
+        --inspector-width: 360px;
+        grid-template-columns: var(--sidebar-width) 1fr var(--inspector-width);
+        position: relative;
+      }
+
+      .layout.inspector-hidden {
+        --inspector-width: 0px;
+      }
+
+      .layout.sidebar-collapsed {
+        --sidebar-width: 54px;
+      }
+
+      .sidebar {
+        border-right: 1px solid var(--color-border-default);
+        background: var(--color-bg-primary);
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        z-index: 2;
+      }
+
+      .sidebar.collapsed {
+        width: 54px;
+      }
+
+      .sidebar.collapsed .sidebar-title,
+      .sidebar.collapsed .sidebar-subheader,
+      .sidebar.collapsed .account-list,
+      .sidebar.collapsed .batchbar,
+      .sidebar.collapsed #btnViewCards,
+      .sidebar.collapsed #btnViewTable {
+        display: none;
+      }
+
+      .sidebar.collapsed .sidebar-header {
+        justify-content: center;
+        padding: 12px 10px;
+      }
+
+      .sidebar-header {
+        padding: 12px 12px 10px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid var(--color-border-subtle);
+      }
+
+      .sidebar-title {
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .sidebar-header-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .sidebar-subheader {
+        padding: 10px 12px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        border-bottom: 1px solid var(--color-border-subtle);
+      }
+
+      .checkbox {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        user-select: none;
+      }
+
+      .checkbox input {
+        width: 14px;
+        height: 14px;
+      }
+
+      .account-list {
+        padding: 10px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .account {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        padding: 10px;
+        background: rgba(255, 255, 255, 0.02);
+        transition: border-color 0.15s ease, transform 0.06s ease, background-color 0.15s ease;
+      }
+
+      .account:hover {
+        border-color: var(--color-border-default);
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .account:active {
+        transform: translateY(1px);
+      }
+
+      .account + .account {
+        margin-top: 8px;
+      }
+
+      .account.selected {
+        border-color: rgba(139, 92, 246, 0.6);
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.12);
+      }
+
+      .account:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+      }
+
+      .account-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .account-main {
+        min-width: 0;
+      }
+
+      .account-name {
+        font-size: 13px;
+        font-weight: 650;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .account-subtitle {
+        margin-top: 4px;
+        font-size: 11px;
+        color: var(--color-text-tertiary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .account-meta {
+        margin-top: 6px;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 6px;
+        color: var(--color-text-secondary);
+        font-size: 11px;
+      }
+
+      .account-meta .chip {
+        padding: 2px 7px;
+      }
+
+      .account-tags {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 8px;
+      }
+
+      .tag-chip {
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid var(--color-border-subtle);
+        background: rgba(255, 255, 255, 0.03);
+        font-size: 11px;
+        color: var(--color-text-secondary);
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tag-chip.tag-edit {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding-right: 6px;
+      }
+
+      .tag-remove {
+        width: 16px;
+        height: 16px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--color-text-tertiary);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0;
+        font: inherit;
+        line-height: 1;
+      }
+
+      .tag-remove:hover {
+        border-color: var(--color-border-subtle);
+        color: var(--color-text-primary);
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .tag-remove:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.18);
+        border-color: rgba(139, 92, 246, 0.6);
+      }
+
+      .tags-editor {
+        margin-top: 8px;
+      }
+
+      .tags-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .tags-add {
+        margin-top: 10px;
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+
+      .account-table {
+        display: none;
+      }
+
+      .view-table .account {
+        padding: 0;
+      }
+
+      .view-table .account-row,
+      .view-table .account-meta,
+      .view-table .account-tags {
+        display: none;
+      }
+
+      .view-table .account-table {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) 44px 72px 32px 54px;
+        gap: 6px;
+        align-items: center;
+        padding: 10px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        min-width: 0;
+      }
+
+      .view-table .account-table-title {
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+
+      .view-table .account-table-name {
+        color: var(--color-text-primary);
+        font-weight: 650;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+
+      .view-table .account-table-tags {
+        display: flex;
+        gap: 4px;
+        flex-wrap: nowrap;
+        overflow: hidden;
+        min-width: 0;
+      }
+
+      .view-table .account-table-tags .tag-chip {
+        padding: 2px 6px;
+        font-size: 10px;
+        flex: none;
+      }
+
+      .view-table .account-table span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        min-width: 0;
+      }
+
+      @media (max-width: 520px) {
+        .view-table .account-table {
+          grid-template-columns: 22px minmax(0, 1fr) 64px;
+        }
+
+        .view-table .account-table > :nth-child(3),
+        .view-table .account-table > :nth-child(4),
+        .view-table .account-table > :nth-child(5) {
+          display: none;
+        }
+
+        .view-table .account-table > :nth-child(6) {
+          justify-self: end;
+        }
+      }
+
+      .batchbar {
+        margin: 10px;
+        padding: 10px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--color-border-default);
+        background: var(--surface-popover);
+        backdrop-filter: blur(14px);
+        box-shadow: var(--shadow-glass);
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .batchbar-left {
+        color: var(--color-text-secondary);
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .batchbar-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .workspace {
+        background: radial-gradient(900px 420px at 20% 0%, rgba(139, 92, 246, 0.12), transparent 60%), var(--surface-workspace);
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .tabs {
+        border-bottom: 1px solid var(--color-border-default);
+        background: var(--surface-tabs);
+        backdrop-filter: blur(12px);
+        padding: 8px 10px 0;
+        display: flex;
+        gap: 8px;
+        overflow: auto;
+        scrollbar-width: thin;
+        min-width: 0;
+      }
+
+      .tab {
+        height: 34px;
+        padding: 0 10px;
+        border-radius: var(--radius-md) var(--radius-md) 0 0;
+        border: 1px solid var(--color-border-subtle);
+        border-bottom: none;
+        background: rgba(255, 255, 255, 0.03);
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        cursor: pointer;
+        color: var(--color-text-secondary);
+        max-width: 220px;
+        white-space: nowrap;
+      }
+
+      .tab:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-border-default);
+      }
+
+      .tab:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+        border-color: rgba(139, 92, 246, 0.6);
+      }
+
+      .tab.active {
+        background: var(--surface-tab-active);
+        color: var(--color-text-primary);
+        border-top: 2px solid var(--color-accent-primary);
+      }
+
+      .tab-title {
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .tab-close {
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid transparent;
+        color: var(--color-text-tertiary);
+        flex: none;
+        background: transparent;
+        padding: 0;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .tab-close:hover {
+        border-color: var(--color-border-subtle);
+        color: var(--color-text-primary);
+        background: rgba(255, 255, 255, 0.04);
+      }
+
+      .tab-close:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+        border-color: rgba(139, 92, 246, 0.6);
+      }
+
+      .tab-content {
+        flex: 1;
+        min-height: 0;
+        padding: 14px;
+        overflow: auto;
+        min-width: 0;
+      }
+
+      .content-card {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 14px;
+        border-radius: var(--radius-lg);
+      }
+
+      .content-title {
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
+      }
+
+      .content-subtitle {
+        margin-top: 6px;
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        line-height: 1.45;
+      }
+
+      .kv {
+        margin-top: 12px;
+        display: grid;
+        grid-template-columns: 130px 1fr;
+        gap: 8px;
+        font-size: 12px;
+      }
+
+      .kv .k {
+        color: var(--color-text-tertiary);
+        font-family: var(--font-mono);
+      }
+
+      .kv .v {
+        color: var(--color-text-primary);
+        font-family: var(--font-mono);
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .inspector {
+        border-left: 1px solid var(--color-border-default);
+        background: var(--color-bg-primary);
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        z-index: 2;
+      }
+
+      .inspector-header {
+        padding: 12px;
+        border-bottom: 1px solid var(--color-border-subtle);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .inspector-title {
+        font-weight: 700;
+        font-size: 12px;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+      }
+
+      .inspector-body {
+        padding: 12px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
+        flex: 1;
+      }
+
+      .field {
+        margin-bottom: 10px;
+      }
+
+      .field-label {
+        font-size: 10px;
+        color: var(--color-text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 4px;
+      }
+
+      .field-value {
+        font-size: 12px;
+        color: var(--color-text-primary);
+        line-height: 1.4;
+        word-break: break-word;
+      }
+
+      .inspector-actions {
+        padding: 12px;
+        border-top: 1px solid var(--color-border-subtle);
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        background: rgba(255, 255, 255, 0.01);
+      }
+
+      .section-divider {
+        margin: 14px 0 12px;
+        border-top: 1px solid var(--color-border-subtle);
+      }
+
+      .section-title {
+        font-size: 10px;
+        color: var(--color-text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 8px;
+      }
+
+      .setting-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .setting-row {
+        display: grid;
+        grid-template-columns: 120px 1fr;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+      }
+
+      .setting-row > * {
+        min-width: 0;
+      }
+
+      .setting-row input,
+      .setting-row select,
+      .setting-row textarea {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .setting-row.full {
+        grid-column: 1 / -1;
+        align-items: start;
+      }
+
+      .setting-label {
+        font-size: 11px;
+        color: var(--color-text-tertiary);
+        font-family: var(--font-mono);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .setting-actions {
+        grid-column: 2;
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 8px;
+        flex-wrap: wrap;
+      }
+
+      #accUserAgent {
+        min-height: 84px;
+      }
+
+      @media (max-width: 1080px) {
+        .setting-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .setting-actions {
+          grid-column: 1 / -1;
+          justify-content: flex-start;
+        }
+      }
+
+      dialog {
+        width: min(720px, calc(100vw - 40px));
+        border: 1px solid var(--color-border-hover);
+        border-radius: 16px;
+        padding: 0;
+        background: var(--surface-popover);
+        backdrop-filter: blur(16px);
+        box-shadow: var(--shadow-glass);
+      }
+
+      dialog::backdrop {
+        background: var(--color-backdrop);
+        backdrop-filter: blur(2px);
+      }
+
+      .modal {
+        padding: 14px;
+      }
+
+      .modal-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .modal-title {
+        font-weight: 750;
+        font-size: 13px;
+      }
+
+      .modal-note {
+        font-size: 12px;
+        color: var(--color-text-secondary);
+        line-height: 1.45;
+        margin: 10px 0 0;
+      }
+
+      .modal-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+        flex-wrap: wrap;
+      }
+
+      .danger-note {
+        border-radius: var(--radius-md);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        background: rgba(239, 68, 68, 0.1);
+        padding: 10px;
+        color: rgba(254, 202, 202, 1);
+        font-size: 12px;
+        line-height: 1.45;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-dot"></div>
+          <div>
+            <div class="brand-title">Flowith Web Account Manager</div>
+            <div class="brand-subtitle" id="brandSubtitle">UI Demo · token 导入/导出 · 多账号并行 Tabs</div>
+          </div>
+        </div>
+
+        <button class="btn btn-ghost btn-icon" id="btnToggleSidebarTop" title="展开账号面板" aria-label="展开账号面板" style="display: none">
+          ☰
+        </button>
+
+        <div class="divider"></div>
+
+        <div class="topbar-group">
+          <select id="proxyMode" aria-label="代理模式">
+            <option value="system">System</option>
+            <option value="custom">Custom</option>
+            <option value="direct">Direct</option>
+          </select>
+          <input id="proxyCustom" class="input" type="text" placeholder="http://127.0.0.1:7890 或 socks5://127.0.0.1:7891" style="display: none; width: 260px" />
+
+          <div style="position: relative">
+            <button class="btn" id="btnTestConnectivity">连通性测试</button>
+            <div class="popover" id="connPopover" style="display: none">
+              <div class="popover-title" id="connTitle">Connectivity</div>
+              <div id="connRows"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="spacer"></div>
+
+        <div class="topbar-group">
+          <select id="uiLang" aria-label="语言" style="width: 112px">
+            <option value="zh-CN">简体中文</option>
+            <option value="en">English</option>
+          </select>
+          <select id="themeMode" aria-label="主题" style="width: 92px">
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+          <input id="search" class="input" type="text" placeholder="搜索：email / userId / tag" style="width: 220px" />
+          <button class="btn" id="btnImport">导入</button>
+          <button class="btn" id="btnExport">导出</button>
+          <button class="btn" id="btnBatchVerify">批量校验</button>
+          <button class="btn btn-primary" id="btnBatchOpen">批量打开（Tab）</button>
+        </div>
+      </header>
+
+      <div class="layout inspector-hidden" id="layout">
+        <aside class="sidebar" id="sidebar">
+          <div class="sidebar-header">
+            <div class="sidebar-title" id="sidebarTitle">账号</div>
+            <div class="sidebar-header-right">
+              <button class="btn btn-ghost btn-icon" id="btnToggleSidebar" title="折叠账号面板" aria-label="折叠账号面板">«</button>
+              <button class="btn btn-ghost btn-icon" id="btnViewCards" title="卡片视图">▦</button>
+              <button class="btn btn-ghost btn-icon" id="btnViewTable" title="表格视图">☰</button>
+            </div>
+          </div>
+
+          <div class="sidebar-subheader">
+            <label class="checkbox"><input type="checkbox" id="selectAll" /> <span id="labelSelectAll">全选</span></label>
+            <div class="muted" id="selectionHint">已选择 0 个</div>
+          </div>
+
+          <div class="account-list" id="accountList"></div>
+
+          <div class="batchbar" id="batchbar" style="display: none">
+            <div class="batchbar-left" id="batchbarLeft">已选择 0 个</div>
+            <div class="batchbar-actions">
+              <button class="btn btn-primary" id="btnBatchbarOpen">打开</button>
+              <button class="btn" id="btnBatchbarCloseTabs">关闭 Tab</button>
+              <button class="btn" id="btnBatchbarVerify">校验</button>
+              <button class="btn" id="btnBatchbarExport">导出</button>
+              <button class="btn btn-danger" id="btnBatchbarDelete">删除</button>
+            </div>
+          </div>
+        </aside>
+
+        <main class="workspace">
+          <div class="tabs" id="tabs" role="tablist" aria-label="账号标签页"></div>
+          <div class="tab-content">
+            <div class="content-card glass" id="contentCard">
+              <div class="content-title" id="workspaceTitle">Flowith Web 工作区（占位 UI）</div>
+              <div class="content-subtitle" id="workspaceSubtitle">
+                Demo 只展示 UI 结构：右侧将来会以独立 Browser Session/Partition 加载 <span class="mono">flowith.io</span>，并支持多账号并行。
+              </div>
+              <div class="kv" id="contentKv"></div>
+            </div>
+          </div>
+        </main>
+
+        <aside class="inspector" id="inspector" style="display: none">
+          <div class="inspector-header">
+            <div class="inspector-title" id="inspectorTitle">账号详情</div>
+            <button class="btn btn-icon" id="btnCloseInspector" title="关闭">×</button>
+          </div>
+          <div class="inspector-body" id="inspectorBody"></div>
+          <div class="inspector-actions">
+            <button class="btn btn-primary" id="btnInspectorOpenTab">打开 Tab</button>
+            <button class="btn" id="btnInspectorCloseTab">关闭 Tab</button>
+            <button class="btn" id="btnInspectorVerify">校验</button>
+            <button class="btn btn-danger" id="btnInspectorDelete">删除</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <dialog id="importDialog">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <div class="modal-title" id="importDialogTitle">导入 refresh_token</div>
+            <div class="modal-note" id="importDialogNote">每行一个 <span class="mono">refresh_token</span>。导入后账号状态为“未校验”。</div>
+          </div>
+          <button class="btn btn-icon" id="btnCloseImport" title="关闭">×</button>
+        </div>
+
+        <div class="modal-grid">
+          <textarea id="importTextarea" placeholder="每行一个 refresh_token（此 demo 中请用伪 token 字符串）"></textarea>
+          <div class="muted" id="importHint">提示：UI 中只显示 token 指纹/掩码；导出才会输出明文。</div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn" id="btnImportCancel">取消</button>
+          <button class="btn btn-primary" id="btnImportCommit">导入</button>
+        </div>
+      </div>
+    </dialog>
+
+    <dialog id="exportDialog">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <div class="modal-title" id="exportDialogTitle">导出 refresh_token</div>
+            <div class="modal-note" id="exportDialogNote">将导出当前勾选账号的 <span class="mono">refresh_token</span>（每行一个）。</div>
+          </div>
+          <button class="btn btn-icon" id="btnCloseExport" title="关闭">×</button>
+        </div>
+
+        <div class="danger-note" id="exportDangerNote">
+          注意：导出内容属于敏感凭据。真实产品中请配合主密码/系统密钥链，并提供“锁定/清空”能力；UI 与日志中必须始终脱敏。
+        </div>
+
+        <div class="modal-grid">
+          <textarea id="exportTextarea" class="mono" placeholder="这里将显示导出的 token（demo 使用伪 token）"></textarea>
+          <div class="muted" id="exportHint">选择账号后打开导出窗口；可复制到剪贴板或下载 txt。</div>
+        </div>
+
+        <div class="modal-actions">
+          <button class="btn" id="btnExportCopy">复制</button>
+          <button class="btn" id="btnExportDownload">下载 txt</button>
+          <button class="btn btn-primary" id="btnExportDone">完成</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script>
+      const state = {
+        view: "cards",
+        proxyMode: "system",
+        proxyCustom: "",
+        uiLang: "zh-CN",
+        uiTheme: "dark",
+        accounts: [],
+        selectedIds: new Set(),
+        focusedAccountId: null,
+        tabs: [],
+        activeTabId: null
+      };
+
+      try {
+        const savedProxy = localStorage.getItem("flowith_proxy_config");
+        if (savedProxy) {
+          const p = JSON.parse(savedProxy);
+          const allowed = new Set(["system", "custom", "direct"]);
+          if (p?.mode && allowed.has(p.mode)) state.proxyMode = p.mode;
+          if (typeof p?.custom === "string") state.proxyCustom = p.custom;
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        const savedTheme = localStorage.getItem("flowith_ui_theme");
+        if (savedTheme === "dark" || savedTheme === "light") state.uiTheme = savedTheme;
+      } catch {
+        // ignore
+      }
+
+      document.documentElement.setAttribute("data-theme", state.uiTheme);
+
+      try {
+        const savedLang = localStorage.getItem("flowith_ui_lang");
+        if (savedLang === "zh-CN" || savedLang === "en") state.uiLang = savedLang;
+      } catch {
+        // ignore
+      }
+
+      document.documentElement.lang = state.uiLang;
+
+      const el = (id) => document.getElementById(id);
+
+      const STRINGS = {
+        "zh-CN": {
+          "brand.subtitle": "UI Demo · token 导入/导出 · 多账号并行 Tabs",
+          "ui.lang.aria": "语言",
+          "ui.theme.aria": "主题",
+          "lang.zh": "简体中文",
+          "lang.en": "English",
+          "theme.dark": "暗色",
+          "theme.light": "亮色",
+          "proxy.mode.aria": "代理模式",
+          "proxy.system": "系统",
+          "proxy.custom": "自定义",
+          "proxy.direct": "直连",
+          "proxy.custom.placeholder": "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
+          "btn.connectivity": "连通性测试",
+          "conn.title": "连通性",
+          "conn.ok": "可达",
+          "conn.fail": "失败",
+          "search.placeholder": "搜索：email / userId / tag",
+          "btn.import": "导入",
+          "btn.export": "导出",
+          "btn.batchVerify": "批量校验",
+          "btn.batchOpen": "批量打开（Tab）",
+          "sidebar.title": "账号",
+          "sidebar.view.cards": "卡片视图",
+          "sidebar.view.table": "表格视图",
+          "sidebar.toggle.collapse": "折叠账号面板",
+          "sidebar.toggle.expand": "展开账号面板",
+          "select.all": "全选",
+          "selection.hint": "已选择 {count} 个",
+          "batchbar.left": "已选择 {count} 个",
+          "tabs.ariaLabel": "账号标签页",
+          "batch.open": "打开",
+          "batch.closeTab": "关闭 Tab",
+          "batch.verify": "校验",
+          "batch.export": "导出",
+          "batch.delete": "删除",
+          "workspace.title": "Flowith Web 工作区（占位 UI）",
+          "workspace.subtitle":
+            "Demo 只展示 UI 结构：右侧将来会以独立 Browser Session/Partition 加载 <span class=\"mono\">flowith.io</span>，并支持多账号并行。",
+          "workspace.hint": "在账号列表中勾选并点击「批量打开（Tab）」",
+          "workspace.content": "此处将来会加载 flowith.io（demo 中不嵌入真实网页）",
+          "kv.activeTab": "当前 Tab",
+          "kv.fingerprint": "指纹",
+          "kv.status": "状态",
+          "kv.plan": "订阅",
+          "kv.credits": "积分",
+          "kv.proxyMode": "代理模式",
+          "kv.proxyCustom": "自定义代理",
+          "kv.userAgent": "User-Agent",
+          "kv.hint": "提示",
+          "kv.content": "内容",
+          "value.empty": "（空）",
+          "inspector.title": "账号详情",
+          "common.close": "关闭",
+          "inspector.openTab": "打开 Tab",
+          "inspector.closeTab": "关闭 Tab",
+          "inspector.verify": "校验",
+          "inspector.delete": "删除",
+          "modal.import.title": "导入 refresh_token",
+          "modal.import.note": "每行一个 <span class=\"mono\">refresh_token</span>。导入后账号状态为“未校验”。",
+          "modal.import.placeholder": "每行一个 refresh_token（此 demo 中请用伪 token 字符串）",
+          "modal.import.hint": "提示：UI 中只显示 token 指纹/掩码；导出才会输出明文。",
+          "modal.import.cancel": "取消",
+          "modal.import.commit": "导入",
+          "modal.export.title": "导出 refresh_token",
+          "modal.export.note": "将导出当前勾选账号的 <span class=\"mono\">refresh_token</span>（每行一个）。",
+          "modal.export.danger":
+            "注意：导出内容属于敏感凭据。真实产品中请配合主密码/系统密钥链，并提供“锁定/清空”能力；UI 与日志中必须始终脱敏。",
+          "modal.export.placeholder": "这里将显示导出的 token（demo 使用伪 token）",
+          "modal.export.hint": "选择账号后打开导出窗口；可复制到剪贴板或下载 txt。",
+          "modal.export.copy": "复制",
+          "modal.export.download": "下载 txt",
+          "modal.export.done": "完成",
+          "export.ready": "已准备导出 {count} 个 token（每行一个）。",
+          "export.noneSelected": "未选择账号。",
+          "export.downloaded": "已下载：{filename}",
+          "clipboard.ok": "已复制到剪贴板。",
+          "clipboard.fail": "复制失败：浏览器可能禁用 clipboard API。请手动全选复制。",
+          "alert.export.needSelection": "请先勾选需要导出的账号。",
+          "alert.import.empty": "请粘贴至少 1 行 refresh_token。",
+          "alert.import.none": "未导入任何账号：全部 token 已存在或重复。",
+          "alert.import.success": "成功导入 {added} 个账号{ignoredSuffix}。",
+          "alert.import.ignoredSuffix": "（忽略 {ignored} 个重复/已存在）",
+          "confirm.delete.accounts": "确认删除 {count} 个账号？（demo）",
+          "confirm.delete.account": "确认删除账号 {name}？（demo）",
+          "tab.close": "关闭",
+          "account.selectAria": "选择账号",
+          "account.openInspectorAria": "打开 {title} 的账号详情",
+          "account.unnamed": "账号 {index}",
+          "status.ok": "可用",
+          "status.unverified": "未校验",
+          "status.invalid": "疑似失效",
+          "status.offline": "网络不可用",
+          "chip.plan": "订阅",
+          "chip.credits": "积分",
+          "chip.tabs": "Tabs",
+          "chip.proxy": "代理",
+          "chip.ua": "UA",
+          "section.profile": "账号",
+          "setting.displayName": "显示名称",
+          "setting.displayName.placeholder": "例如：主号 / 工作号 / 备用",
+          "setting.meta.save": "保存",
+          "section.tags": "标签",
+          "setting.tags.placeholder": "输入标签，回车添加（支持空格/逗号）",
+          "setting.tags.add": "添加",
+          "setting.tags.hint": "建议用短标签：如 VIP / 备用 / 公司A。可用搜索框按 tag 快速过滤。",
+          "setting.tags.remove": "移除标签：{tag}",
+          "section.networkFingerprint": "网络与指纹",
+          "setting.proxyMode": "代理模式",
+          "setting.proxyCustom": "自定义代理",
+          "setting.uaPreset": "UA 预设",
+          "setting.userAgent": "User-Agent",
+          "setting.resetUa": "恢复默认",
+          "setting.apply": "应用到账号",
+          "setting.applied": "已应用",
+          "setting.persistHint": "提示：此 demo 会把“显示名称/标签/代理/UA”保存到浏览器 localStorage（不保存 token）。",
+          "ua.preset.default": "默认",
+          "ua.preset.win": "Chrome（Windows）",
+          "ua.preset.mac": "Chrome（macOS）",
+          "ua.preset.linux": "Chrome（Linux）",
+          "ua.preset.custom": "自定义",
+          "field.email": "Email",
+          "field.userId": "User ID",
+          "field.fingerprint": "Fingerprint",
+          "field.tokenMasked": "Token（mask）",
+          "field.proxy": "代理",
+          "field.userAgent": "User-Agent",
+          "field.status": "状态",
+          "field.plan": "订阅",
+          "field.credits": "积分",
+          "field.lastRefreshedAt": "最近刷新",
+          "field.tags": "标签",
+          "value.unverified": "（未校验）",
+          "value.unrefreshed": "（未刷新）",
+          "value.noTags": "（无标签）"
+        },
+        en: {
+          "brand.subtitle": "UI Demo · token import/export · multi-account tabs",
+          "ui.lang.aria": "Language",
+          "ui.theme.aria": "Theme",
+          "lang.zh": "Chinese (Simplified)",
+          "lang.en": "English",
+          "theme.dark": "Dark",
+          "theme.light": "Light",
+          "proxy.mode.aria": "Proxy mode",
+          "proxy.system": "System",
+          "proxy.custom": "Custom",
+          "proxy.direct": "Direct",
+          "proxy.custom.placeholder": "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
+          "btn.connectivity": "Connectivity",
+          "conn.title": "Connectivity",
+          "conn.ok": "OK",
+          "conn.fail": "FAIL",
+          "search.placeholder": "Search: email / userId / tag",
+          "btn.import": "Import",
+          "btn.export": "Export",
+          "btn.batchVerify": "Batch verify",
+          "btn.batchOpen": "Open in tabs",
+          "sidebar.title": "Accounts",
+          "sidebar.view.cards": "Cards view",
+          "sidebar.view.table": "Table view",
+          "sidebar.toggle.collapse": "Collapse sidebar",
+          "sidebar.toggle.expand": "Expand sidebar",
+          "select.all": "Select all",
+          "selection.hint": "{count} selected",
+          "batchbar.left": "{count} selected",
+          "tabs.ariaLabel": "Account tabs",
+          "batch.open": "Open",
+          "batch.closeTab": "Close tab",
+          "batch.verify": "Verify",
+          "batch.export": "Export",
+          "batch.delete": "Delete",
+          "workspace.title": "Flowith Web Workspace (UI placeholder)",
+          "workspace.subtitle":
+            "This demo shows only the UI structure. Each tab will load <span class=\"mono\">flowith.io</span> with an isolated browser session/partition for parallel accounts.",
+          "workspace.hint": "Select accounts and click “Open in tabs”.",
+          "workspace.content": "flowith.io will load here (not embedded in this demo)",
+          "kv.activeTab": "Active tab",
+          "kv.fingerprint": "Fingerprint",
+          "kv.status": "Status",
+          "kv.plan": "Plan",
+          "kv.credits": "Credits",
+          "kv.proxyMode": "Proxy mode",
+          "kv.proxyCustom": "Custom proxy",
+          "kv.userAgent": "User-Agent",
+          "kv.hint": "Hint",
+          "kv.content": "Content",
+          "value.empty": "(empty)",
+          "inspector.title": "Account Details",
+          "common.close": "Close",
+          "inspector.openTab": "Open tab",
+          "inspector.closeTab": "Close tab",
+          "inspector.verify": "Verify",
+          "inspector.delete": "Delete",
+          "modal.import.title": "Import refresh_token",
+          "modal.import.note": "One <span class=\"mono\">refresh_token</span> per line. Imported accounts start as “Unverified”.",
+          "modal.import.placeholder": "One refresh_token per line (use fake tokens in this demo)",
+          "modal.import.hint": "Hint: The UI only shows masked tokens/fingerprints. Plain tokens appear only in Export.",
+          "modal.import.cancel": "Cancel",
+          "modal.import.commit": "Import",
+          "modal.export.title": "Export refresh_token",
+          "modal.export.note": "Exports <span class=\"mono\">refresh_token</span> for selected accounts (one per line).",
+          "modal.export.danger":
+            "Warning: exported tokens are sensitive credentials. In a real product, use a master password/keychain and provide lock/wipe controls; always keep UI/logs redacted.",
+          "modal.export.placeholder": "Exported tokens will appear here (demo uses fake tokens)",
+          "modal.export.hint": "Open Export after selecting accounts; copy to clipboard or download .txt.",
+          "modal.export.copy": "Copy",
+          "modal.export.download": "Download .txt",
+          "modal.export.done": "Done",
+          "export.ready": "Prepared {count} token(s) (one per line).",
+          "export.noneSelected": "No accounts selected.",
+          "export.downloaded": "Downloaded: {filename}",
+          "clipboard.ok": "Copied to clipboard.",
+          "clipboard.fail": "Copy failed: clipboard API may be blocked. Please manually select and copy.",
+          "alert.export.needSelection": "Select accounts to export first.",
+          "alert.import.empty": "Paste at least 1 refresh_token line.",
+          "alert.import.none": "No accounts imported: all tokens are duplicates or already exist.",
+          "alert.import.success": "Imported {added} account(s){ignoredSuffix}.",
+          "alert.import.ignoredSuffix": " (ignored {ignored} duplicate/existing)",
+          "confirm.delete.accounts": "Delete {count} account(s)? (demo)",
+          "confirm.delete.account": "Delete account {name}? (demo)",
+          "tab.close": "Close",
+          "account.selectAria": "Select account",
+          "account.openInspectorAria": "Open details for {title}",
+          "account.unnamed": "Account {index}",
+          "status.ok": "OK",
+          "status.unverified": "Unverified",
+          "status.invalid": "Possibly invalid",
+          "status.offline": "Offline",
+          "chip.plan": "Plan",
+          "chip.credits": "Credits",
+          "chip.tabs": "Tabs",
+          "chip.proxy": "Proxy",
+          "chip.ua": "UA",
+          "section.profile": "Account",
+          "setting.displayName": "Display name",
+          "setting.displayName.placeholder": "e.g. Main / Work / Backup",
+          "setting.meta.save": "Save",
+          "section.tags": "Tags",
+          "setting.tags.placeholder": "Type a tag and press Enter (space/comma supported)",
+          "setting.tags.add": "Add",
+          "setting.tags.hint": "Use short tags like VIP / backup / team-A. Search supports tags.",
+          "setting.tags.remove": "Remove tag: {tag}",
+          "section.networkFingerprint": "Network & Fingerprint",
+          "setting.proxyMode": "Proxy mode",
+          "setting.proxyCustom": "Custom proxy",
+          "setting.uaPreset": "UA preset",
+          "setting.userAgent": "User-Agent",
+          "setting.resetUa": "Reset",
+          "setting.apply": "Apply to account",
+          "setting.applied": "Applied",
+          "setting.persistHint": "Note: this demo stores display name/tags/proxy/UA in localStorage (no tokens stored).",
+          "ua.preset.default": "Default",
+          "ua.preset.win": "Chrome (Windows)",
+          "ua.preset.mac": "Chrome (macOS)",
+          "ua.preset.linux": "Chrome (Linux)",
+          "ua.preset.custom": "Custom",
+          "field.email": "Email",
+          "field.userId": "User ID",
+          "field.fingerprint": "Fingerprint",
+          "field.tokenMasked": "Token (masked)",
+          "field.proxy": "Proxy",
+          "field.userAgent": "User-Agent",
+          "field.status": "Status",
+          "field.plan": "Plan",
+          "field.credits": "Credits",
+          "field.lastRefreshedAt": "Last refresh",
+          "field.tags": "Tags",
+          "value.unverified": "(unverified)",
+          "value.unrefreshed": "(not refreshed)",
+          "value.noTags": "(no tags)"
+        }
+      };
+
+      function t(key, vars) {
+        const dict = STRINGS[state.uiLang] || STRINGS["zh-CN"];
+        let str = dict[key] ?? STRINGS["zh-CN"][key] ?? key;
+        if (vars) {
+          for (const [k, v] of Object.entries(vars)) {
+            str = str.replaceAll(`{${k}}`, String(v));
+          }
+        }
+        return str;
+      }
+
+      function setLang(lang) {
+        const resolved = lang === "en" ? "en" : "zh-CN";
+        state.uiLang = resolved;
+        document.documentElement.lang = resolved;
+        try {
+          localStorage.setItem("flowith_ui_lang", resolved);
+        } catch {
+          // ignore
+        }
+      }
+
+      function applyI18n() {
+        document.documentElement.lang = state.uiLang;
+
+        const langSelect = el("uiLang");
+        if (langSelect) {
+          const zh = langSelect.querySelector("option[value=\"zh-CN\"]");
+          const en = langSelect.querySelector("option[value=\"en\"]");
+          if (zh) zh.textContent = t("lang.zh");
+          if (en) en.textContent = t("lang.en");
+          langSelect.setAttribute("aria-label", t("ui.lang.aria"));
+        }
+
+        const themeSelect = el("themeMode");
+        if (themeSelect) {
+          const dark = themeSelect.querySelector("option[value=\"dark\"]");
+          const light = themeSelect.querySelector("option[value=\"light\"]");
+          if (dark) dark.textContent = t("theme.dark");
+          if (light) light.textContent = t("theme.light");
+          themeSelect.setAttribute("aria-label", t("ui.theme.aria"));
+        }
+
+        const proxyMode = el("proxyMode");
+        if (proxyMode) {
+          const sys = proxyMode.querySelector("option[value=\"system\"]");
+          const custom = proxyMode.querySelector("option[value=\"custom\"]");
+          const direct = proxyMode.querySelector("option[value=\"direct\"]");
+          if (sys) sys.textContent = t("proxy.system");
+          if (custom) custom.textContent = t("proxy.custom");
+          if (direct) direct.textContent = t("proxy.direct");
+          proxyMode.setAttribute("aria-label", t("proxy.mode.aria"));
+        }
+
+        const proxyCustom = el("proxyCustom");
+        if (proxyCustom) proxyCustom.placeholder = t("proxy.custom.placeholder");
+
+        const search = el("search");
+        if (search) search.placeholder = t("search.placeholder");
+
+        const tabs = el("tabs");
+        if (tabs) tabs.setAttribute("aria-label", t("tabs.ariaLabel"));
+
+        const setText = (id, key) => {
+          const node = el(id);
+          if (node) node.textContent = t(key);
+        };
+        const setHtml = (id, key) => {
+          const node = el(id);
+          if (node) node.innerHTML = t(key);
+        };
+
+        setText("brandSubtitle", "brand.subtitle");
+        setText("btnTestConnectivity", "btn.connectivity");
+        setText("connTitle", "conn.title");
+
+        setText("btnImport", "btn.import");
+        setText("btnExport", "btn.export");
+        setText("btnBatchVerify", "btn.batchVerify");
+        setText("btnBatchOpen", "btn.batchOpen");
+
+        setText("sidebarTitle", "sidebar.title");
+        setText("labelSelectAll", "select.all");
+
+        const viewCards = el("btnViewCards");
+        if (viewCards) viewCards.title = t("sidebar.view.cards");
+        const viewTable = el("btnViewTable");
+        if (viewTable) viewTable.title = t("sidebar.view.table");
+
+        const closeInspector = el("btnCloseInspector");
+        if (closeInspector) {
+          closeInspector.title = t("common.close");
+          closeInspector.setAttribute("aria-label", t("common.close"));
+        }
+        const closeImport = el("btnCloseImport");
+        if (closeImport) {
+          closeImport.title = t("common.close");
+          closeImport.setAttribute("aria-label", t("common.close"));
+        }
+        const closeExport = el("btnCloseExport");
+        if (closeExport) {
+          closeExport.title = t("common.close");
+          closeExport.setAttribute("aria-label", t("common.close"));
+        }
+
+        setText("workspaceTitle", "workspace.title");
+        setHtml("workspaceSubtitle", "workspace.subtitle");
+        setText("inspectorTitle", "inspector.title");
+
+        setText("btnInspectorOpenTab", "inspector.openTab");
+        setText("btnInspectorCloseTab", "inspector.closeTab");
+        setText("btnInspectorVerify", "inspector.verify");
+        setText("btnInspectorDelete", "inspector.delete");
+
+        setText("importDialogTitle", "modal.import.title");
+        setHtml("importDialogNote", "modal.import.note");
+        const importTextarea = el("importTextarea");
+        if (importTextarea) importTextarea.placeholder = t("modal.import.placeholder");
+        setText("importHint", "modal.import.hint");
+        setText("btnImportCancel", "modal.import.cancel");
+        setText("btnImportCommit", "modal.import.commit");
+
+        setText("exportDialogTitle", "modal.export.title");
+        setHtml("exportDialogNote", "modal.export.note");
+        setText("exportDangerNote", "modal.export.danger");
+        const exportTextarea = el("exportTextarea");
+        if (exportTextarea) exportTextarea.placeholder = t("modal.export.placeholder");
+        setText("exportHint", "modal.export.hint");
+        setText("btnExportCopy", "modal.export.copy");
+        setText("btnExportDownload", "modal.export.download");
+        setText("btnExportDone", "modal.export.done");
+
+        setText("btnBatchbarOpen", "batch.open");
+        setText("btnBatchbarCloseTabs", "batch.closeTab");
+        setText("btnBatchbarVerify", "batch.verify");
+        setText("btnBatchbarExport", "batch.export");
+        setText("btnBatchbarDelete", "batch.delete");
+
+        const collapsed = el("sidebar")?.getAttribute("data-collapsed") === "1";
+        setSidebarCollapsed(Boolean(collapsed));
+      }
+
+      function escapeHtml(input) {
+        return String(input)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll("\"", "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+
+      function maskToken(token) {
+        const t = String(token || "");
+        if (!t) return "";
+        if (t.length <= 12) return `${t.slice(0, 2)}…${t.slice(-2)}`;
+        return `${t.slice(0, 6)}…${t.slice(-4)}`;
+      }
+
+      function setTheme(theme) {
+        const resolved = theme === "light" ? "light" : "dark";
+        state.uiTheme = resolved;
+        document.documentElement.setAttribute("data-theme", resolved);
+        try {
+          localStorage.setItem("flowith_ui_theme", resolved);
+        } catch {
+          // ignore
+        }
+      }
+
+      const ACCOUNT_NET_LS_KEY = "flowith_demo_account_net";
+      const ACCOUNT_META_LS_KEY = "flowith_demo_account_meta";
+
+      const UA_PRESET_DEFS = [
+        {
+          id: "default",
+          labelKey: "ua.preset.default",
+          getUa: () => String(navigator.userAgent || "")
+        },
+        {
+          id: "chrome_win",
+          labelKey: "ua.preset.win",
+          ua: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        },
+        {
+          id: "chrome_mac",
+          labelKey: "ua.preset.mac",
+          ua: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        },
+        {
+          id: "chrome_linux",
+          labelKey: "ua.preset.linux",
+          ua: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        }
+      ];
+
+      const UA_PRESET_LABEL = new Map(UA_PRESET_DEFS.map((p) => [p.id, p.labelKey]));
+
+      function getUaByPresetId(presetId) {
+        const p = UA_PRESET_DEFS.find((x) => x.id === presetId) || null;
+        if (!p) return "";
+        if (typeof p.getUa === "function") return p.getUa();
+        return String(p.ua || "");
+      }
+
+      function inferUaPresetId(net) {
+        const explicit = net?.uaPreset;
+        if (explicit && explicit !== "custom" && UA_PRESET_LABEL.has(explicit)) return explicit;
+        const ua = String(net?.userAgent || "");
+        for (const def of UA_PRESET_DEFS) {
+          const presetUa = getUaByPresetId(def.id);
+          if (presetUa && presetUa === ua) return def.id;
+        }
+        return ua ? "custom" : "default";
+      }
+
+      function isAllowedProxyMode(mode) {
+        return mode === "system" || mode === "custom" || mode === "direct";
+      }
+
+      function sanitizeAccountNet(net) {
+        const proxyMode = isAllowedProxyMode(net?.proxyMode) ? net.proxyMode : "system";
+        const proxyCustom = typeof net?.proxyCustom === "string" ? net.proxyCustom.trim().slice(0, 256) : "";
+        const userAgent = typeof net?.userAgent === "string" ? net.userAgent.trim().slice(0, 512) : getUaByPresetId("default");
+        const uaPreset = typeof net?.uaPreset === "string" && UA_PRESET_LABEL.has(net.uaPreset) ? net.uaPreset : "custom";
+        return { proxyMode, proxyCustom, userAgent, uaPreset };
+      }
+
+      function loadAccountNetStore() {
+        try {
+          const raw = localStorage.getItem(ACCOUNT_NET_LS_KEY);
+          if (!raw) return {};
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") return {};
+          return parsed;
+        } catch {
+          return {};
+        }
+      }
+
+      function writeAccountNetStore(store) {
+        try {
+          localStorage.setItem(ACCOUNT_NET_LS_KEY, JSON.stringify(store));
+        } catch {
+          // ignore
+        }
+      }
+
+      function getSavedAccountNet(accountId) {
+        const store = loadAccountNetStore();
+        const net = store?.[accountId];
+        if (!net) return null;
+        return sanitizeAccountNet(net);
+      }
+
+      function saveAccountNet(accountId, net) {
+        const store = loadAccountNetStore();
+        store[accountId] = sanitizeAccountNet(net);
+        writeAccountNetStore(store);
+      }
+
+      function deleteSavedAccountNet(accountId) {
+        const store = loadAccountNetStore();
+        if (!store?.[accountId]) return;
+        delete store[accountId];
+        writeAccountNetStore(store);
+      }
+
+      function sanitizeDisplayName(name) {
+        const raw = typeof name === "string" ? name : String(name ?? "");
+        return raw.trim().slice(0, 48);
+      }
+
+      function sanitizeTag(tag) {
+        const raw = typeof tag === "string" ? tag : String(tag ?? "");
+        let out = raw.trim();
+        if (!out) return null;
+        out = out.replace(/^#+/, "").trim();
+        if (!out) return null;
+        return out.slice(0, 24);
+      }
+
+      function sanitizeTags(tags) {
+        if (!Array.isArray(tags)) return [];
+        const out = [];
+        const seen = new Set();
+        for (const raw of tags) {
+          const t = sanitizeTag(raw);
+          if (!t) continue;
+          const key = t.toLowerCase();
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(t);
+          if (out.length >= 12) break;
+        }
+        return out;
+      }
+
+      function sanitizeAccountMeta(meta) {
+        return {
+          displayName: sanitizeDisplayName(meta?.displayName),
+          tags: sanitizeTags(Array.isArray(meta?.tags) ? meta.tags : [])
+        };
+      }
+
+      function loadAccountMetaStore() {
+        try {
+          const raw = localStorage.getItem(ACCOUNT_META_LS_KEY);
+          if (!raw) return {};
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object") return {};
+          return parsed;
+        } catch {
+          return {};
+        }
+      }
+
+      function writeAccountMetaStore(store) {
+        try {
+          localStorage.setItem(ACCOUNT_META_LS_KEY, JSON.stringify(store));
+        } catch {
+          // ignore
+        }
+      }
+
+      function getSavedAccountMeta(accountId) {
+        const store = loadAccountMetaStore();
+        const meta = store?.[accountId];
+        if (!meta) return null;
+        return sanitizeAccountMeta(meta);
+      }
+
+      function saveAccountMeta(accountId, meta) {
+        const store = loadAccountMetaStore();
+        store[accountId] = sanitizeAccountMeta(meta);
+        writeAccountMetaStore(store);
+      }
+
+      function deleteSavedAccountMeta(accountId) {
+        const store = loadAccountMetaStore();
+        if (!store?.[accountId]) return;
+        delete store[accountId];
+        writeAccountMetaStore(store);
+      }
+
+      function setAccountMeta(accountId, patch) {
+        const target = state.accounts.find((a) => a.id === accountId);
+        if (!target) return null;
+        const next = sanitizeAccountMeta({
+          displayName: patch?.displayName ?? target.displayName,
+          tags: patch?.tags ?? target.tags
+        });
+        target.displayName = next.displayName;
+        target.tags = next.tags;
+        saveAccountMeta(accountId, next);
+        return next;
+      }
+
+      function getAccountTitle(acc) {
+        const displayName = typeof acc?.displayName === "string" ? acc.displayName.trim() : "";
+        if (displayName) return displayName;
+        const email = typeof acc?.email === "string" ? acc.email : "";
+        if (email) return email;
+        const id = typeof acc?.id === "string" ? acc.id : "";
+        const idx = id ? state.accounts.findIndex((a) => a.id === id) : -1;
+        if (idx >= 0) return t("account.unnamed", { index: idx + 1 });
+        return id ? `acct-${id}` : t("account.unnamed", { index: "?" });
+      }
+
+      function getAccountSubtitle(acc) {
+        const displayName = typeof acc?.displayName === "string" ? acc.displayName.trim() : "";
+        const email = typeof acc?.email === "string" ? acc.email : "";
+        if (displayName && email) return email;
+        return "";
+      }
+
+      function sha256Hex(ascii) {
+        function rightRotate(value, amount) {
+          return (value >>> amount) | (value << (32 - amount));
+        }
+
+        const mathPow = Math.pow;
+        const maxWord = mathPow(2, 32);
+        const words = [];
+        let asciiBitLength = ascii.length * 8;
+
+        const hash = [];
+        const k = [];
+        let primeCounter = 0;
+
+        const isPrime = (n) => {
+          const sqrt = Math.sqrt(n);
+          for (let i = 2; i <= sqrt; i += 1) {
+            if (n % i === 0) return false;
+          }
+          return true;
+        };
+
+        const getFractionalBits = (n) => ((n - (n | 0)) * maxWord) | 0;
+
+        for (let candidate = 2; primeCounter < 64; candidate += 1) {
+          if (!isPrime(candidate)) continue;
+          if (primeCounter < 8) hash[primeCounter] = getFractionalBits(mathPow(candidate, 1 / 2));
+          k[primeCounter] = getFractionalBits(mathPow(candidate, 1 / 3));
+          primeCounter += 1;
+        }
+
+        ascii += "\x80";
+        while ((ascii.length % 64) - 56) ascii += "\x00";
+        for (let i = 0; i < ascii.length; i += 1) {
+          const j = ascii.charCodeAt(i);
+          words[i >> 2] |= j << (((3 - i) % 4) * 8);
+        }
+        words[words.length] = (asciiBitLength / maxWord) | 0;
+        words[words.length] = asciiBitLength;
+
+        for (let j = 0; j < words.length; ) {
+          const w = words.slice(j, (j += 16));
+          const oldHash = hash.slice(0);
+
+          for (let i = 0; i < 64; i += 1) {
+            const w15 = w[i - 15];
+            const w2 = w[i - 2];
+
+            const a = hash[0];
+            const e = hash[4];
+            const temp1 =
+              hash[7] +
+              (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25)) +
+              ((e & hash[5]) ^ (~e & hash[6])) +
+              k[i] +
+              (w[i] =
+                i < 16
+                  ? w[i]
+                  : (w[i - 16] +
+                      (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3)) +
+                      w[i - 7] +
+                      (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) |
+                    0);
+
+            const temp2 =
+              (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22)) +
+              ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+
+            hash.unshift((temp1 + temp2) | 0);
+            hash[4] = (hash[4] + temp1) | 0;
+            hash.pop();
+          }
+
+          for (let i = 0; i < 8; i += 1) {
+            hash[i] = (hash[i] + oldHash[i]) | 0;
+          }
+        }
+
+        let out = "";
+        for (let i = 0; i < 8; i += 1) {
+          for (let j = 3; j + 1; j -= 1) {
+            const b = (hash[i] >> (j * 8)) & 255;
+            out += (b < 16 ? "0" : "") + b.toString(16);
+          }
+        }
+        return out;
+      }
+
+      function fingerprint8(token) {
+        return sha256Hex(String(token)).slice(0, 8);
+      }
+
+      function nowIso() {
+        return new Date().toISOString();
+      }
+
+      function getDefaultAccountNet() {
+        return sanitizeAccountNet({
+          proxyMode: state.proxyMode,
+          proxyCustom: state.proxyCustom,
+          userAgent: getUaByPresetId("default"),
+          uaPreset: "default"
+        });
+      }
+
+      function getAccountNet(acc) {
+        const base = getDefaultAccountNet();
+        const merged = { ...base, ...(acc?.net || {}) };
+        return sanitizeAccountNet(merged);
+      }
+
+      function canReachFlowith(net) {
+        if (net.proxyMode === "direct") return false;
+        if (net.proxyMode === "custom" && !net.proxyCustom.trim()) return false;
+        return true;
+      }
+
+      function statusDot(status) {
+        if (status === "ok") return "<span class=\"dot dot-ok\"></span>";
+        if (status === "unverified") return "<span class=\"dot dot-warn\"></span>";
+        if (status === "invalid") return "<span class=\"dot dot-bad\"></span>";
+        return "<span class=\"dot dot-net\"></span>";
+      }
+
+      function statusLabel(status) {
+        if (status === "ok") return t("status.ok");
+        if (status === "unverified") return t("status.unverified");
+        if (status === "invalid") return t("status.invalid");
+        return t("status.offline");
+      }
+
+      function seedAccounts() {
+        const demoTokens = [
+          "demo_refresh_token_1__AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+          "demo_refresh_token_2__BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB",
+          "demo_refresh_token_3__CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+          "demo_refresh_token_4__DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
+        ];
+
+        state.accounts = demoTokens.map((token, idx) => {
+          const fp = fingerprint8(token);
+          const hasData = idx % 2 === 0;
+          const baseNet = getDefaultAccountNet();
+          const savedNet = getSavedAccountNet(fp);
+          const net = savedNet ? sanitizeAccountNet({ ...baseNet, ...savedNet }) : baseNet;
+
+          const seedMeta = {
+            displayName: "",
+            tags: idx === 0 ? ["VIP", "主号"] : idx === 2 ? ["备用"] : []
+          };
+          const savedMeta = getSavedAccountMeta(fp);
+          const meta = sanitizeAccountMeta({ ...seedMeta, ...(savedMeta || {}) });
+
+          return {
+            id: fp,
+            token,
+            tokenMasked: maskToken(token),
+            net,
+            displayName: meta.displayName,
+            email: hasData ? `user_${fp}@flowith.io` : null,
+            userId: hasData ? `uid_${fp}` : null,
+            plan: hasData ? (idx % 4 === 0 ? "Pro" : "Free") : "-",
+            credits: hasData ? { remaining: 120 + idx * 10, total: 1000 } : { remaining: 0, total: 0 },
+            tags: meta.tags,
+            status: hasData ? "ok" : "unverified",
+            lastRefreshedAt: hasData ? nowIso() : null
+          };
+        });
+      }
+
+      function getVisibleAccounts() {
+        const q = el("search").value.trim().toLowerCase();
+        if (!q) return state.accounts;
+        return state.accounts.filter((a) => {
+          const hay = [
+            a.displayName ?? "",
+            a.email ?? "",
+            a.userId ?? "",
+            `acct-${a.id}`,
+            a.plan ?? "",
+            a.tags.join(" ")
+          ]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        });
+      }
+
+      function getSelectedAccounts() {
+        return state.accounts.filter((a) => state.selectedIds.has(a.id));
+      }
+
+      function openInspectorFor(accountId) {
+        state.focusedAccountId = accountId;
+        render();
+      }
+
+      function closeInspector() {
+        state.focusedAccountId = null;
+        render();
+      }
+
+      function ensureTab(accountId) {
+        if (!state.tabs.includes(accountId)) state.tabs.push(accountId);
+        state.activeTabId = accountId;
+      }
+
+      function closeTab(accountId) {
+        state.tabs = state.tabs.filter((id) => id !== accountId);
+        if (state.activeTabId === accountId) {
+          state.activeTabId = state.tabs.length > 0 ? state.tabs[state.tabs.length - 1] : null;
+        }
+      }
+
+      function tabsOpenCount(accountId) {
+        return state.tabs.filter((id) => id === accountId).length;
+      }
+
+      function verifyAccountsByIds(ids) {
+        const now = nowIso();
+        for (const id of ids) {
+          const acc = state.accounts.find((a) => a.id === id);
+          if (!acc) continue;
+          const reachable = canReachFlowith(getAccountNet(acc));
+          if (!reachable) {
+            acc.status = "network";
+            continue;
+          }
+
+          const r = parseInt(id.slice(0, 2), 16) / 255;
+          const invalid = r < 0.12;
+          if (invalid) {
+            acc.status = "invalid";
+            acc.lastRefreshedAt = now;
+            continue;
+          }
+
+          acc.status = "ok";
+          acc.plan = r > 0.66 ? "Pro" : "Free";
+          acc.credits = {
+            remaining: Math.floor(100 + r * 800),
+            total: 1000
+          };
+          if (!acc.email) acc.email = `user_${acc.id}@flowith.io`;
+          if (!acc.userId) acc.userId = `uid_${acc.id}`;
+          acc.lastRefreshedAt = now;
+        }
+      }
+
+      function showExportDialog(accounts) {
+        const textarea = el("exportTextarea");
+        const tokens = accounts.map((a) => a.token).join("\n");
+        textarea.value = tokens;
+        el("exportHint").textContent = accounts.length > 0 ? t("export.ready", { count: accounts.length }) : t("export.noneSelected");
+        el("exportDialog").showModal();
+      }
+
+      function downloadTextFile(filename, content) {
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+      }
+
+      function updateProxyUi() {
+        const mode = el("proxyMode").value;
+        state.proxyMode = mode;
+
+        const custom = el("proxyCustom");
+        if (mode === "custom") {
+          custom.style.display = "block";
+        } else {
+          custom.style.display = "none";
+        }
+
+        try {
+          localStorage.setItem("flowith_proxy_config", JSON.stringify({ mode, custom: el("proxyCustom").value }));
+        } catch {
+          // ignore
+        }
+      }
+
+      function setView(view) {
+        state.view = view;
+        render();
+      }
+
+      function toggleAccountSelection(accountId) {
+        if (state.selectedIds.has(accountId)) state.selectedIds.delete(accountId);
+        else state.selectedIds.add(accountId);
+        render();
+      }
+
+      function setAllSelection(checked) {
+        state.selectedIds.clear();
+        if (checked) {
+          for (const a of getVisibleAccounts()) state.selectedIds.add(a.id);
+        }
+        render();
+      }
+
+      function renderConnectivityPopover() {
+        const rows = el("connRows");
+        const targetId = state.activeTabId || state.focusedAccountId || "";
+        const targetAcc = targetId ? state.accounts.find((a) => a.id === targetId) : null;
+        const net = targetAcc ? getAccountNet(targetAcc) : getDefaultAccountNet();
+        const reachable = canReachFlowith(net);
+        const proxyDesc =
+          net.proxyMode === "custom" ? (net.proxyCustom.trim() ? "custom" : "custom (empty)") : net.proxyMode;
+
+        const mk = (name, url, ok, latency) => {
+          const badgeText = ok ? t("conn.ok") : t("conn.fail");
+          const badge = ok
+            ? `<span style="color:#a7f3d0">${escapeHtml(badgeText)}</span>`
+            : `<span style="color:#fecaca">${escapeHtml(badgeText)}</span>`;
+          return `<div class="popover-row"><div style="min-width:0">
+            <div style="font-weight:650">${escapeHtml(name)}</div>
+            <div class="mono" style="font-size:11px;color:rgba(148,163,184,0.9); overflow:hidden; text-overflow:ellipsis; white-space:nowrap">${escapeHtml(url)}</div>
+          </div><div class="mono" style="text-align:right; min-width:80px">${badge}<div style="font-size:11px;color:rgba(148,163,184,0.9)">${escapeHtml(String(latency))}ms</div></div></div>`;
+        };
+
+        const lat = () => Math.floor(20 + Math.random() * 120);
+        rows.innerHTML = [
+          mk("flowith.io", "https://flowith.io", reachable, lat()),
+          mk("edge", "https://edge.flowith.net", reachable, lat()),
+          mk("supabase", "https://<project>.supabase.co", net.proxyMode !== "direct", lat())
+        ].join("");
+
+        const pop = el("connPopover");
+        pop.style.display = "block";
+        setTimeout(() => {
+          if (el("connPopover").style.display === "block") el("connPopover").style.display = "none";
+        }, 3500);
+
+        el("btnTestConnectivity").setAttribute("data-proxy", proxyDesc);
+      }
+
+      function render() {
+        const layout = el("layout");
+        const inspector = el("inspector");
+        const inspectorVisible = Boolean(state.focusedAccountId);
+        if (inspectorVisible) {
+          layout.classList.remove("inspector-hidden");
+          inspector.style.display = "flex";
+        } else {
+          layout.classList.add("inspector-hidden");
+          inspector.style.display = "none";
+        }
+
+        updateProxyUi();
+        state.proxyCustom = el("proxyCustom").value;
+
+        const accounts = getVisibleAccounts();
+        const accountList = el("accountList");
+        accountList.className = `account-list ${state.view === "table" ? "view-table" : ""}`;
+
+        accountList.innerHTML = accounts
+          .map((a) => {
+            const selected = state.selectedIds.has(a.id);
+            const title = getAccountTitle(a);
+            const subtitle = getAccountSubtitle(a);
+            const creditsText = a.credits.total > 0 ? `${a.credits.remaining}/${a.credits.total}` : "-";
+            const tabCount = state.tabs.includes(a.id) ? 1 : 0;
+            const tags =
+              a.tags.length > 0
+                ? a.tags.map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`).join("")
+                : `<span class="muted" style="font-size:11px">${escapeHtml(t("value.noTags"))}</span>`;
+            const tableTagsHtml = (() => {
+              if (a.tags.length === 0) return "";
+              const max = 2;
+              const shown = a.tags
+                .slice(0, max)
+                .map((t) => `<span class="tag-chip">${escapeHtml(t)}</span>`)
+                .join("");
+              const rest = a.tags.length - max;
+              const more = rest > 0 ? `<span class="tag-chip">+${escapeHtml(String(rest))}</span>` : "";
+              return shown + more;
+            })();
+
+            const openInspectorAria = t("account.openInspectorAria", { title });
+            const selectAria = t("account.selectAria");
+            const planLabel = t("chip.plan");
+            const creditsLabel = t("chip.credits");
+            const tabsLabel = t("chip.tabs");
+            const proxyLabel = t("chip.proxy");
+            const uaLabel = t("chip.ua");
+            const net = getAccountNet(a);
+            const proxyModeLabel =
+              net.proxyMode === "system" ? t("proxy.system") : net.proxyMode === "custom" ? t("proxy.custom") : t("proxy.direct");
+            const uaPresetLabelKey = UA_PRESET_LABEL.get(net.uaPreset) || "ua.preset.custom";
+            const uaPresetLabel = t(uaPresetLabelKey);
+
+            return `<div class="account ${selected ? "selected" : ""}" data-id="${escapeHtml(a.id)}" tabindex="0" role="button" aria-label="${escapeHtml(openInspectorAria)}">
+              <div class="account-row">
+                <div class="account-main">
+                  <div style="display:flex; align-items:center; gap:10px">
+                    <input type="checkbox" class="acc-check" ${selected ? "checked" : ""} aria-label="${escapeHtml(selectAria)}" />
+                    <div style="min-width:0">
+                      <div class="account-name">${escapeHtml(title)}</div>
+                      ${subtitle ? `<div class="account-subtitle">${escapeHtml(subtitle)}</div>` : ""}
+                      <div class="account-meta">
+                        <span class="chip">${statusDot(a.status)} ${escapeHtml(statusLabel(a.status))}</span>
+                        <span class="chip">${escapeHtml(planLabel)}: <span class="mono">${escapeHtml(a.plan || "-")}</span></span>
+                        <span class="chip">${escapeHtml(creditsLabel)}: <span class="mono">${escapeHtml(creditsText)}</span></span>
+                        <span class="chip">${escapeHtml(tabsLabel)}: <span class="mono">${escapeHtml(String(tabCount))}</span></span>
+                        <span class="chip">${escapeHtml(proxyLabel)}: <span class="mono">${escapeHtml(proxyModeLabel)}</span></span>
+                        <span class="chip">${escapeHtml(uaLabel)}: <span class="mono">${escapeHtml(uaPresetLabel)}</span></span>
+                        <span class="chip mono">${escapeHtml(a.id)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="account-tags">${tags}</div>
+                </div>
+              </div>
+
+              <div class="account-table">
+                <input type="checkbox" class="acc-check" ${selected ? "checked" : ""} aria-label="${escapeHtml(selectAria)}" />
+                <div class="account-table-title" title="${escapeHtml(title)}">
+                  <div class="account-table-name">${escapeHtml(title)}</div>
+                  ${tableTagsHtml ? `<div class="account-table-tags">${tableTagsHtml}</div>` : ""}
+                </div>
+                <span class="mono">${escapeHtml(a.plan || "-")}</span>
+                <span class="mono">${escapeHtml(creditsText)}</span>
+                <span class="mono">${escapeHtml(String(tabCount))}</span>
+                <span class="mono">${escapeHtml(statusLabel(a.status))}</span>
+              </div>
+            </div>`;
+          })
+          .join("");
+
+        for (const card of accountList.querySelectorAll(".account")) {
+          const id = card.getAttribute("data-id") || "";
+          const checkbox = card.querySelector(".acc-check");
+          if (checkbox) {
+            checkbox.addEventListener("click", (e) => {
+              e.stopPropagation();
+              toggleAccountSelection(id);
+            });
+          }
+          card.addEventListener("click", () => openInspectorFor(id));
+          card.addEventListener("keydown", (e) => {
+            if (e.target !== card) return;
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              openInspectorFor(id);
+            }
+          });
+        }
+
+        el("selectionHint").textContent = t("selection.hint", { count: state.selectedIds.size });
+        el("batchbarLeft").textContent = t("batchbar.left", { count: state.selectedIds.size });
+        el("batchbar").style.display = state.selectedIds.size > 0 ? "flex" : "none";
+
+        const selectAll = el("selectAll");
+        selectAll.checked = state.selectedIds.size > 0 && state.selectedIds.size === accounts.length;
+
+        renderTabs();
+        renderInspector();
+        renderWorkspaceContent();
+      }
+
+      function renderTabs() {
+        const tabsEl = el("tabs");
+        const tabs = state.tabs.map((id) => state.accounts.find((a) => a.id === id)).filter(Boolean);
+        tabsEl.innerHTML = tabs
+          .map((a) => {
+            const title = getAccountTitle(a);
+            const active = state.activeTabId === a.id;
+            const closeLabel = t("tab.close");
+            return `<div class="tab ${active ? "active" : ""}" data-tab="${escapeHtml(a.id)}" title="${escapeHtml(title)}" tabindex="0" role="tab" aria-selected="${active}">
+              <span class="tab-title">${escapeHtml(title)}</span>
+              <button class="tab-close" type="button" title="${escapeHtml(closeLabel)}" aria-label="${escapeHtml(closeLabel)}">×</button>
+            </div>`;
+          })
+          .join("");
+
+        for (const tab of tabsEl.querySelectorAll(".tab")) {
+          const id = tab.getAttribute("data-tab") || "";
+          const closeBtn = tab.querySelector(".tab-close");
+          if (closeBtn) {
+            closeBtn.addEventListener("click", (e) => {
+              e.stopPropagation();
+              closeTab(id);
+              render();
+            });
+          }
+          tab.addEventListener("click", () => {
+            state.activeTabId = id;
+            render();
+          });
+          tab.addEventListener("keydown", (e) => {
+            if (e.target !== tab) return;
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              state.activeTabId = id;
+              render();
+            }
+          });
+        }
+
+        const activeEl = tabsEl.querySelector(".tab.active");
+        if (activeEl) activeEl.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+      }
+
+      function renderInspector() {
+        if (!state.focusedAccountId) return;
+        const acc = state.accounts.find((a) => a.id === state.focusedAccountId) || null;
+        if (!acc) return;
+
+        const net = getAccountNet(acc);
+        const proxyModeLabel =
+          net.proxyMode === "system" ? t("proxy.system") : net.proxyMode === "custom" ? t("proxy.custom") : t("proxy.direct");
+        const proxyCustomValue = net.proxyMode === "custom" ? (net.proxyCustom.trim() ? net.proxyCustom.trim() : t("value.empty")) : "-";
+        const uaPresetId = inferUaPresetId(net);
+        const uaPresetLabelKey = UA_PRESET_LABEL.get(uaPresetId) || "ua.preset.custom";
+        const uaPresetLabel = t(uaPresetLabelKey);
+
+        const creditsText = acc.credits.total > 0 ? `${acc.credits.remaining}/${acc.credits.total}` : "-";
+
+        const fields = [
+          { label: t("field.email"), value: acc.email ?? t("value.unverified"), mono: false },
+          { label: t("field.userId"), value: acc.userId ?? t("value.unverified"), mono: true },
+          { label: t("field.fingerprint"), value: acc.id, mono: true },
+          { label: t("field.tokenMasked"), value: `${acc.tokenMasked} (${acc.id})`, mono: true },
+          { label: t("field.status"), value: statusLabel(acc.status), mono: false },
+          { label: t("field.plan"), value: acc.plan || "-", mono: true },
+          { label: t("field.credits"), value: creditsText, mono: true },
+          { label: t("field.proxy"), value: `${proxyModeLabel}${net.proxyMode === "custom" ? ` · ${proxyCustomValue}` : ""}`, mono: true },
+          { label: t("field.userAgent"), value: uaPresetLabel, mono: true },
+          {
+            label: t("field.lastRefreshedAt"),
+            value: acc.lastRefreshedAt ? new Date(acc.lastRefreshedAt).toLocaleString() : t("value.unrefreshed"),
+            mono: false
+          }
+        ];
+
+        const fieldsHtml = fields
+          .map((f) => {
+            const v = f.html ? f.value : escapeHtml(String(f.value));
+            return `<div class="field">
+              <div class="field-label">${escapeHtml(f.label)}</div>
+              <div class="field-value ${f.mono ? "mono" : ""}">${v}</div>
+            </div>`;
+          })
+          .join("");
+
+        const profileEditorHtml = `
+          <div class="section-divider"></div>
+          <div class="section-title">${escapeHtml(t("section.profile"))}</div>
+          <div class="setting-grid">
+            <div class="setting-row">
+              <div class="setting-label">${escapeHtml(t("setting.displayName"))}</div>
+              <div style="display:flex; gap:8px; min-width:0">
+                <input id="accDisplayName" class="input" type="text" value="${escapeHtml(acc.displayName || "")}" placeholder="${escapeHtml(
+          t("setting.displayName.placeholder")
+        )}" style="flex:1; min-width:0" />
+                <button class="btn" id="btnAccSaveMeta" type="button">${escapeHtml(t("setting.meta.save"))}</button>
+              </div>
+            </div>
+          </div>
+        `;
+
+        const tagsChipsHtml =
+          acc.tags.length > 0
+            ? acc.tags
+                .map((tag) => {
+                  const removeLabel = t("setting.tags.remove", { tag });
+                  return `<span class="tag-chip tag-edit" data-tag="${escapeHtml(tag)}"><span>${escapeHtml(
+                    tag
+                  )}</span><button class="tag-remove" type="button" data-remove="${escapeHtml(tag)}" title="${escapeHtml(
+                    removeLabel
+                  )}" aria-label="${escapeHtml(removeLabel)}">×</button></span>`;
+                })
+                .join("")
+            : `<span class="muted">${escapeHtml(t("value.noTags"))}</span>`;
+
+        const tagsEditorHtml = `
+          <div class="section-divider"></div>
+          <div class="section-title">${escapeHtml(t("section.tags"))}</div>
+          <div class="tags-editor">
+            <div class="tags-chips" id="accTagsChips">${tagsChipsHtml}</div>
+            <div class="tags-add">
+              <input id="accTagInput" class="input" type="text" placeholder="${escapeHtml(t("setting.tags.placeholder"))}" />
+              <button class="btn" id="btnAccAddTag" type="button">${escapeHtml(t("setting.tags.add"))}</button>
+            </div>
+            <div class="muted" style="margin-top:8px">${escapeHtml(t("setting.tags.hint"))}</div>
+          </div>
+        `;
+
+        const proxyModeOptions = [
+          { value: "system", label: t("proxy.system") },
+          { value: "custom", label: t("proxy.custom") },
+          { value: "direct", label: t("proxy.direct") }
+        ]
+          .map((o) => `<option value="${escapeHtml(o.value)}" ${net.proxyMode === o.value ? "selected" : ""}>${escapeHtml(o.label)}</option>`)
+          .join("");
+
+        const uaOptions = [
+          { value: "default", label: t("ua.preset.default") },
+          { value: "chrome_win", label: t("ua.preset.win") },
+          { value: "chrome_mac", label: t("ua.preset.mac") },
+          { value: "chrome_linux", label: t("ua.preset.linux") },
+          { value: "custom", label: t("ua.preset.custom") }
+        ]
+          .map((o) => `<option value="${escapeHtml(o.value)}" ${uaPresetId === o.value ? "selected" : ""}>${escapeHtml(o.label)}</option>`)
+          .join("");
+
+        const netEditorHtml = `
+          <div class="section-divider"></div>
+          <div class="section-title">${escapeHtml(t("section.networkFingerprint"))}</div>
+          <div class="setting-grid">
+            <div class="setting-row">
+              <div class="setting-label">${escapeHtml(t("setting.proxyMode"))}</div>
+              <select id="accProxyMode" class="input">${proxyModeOptions}</select>
+            </div>
+            <div class="setting-row" id="accProxyCustomRow" style="${net.proxyMode === "custom" ? "" : "display:none"}">
+              <div class="setting-label">${escapeHtml(t("setting.proxyCustom"))}</div>
+              <input id="accProxyCustom" class="input" type="text" value="${escapeHtml(net.proxyCustom || "")}" placeholder="${escapeHtml(t("proxy.custom.placeholder"))}" />
+            </div>
+
+            <div class="setting-row">
+              <div class="setting-label">${escapeHtml(t("setting.uaPreset"))}</div>
+              <select id="accUaPreset" class="input">${uaOptions}</select>
+            </div>
+
+            <div class="setting-row full">
+              <div class="setting-label">${escapeHtml(t("setting.userAgent"))}</div>
+              <textarea id="accUserAgent" class="mono" rows="3" spellcheck="false">${escapeHtml(net.userAgent || "")}</textarea>
+              <div class="setting-actions">
+                <button class="btn" id="btnAccResetUa" type="button">${escapeHtml(t("setting.resetUa"))}</button>
+                <button class="btn btn-primary" id="btnAccApplyNet" type="button">${escapeHtml(t("setting.apply"))}</button>
+              </div>
+            </div>
+          </div>
+          <div class="muted" style="margin-top:10px">${escapeHtml(t("setting.persistHint"))}</div>
+        `;
+
+        el("inspectorBody").innerHTML = fieldsHtml + profileEditorHtml + tagsEditorHtml + netEditorHtml;
+
+        const displayNameEl = el("accDisplayName");
+        const btnSaveMeta = el("btnAccSaveMeta");
+        const tagInputEl = el("accTagInput");
+        const btnAddTag = el("btnAccAddTag");
+        const tagsChipsEl = el("accTagsChips");
+
+        const proxyModeEl = el("accProxyMode");
+        const proxyCustomRow = el("accProxyCustomRow");
+        const proxyCustomEl = el("accProxyCustom");
+        const uaPresetEl = el("accUaPreset");
+        const uaEl = el("accUserAgent");
+        const btnResetUa = el("btnAccResetUa");
+        const btnApplyNet = el("btnAccApplyNet");
+
+        const saveDisplayName = () => {
+          const target = state.accounts.find((a) => a.id === acc.id);
+          if (!target) return;
+          setAccountMeta(target.id, { displayName: String(displayNameEl?.value || "") });
+          render();
+        };
+
+        const addTagsFromInput = () => {
+          const target = state.accounts.find((a) => a.id === acc.id);
+          if (!target) return;
+          const raw = String(tagInputEl?.value || "");
+          const parts = raw
+            .split(/[\s,，;；]+/g)
+            .map((x) => x.trim())
+            .filter(Boolean);
+          if (parts.length === 0) return;
+          setAccountMeta(target.id, { tags: [...target.tags, ...parts] });
+          if (tagInputEl) tagInputEl.value = "";
+          render();
+        };
+
+        btnSaveMeta?.addEventListener("click", () => saveDisplayName());
+        displayNameEl?.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          saveDisplayName();
+        });
+        displayNameEl?.addEventListener("blur", () => saveDisplayName());
+
+        btnAddTag?.addEventListener("click", () => addTagsFromInput());
+        tagInputEl?.addEventListener("keydown", (e) => {
+          if (e.key !== "Enter") return;
+          e.preventDefault();
+          addTagsFromInput();
+        });
+        tagsChipsEl?.addEventListener("click", (e) => {
+          const btn = e.target?.closest?.("button.tag-remove");
+          if (!btn) return;
+          const target = state.accounts.find((a) => a.id === acc.id);
+          if (!target) return;
+          const tag = String(btn.getAttribute("data-remove") || "");
+          setAccountMeta(
+            target.id,
+            { tags: target.tags.filter((t) => t !== tag) }
+          );
+          render();
+        });
+
+        const syncProxyCustomVisibility = () => {
+          const mode = String(proxyModeEl?.value || "system");
+          if (proxyCustomRow) proxyCustomRow.style.display = mode === "custom" ? "" : "none";
+        };
+
+        const syncUaFromPreset = () => {
+          const preset = String(uaPresetEl?.value || "custom");
+          if (preset === "custom") return;
+          const ua = getUaByPresetId(preset);
+          if (uaEl) uaEl.value = ua;
+        };
+
+        proxyModeEl?.addEventListener("change", () => syncProxyCustomVisibility());
+        uaPresetEl?.addEventListener("change", () => syncUaFromPreset());
+        uaEl?.addEventListener("input", () => {
+          const preset = String(uaPresetEl?.value || "custom");
+          if (preset === "custom") return;
+          const expected = getUaByPresetId(preset);
+          if (String(uaEl.value || "") !== String(expected || "")) {
+            if (uaPresetEl) uaPresetEl.value = "custom";
+          }
+        });
+
+        btnResetUa?.addEventListener("click", () => {
+          if (uaPresetEl) uaPresetEl.value = "default";
+          if (uaEl) uaEl.value = getUaByPresetId("default");
+        });
+
+        btnApplyNet?.addEventListener("click", () => {
+          const target = state.accounts.find((a) => a.id === acc.id);
+          if (!target) return;
+
+          const proxyMode = String(proxyModeEl?.value || "system");
+          const proxyCustom = String(proxyCustomEl?.value || "");
+          const uaPreset = String(uaPresetEl?.value || "custom");
+          const userAgent = String(uaEl?.value || "");
+
+          const updated = sanitizeAccountNet({
+            ...getAccountNet(target),
+            proxyMode,
+            proxyCustom,
+            uaPreset,
+            userAgent
+          });
+          target.net = updated;
+          saveAccountNet(target.id, updated);
+          render();
+        });
+
+        el("btnInspectorOpenTab").disabled = false;
+        el("btnInspectorCloseTab").disabled = !state.tabs.includes(acc.id);
+      }
+
+      function renderWorkspaceContent() {
+        const kv = el("contentKv");
+        const activeAcc = state.activeTabId ? state.accounts.find((a) => a.id === state.activeTabId) : null;
+        const net = activeAcc ? getAccountNet(activeAcc) : getDefaultAccountNet();
+
+        const proxyModeLabel = net.proxyMode === "system" ? t("proxy.system") : net.proxyMode === "custom" ? t("proxy.custom") : t("proxy.direct");
+        const proxyCustomValue = net.proxyMode === "custom" ? (net.proxyCustom.trim() ? net.proxyCustom.trim() : t("value.empty")) : "-";
+
+        const inferredUaPreset = inferUaPresetId(net);
+        const uaPresetLabelKey = UA_PRESET_LABEL.get(inferredUaPreset) || "ua.preset.custom";
+        const userAgentValue = `${t(uaPresetLabelKey)} · ${net.userAgent || ""}`.trim();
+
+        if (!state.activeTabId) {
+          kv.innerHTML = [
+            [t("kv.activeTab"), "-"],
+            [t("kv.proxyMode"), proxyModeLabel],
+            [t("kv.proxyCustom"), proxyCustomValue],
+            [t("kv.userAgent"), userAgentValue],
+            [t("kv.hint"), t("workspace.hint")]
+          ]
+            .map(([k, v]) => `<div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(v)}</div>`)
+            .join("");
+          return;
+        }
+
+        const acc = activeAcc;
+        if (!acc) return;
+        const title = getAccountTitle(acc);
+        const creditsText = acc.credits.total > 0 ? `${acc.credits.remaining}/${acc.credits.total}` : "-";
+
+        kv.innerHTML = [
+          [t("kv.activeTab"), title],
+          [t("kv.fingerprint"), acc.id],
+          [t("kv.status"), statusLabel(acc.status)],
+          [t("kv.plan"), acc.plan || "-"],
+          [t("kv.credits"), creditsText],
+          [t("kv.proxyMode"), proxyModeLabel],
+          [t("kv.proxyCustom"), proxyCustomValue],
+          [t("kv.userAgent"), userAgentValue],
+          [t("kv.content"), t("workspace.content")]
+        ]
+          .map(([k, v]) => `<div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(v)}</div>`)
+          .join("");
+      }
+
+      function openExportFromSelection() {
+        const selected = getSelectedAccounts();
+        if (selected.length === 0) {
+          alert(t("alert.export.needSelection"));
+          return;
+        }
+        showExportDialog(selected);
+      }
+
+      function openImportDialog() {
+        el("importTextarea").value = "";
+        el("importHint").textContent = t("modal.import.hint");
+        el("importDialog").showModal();
+      }
+
+      function commitImport() {
+        const raw = el("importTextarea").value || "";
+        const lines = raw
+          .split(/\r?\n/)
+          .map((l) => l.trim())
+          .filter(Boolean);
+
+        if (lines.length === 0) {
+          alert(t("alert.import.empty"));
+          return;
+        }
+
+        const unique = Array.from(new Set(lines));
+        const duplicateLines = lines.length - unique.length;
+        const existingTokens = new Set(state.accounts.map((a) => a.token));
+        const added = [];
+        let skippedExisting = 0;
+
+        for (const token of unique) {
+          if (existingTokens.has(token)) {
+            skippedExisting += 1;
+            continue;
+          }
+
+          const fp = fingerprint8(token);
+          const id = fp;
+          const tokenMasked = maskToken(token);
+          const baseNet = getDefaultAccountNet();
+          const savedNet = getSavedAccountNet(id);
+          const net = savedNet ? sanitizeAccountNet({ ...baseNet, ...savedNet }) : baseNet;
+
+          const savedMeta = getSavedAccountMeta(id);
+          const seedMeta = { displayName: "", tags: [] };
+          const meta = sanitizeAccountMeta({ ...seedMeta, ...(savedMeta || {}) });
+
+          state.accounts.push({
+            id,
+            token,
+            tokenMasked,
+            net,
+            displayName: meta.displayName,
+            email: null,
+            userId: null,
+            plan: "-",
+            credits: { remaining: 0, total: 0 },
+            tags: meta.tags,
+            status: "unverified",
+            lastRefreshedAt: null
+          });
+          existingTokens.add(token);
+          added.push(id);
+        }
+
+        if (added.length === 0) {
+          alert(t("alert.import.none"));
+          return;
+        }
+
+        el("importDialog").close();
+        state.selectedIds.clear();
+        for (const id of added) state.selectedIds.add(id);
+        state.focusedAccountId = added[0];
+
+        const ignored = duplicateLines + skippedExisting;
+        const ignoredSuffix = ignored > 0 ? t("alert.import.ignoredSuffix", { ignored }) : "";
+        alert(t("alert.import.success", { added: added.length, ignoredSuffix }));
+        render();
+      }
+
+      function setSidebarCollapsed(collapsed) {
+        const sidebar = el("sidebar");
+        const layout = el("layout");
+        sidebar.classList.toggle("collapsed", collapsed);
+        layout.classList.toggle("sidebar-collapsed", collapsed);
+        sidebar.setAttribute("data-collapsed", collapsed ? "1" : "0");
+
+        const btn = el("btnToggleSidebar");
+        btn.textContent = collapsed ? "»" : "«";
+        const label = collapsed ? t("sidebar.toggle.expand") : t("sidebar.toggle.collapse");
+        btn.title = label;
+        btn.setAttribute("aria-label", label);
+
+        const topBtn = el("btnToggleSidebarTop");
+        if (topBtn) {
+          topBtn.style.display = collapsed ? "inline-flex" : "none";
+          topBtn.title = t("sidebar.toggle.expand");
+          topBtn.setAttribute("aria-label", t("sidebar.toggle.expand"));
+        }
+
+        try {
+          localStorage.setItem("flowith_ui_sidebar_collapsed", collapsed ? "1" : "0");
+        } catch {
+          // ignore
+        }
+      }
+
+      function toggleSidebar() {
+        const sidebar = el("sidebar");
+        const collapsed = sidebar.getAttribute("data-collapsed") === "1";
+        setSidebarCollapsed(!collapsed);
+      }
+
+      function wireEvents() {
+        el("proxyMode").value = state.proxyMode;
+        el("proxyCustom").value = state.proxyCustom;
+        el("uiLang").value = state.uiLang;
+        el("themeMode").value = state.uiTheme;
+
+        try {
+          setSidebarCollapsed(localStorage.getItem("flowith_ui_sidebar_collapsed") === "1");
+        } catch {
+          setSidebarCollapsed(false);
+        }
+
+        el("themeMode").addEventListener("change", (e) => {
+          setTheme(String(e.target?.value || "dark"));
+        });
+
+        el("uiLang").addEventListener("change", (e) => {
+          setLang(String(e.target?.value || "zh-CN"));
+          applyI18n();
+          render();
+        });
+
+        el("proxyMode").addEventListener("change", () => render());
+        el("proxyCustom").addEventListener("input", () => render());
+        el("search").addEventListener("input", () => render());
+
+        el("btnTestConnectivity").addEventListener("click", (e) => {
+          e.stopPropagation();
+          renderConnectivityPopover();
+        });
+        document.addEventListener("click", () => {
+          el("connPopover").style.display = "none";
+        });
+
+        el("btnViewCards").addEventListener("click", () => setView("cards"));
+        el("btnViewTable").addEventListener("click", () => setView("table"));
+
+        el("btnImport").addEventListener("click", () => openImportDialog());
+        el("btnExport").addEventListener("click", () => openExportFromSelection());
+
+        el("btnBatchVerify").addEventListener("click", () => {
+          const ids = state.selectedIds.size > 0 ? Array.from(state.selectedIds) : state.accounts.map((a) => a.id);
+          verifyAccountsByIds(ids);
+          render();
+        });
+
+        el("btnBatchOpen").addEventListener("click", () => {
+          const ids = state.selectedIds.size > 0 ? Array.from(state.selectedIds) : state.accounts.map((a) => a.id).slice(0, 1);
+          for (const id of ids) ensureTab(id);
+          if (!state.activeTabId && ids.length > 0) state.activeTabId = ids[0];
+          render();
+        });
+
+        el("selectAll").addEventListener("change", (e) => {
+          setAllSelection(Boolean(e.target.checked));
+        });
+
+        el("btnBatchbarOpen").addEventListener("click", () => {
+          for (const id of state.selectedIds) ensureTab(id);
+          render();
+        });
+        el("btnBatchbarCloseTabs").addEventListener("click", () => {
+          for (const id of Array.from(state.selectedIds)) closeTab(id);
+          render();
+        });
+        el("btnBatchbarVerify").addEventListener("click", () => {
+          verifyAccountsByIds(Array.from(state.selectedIds));
+          render();
+        });
+        el("btnBatchbarExport").addEventListener("click", () => openExportFromSelection());
+        el("btnBatchbarDelete").addEventListener("click", () => {
+          const selected = getSelectedAccounts();
+          if (selected.length === 0) return;
+          const ok = confirm(t("confirm.delete.accounts", { count: selected.length }));
+          if (!ok) return;
+          const del = new Set(selected.map((a) => a.id));
+          for (const id of del) {
+            deleteSavedAccountNet(id);
+            deleteSavedAccountMeta(id);
+          }
+          state.accounts = state.accounts.filter((a) => !del.has(a.id));
+          state.tabs = state.tabs.filter((id) => !del.has(id));
+          state.selectedIds.clear();
+          if (state.focusedAccountId && del.has(state.focusedAccountId)) state.focusedAccountId = null;
+          if (state.activeTabId && del.has(state.activeTabId)) state.activeTabId = state.tabs.length > 0 ? state.tabs[0] : null;
+          render();
+        });
+
+        el("btnCloseInspector").addEventListener("click", () => closeInspector());
+        el("btnInspectorOpenTab").addEventListener("click", () => {
+          if (!state.focusedAccountId) return;
+          ensureTab(state.focusedAccountId);
+          render();
+        });
+        el("btnInspectorCloseTab").addEventListener("click", () => {
+          if (!state.focusedAccountId) return;
+          closeTab(state.focusedAccountId);
+          render();
+        });
+        el("btnInspectorVerify").addEventListener("click", () => {
+          if (!state.focusedAccountId) return;
+          verifyAccountsByIds([state.focusedAccountId]);
+          render();
+        });
+        el("btnInspectorDelete").addEventListener("click", () => {
+          if (!state.focusedAccountId) return;
+          const acc = state.accounts.find((a) => a.id === state.focusedAccountId);
+          if (!acc) return;
+          const name = getAccountTitle(acc);
+          const ok = confirm(t("confirm.delete.account", { name }));
+          if (!ok) return;
+          deleteSavedAccountNet(acc.id);
+          deleteSavedAccountMeta(acc.id);
+          state.accounts = state.accounts.filter((a) => a.id !== acc.id);
+          state.selectedIds.delete(acc.id);
+          closeTab(acc.id);
+          state.focusedAccountId = null;
+          render();
+        });
+
+        el("btnCloseImport").addEventListener("click", () => el("importDialog").close());
+        el("btnImportCancel").addEventListener("click", () => el("importDialog").close());
+        el("btnImportCommit").addEventListener("click", () => commitImport());
+
+        el("btnCloseExport").addEventListener("click", () => el("exportDialog").close());
+        el("btnExportDone").addEventListener("click", () => el("exportDialog").close());
+        el("btnExportCopy").addEventListener("click", async () => {
+          const text = el("exportTextarea").value || "";
+          try {
+            await navigator.clipboard.writeText(text);
+            el("exportHint").textContent = t("clipboard.ok");
+          } catch {
+            el("exportHint").textContent = t("clipboard.fail");
+          }
+        });
+        el("btnExportDownload").addEventListener("click", () => {
+          const text = el("exportTextarea").value || "";
+          const filename = `flowith-refresh-tokens-${Date.now()}.txt`;
+          downloadTextFile(filename, text);
+          el("exportHint").textContent = t("export.downloaded", { filename });
+        });
+
+        el("btnToggleSidebar").addEventListener("click", () => toggleSidebar());
+        el("btnToggleSidebarTop").addEventListener("click", () => toggleSidebar());
+      }
+
+      seedAccounts();
+      wireEvents();
+      applyI18n();
+      render();
+    </script>
+  </body>
+</html>
