@@ -22,11 +22,15 @@ npm install
 
 ## Steps
 
-### 1) Start the app (dev)
+### 1) Start the app (dev or packaged)
+
+For dev:
 
 ```bash
 npm run dev
 ```
+
+For packaged directory builds, start the platform executable instead (see `docs/dev-runbook.md`).
 
 Expected:
 - The Workspace UI shows **Topbar / Sidebar / Tabs workspace / Inspector**.
@@ -110,4 +114,3 @@ Results (PASS/FAIL):
 Artifacts:
 - Screenshots:
 - Notes:
-

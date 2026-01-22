@@ -28,6 +28,32 @@ npm test
 npm run build
 ```
 
+## Packaging (dir)
+
+This repo provides a lightweight directory packager (no installers) via `scripts/package-dir.mjs`.
+
+### Linux (build + package)
+
+```bash
+npm run dist:linux
+```
+
+Expected output:
+- A folder under `dist/` named like `linux-unpacked*`
+- An executable at `dist/linux-unpacked*/flowith-web-account-manager`
+
+### Windows (build + package)
+
+Run on a Windows host:
+
+```powershell
+npm run dist:win
+```
+
+Expected output:
+- A folder under `dist/` named like `win-unpacked*`
+- An executable at `dist/win-unpacked*/flowith-web-account-manager.exe`
+
 ## Smoke checklist (manual)
 
 Follow:
@@ -59,4 +85,3 @@ Use a credential-free proxy URL, for example:
 http://127.0.0.1:7890
 socks5://127.0.0.1:7891
 ```
-
