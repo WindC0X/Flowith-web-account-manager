@@ -670,6 +670,10 @@ export default function WorkspaceShell() {
   }, []);
 
   useEffect(() => {
+    void pushViewportBounds();
+  }, [pushViewportBounds, sidebarCollapsed, inspectorOpen, uiPrefs.locale, error]);
+
+  useEffect(() => {
     const el = viewportRef.current;
     if (!el) return;
 

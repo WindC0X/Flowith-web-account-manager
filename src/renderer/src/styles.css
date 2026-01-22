@@ -262,7 +262,7 @@ textarea:focus {
 
 .topbar {
   min-height: 54px;
-  height: auto;
+  height: 54px;
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -335,7 +335,7 @@ textarea:focus {
 
 .topbar-group-right {
   flex: 1;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
 }
 
