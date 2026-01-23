@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: ["main"]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -43,3 +44,54 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Upload build output (out)
+        uses: actions/upload-artifact@v4
+        with:
+          name: out-${{ runner.os }}-${{ runner.arch }}
+          path: out/**
+
+      - name: Package (tag only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node scripts/package-dir.mjs
+
+      - name: Archive release asset (linux)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Linux'
+        run: tar -czf "dist/flowith-web-account-manager-${{ github.ref_name }}-linux-${{ runner.arch }}.tar.gz" -C dist linux-unpacked
+
+      - name: Archive release asset (windows)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "dist/win-unpacked" -DestinationPath "dist/flowith-web-account-manager-${{ github.ref_name }}-win-${{ runner.arch }}.zip"
+
+      - name: Archive release asset (macos)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
+        run: ditto -c -k --sequesterRsrc --keepParent "dist/mac-unpacked" "dist/flowith-web-account-manager-${{ github.ref_name }}-mac-${{ runner.arch }}.zip"
+
+      - name: Upload release asset (tag only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-assets-${{ runner.os }}-${{ runner.arch }}
+          path: dist/flowith-web-account-manager-${{ github.ref_name }}-*
+
+  release:
+    name: Release (tag only)
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-assets-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-assets/*

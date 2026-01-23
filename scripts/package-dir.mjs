@@ -38,8 +38,8 @@ function isoStamp() {
 const { platform } = parseArgs(process.argv.slice(2));
 const requestedPlatform = platform ?? process.platform;
 
-if (!["linux", "win32"].includes(requestedPlatform)) {
-  console.error(`Unsupported platform "${requestedPlatform}". Supported: linux, win32.`);
+if (!["linux", "win32", "darwin"].includes(requestedPlatform)) {
+  console.error(`Unsupported platform "${requestedPlatform}". Supported: linux, win32, darwin.`);
   process.exit(1);
 }
 
@@ -68,7 +68,9 @@ if (!pathExists(buildOut)) {
 
 ensureDir(distRoot);
 
-const platformSlug = requestedPlatform === "win32" ? "win" : "linux";
+const executableBaseName = "flowith-web-account-manager";
+const platformSlug =
+  requestedPlatform === "win32" ? "win" : requestedPlatform === "darwin" ? "mac" : "linux";
 const baseName = `${platformSlug}-unpacked`;
 let targetDir = path.join(distRoot, baseName);
 if (pathExists(targetDir)) targetDir = path.join(distRoot, `${baseName}-${isoStamp()}`);
@@ -77,7 +79,28 @@ console.log(`Packaging directory to: ${targetDir}`);
 
 fs.cpSync(electronDist, targetDir, { recursive: true });
 
-const resourcesDir = path.join(targetDir, "resources");
+let resourcesDir = path.join(targetDir, "resources");
+let macAppBundlePath = null;
+
+if (requestedPlatform === "darwin") {
+  const entries = fs.readdirSync(targetDir, { withFileTypes: true });
+  const appDir = entries.find((e) => e.isDirectory() && e.name.endsWith(".app"))?.name ?? null;
+  if (!appDir) {
+    console.error(`Missing Electron .app bundle in "${targetDir}".`);
+    process.exit(1);
+  }
+
+  const srcAppBundlePath = path.join(targetDir, appDir);
+  const dstAppBundlePath = path.join(targetDir, `${executableBaseName}.app`);
+  macAppBundlePath = srcAppBundlePath;
+  if (srcAppBundlePath !== dstAppBundlePath && !pathExists(dstAppBundlePath)) {
+    fs.renameSync(srcAppBundlePath, dstAppBundlePath);
+    macAppBundlePath = dstAppBundlePath;
+  }
+
+  resourcesDir = path.join(macAppBundlePath, "Contents", "Resources");
+}
+
 if (!pathExists(resourcesDir)) {
   console.error(`Missing "${resourcesDir}" in copied Electron distribution.`);
   process.exit(1);
@@ -111,7 +134,6 @@ fs.cpSync(srcNodeModules, dstNodeModules, {
   },
 });
 
-const executableBaseName = "flowith-web-account-manager";
 if (requestedPlatform === "linux") {
   const srcExe = path.join(targetDir, "electron");
   const dstExe = path.join(targetDir, executableBaseName);
@@ -122,4 +144,7 @@ if (requestedPlatform === "linux") {
   const dstExe = path.join(targetDir, `${executableBaseName}.exe`);
   if (pathExists(srcExe) && !pathExists(dstExe)) fs.renameSync(srcExe, dstExe);
   console.log(`Run: "${dstExe}"`);
+} else if (requestedPlatform === "darwin") {
+  const appBundlePath = macAppBundlePath ?? path.join(targetDir, `${executableBaseName}.app`);
+  console.log(`Run: open "${appBundlePath}"`);
 }

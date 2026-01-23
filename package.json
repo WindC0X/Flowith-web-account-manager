@@ -9,6 +9,7 @@
     "dist": "npm run build && node scripts/package-dir.mjs",
     "dist:win": "npm run build && node scripts/package-dir.mjs --platform=win32",
     "dist:linux": "npm run build && node scripts/package-dir.mjs --platform=linux",
+    "dist:mac": "npm run build && node scripts/package-dir.mjs --platform=darwin",
     "preview": "electron-vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run",
