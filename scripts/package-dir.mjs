@@ -89,6 +89,13 @@ ensureDir(appDir);
 fs.cpSync(buildOut, path.join(appDir, "out"), { recursive: true });
 fs.copyFileSync(path.join(repoRoot, "package.json"), path.join(appDir, "package.json"));
 
+const iconFiles = ["TrayIcon.png", "TrayIconLight.png"];
+for (const fileName of iconFiles) {
+  const srcIcon = path.join(repoRoot, fileName);
+  if (!pathExists(srcIcon)) continue;
+  fs.copyFileSync(srcIcon, path.join(appDir, fileName));
+}
+
 const srcNodeModules = path.join(repoRoot, "node_modules");
 const dstNodeModules = path.join(appDir, "node_modules");
 
@@ -116,4 +123,3 @@ if (requestedPlatform === "linux") {
   if (pathExists(srcExe) && !pathExists(dstExe)) fs.renameSync(srcExe, dstExe);
   console.log(`Run: "${dstExe}"`);
 }
-
