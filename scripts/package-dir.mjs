@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 
 function parseArgs(argv) {
   const args = {};
@@ -11,6 +12,19 @@ function parseArgs(argv) {
     }
     if (token === "--platform") {
       args.platform = argv[i + 1];
+      i++;
+      continue;
+    }
+    if (token === "--install-prod") {
+      args.installProd = true;
+      continue;
+    }
+    if (token.startsWith("--keep-locales=")) {
+      args.keepLocales = token.slice("--keep-locales=".length);
+      continue;
+    }
+    if (token === "--keep-locales") {
+      args.keepLocales = argv[i + 1];
       i++;
       continue;
     }
@@ -35,7 +49,39 @@ function isoStamp() {
   return new Date().toISOString().replace(/\..*$/, "").replace(/:/g, "").replace("T", "-");
 }
 
-const { platform } = parseArgs(process.argv.slice(2));
+function maybePruneLocales(targetLocalesDir, keepLocalesCsv) {
+  if (!keepLocalesCsv) return;
+  if (!pathExists(targetLocalesDir)) return;
+  const keep = new Set(
+    keepLocalesCsv
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean)
+      .map((locale) => `${locale}.pak`)
+  );
+  const entries = fs.readdirSync(targetLocalesDir, { withFileTypes: true });
+  const existingPaks = new Set(
+    entries.filter((e) => e.isFile() && e.name.endsWith(".pak")).map((e) => e.name)
+  );
+  const hasAnyKeepFile = [...keep].some((name) => existingPaks.has(name));
+  if (!hasAnyKeepFile) return;
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.endsWith(".pak")) continue;
+    if (keep.has(entry.name)) continue;
+    fs.rmSync(path.join(targetLocalesDir, entry.name));
+  }
+}
+
+function runNpmCiProd(appDir) {
+  execFileSync(
+    process.platform === "win32" ? "npm.cmd" : "npm",
+    ["ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"],
+    { cwd: appDir, stdio: "inherit" }
+  );
+}
+
+const { platform, installProd, keepLocales } = parseArgs(process.argv.slice(2));
 const requestedPlatform = platform ?? process.platform;
 
 if (!["linux", "win32", "darwin"].includes(requestedPlatform)) {
@@ -111,6 +157,7 @@ ensureDir(appDir);
 
 fs.cpSync(buildOut, path.join(appDir, "out"), { recursive: true });
 fs.copyFileSync(path.join(repoRoot, "package.json"), path.join(appDir, "package.json"));
+fs.copyFileSync(path.join(repoRoot, "package-lock.json"), path.join(appDir, "package-lock.json"));
 
 const iconFiles = ["TrayIcon.png", "TrayIconLight.png"];
 for (const fileName of iconFiles) {
@@ -119,20 +166,27 @@ for (const fileName of iconFiles) {
   fs.copyFileSync(srcIcon, path.join(appDir, fileName));
 }
 
-const srcNodeModules = path.join(repoRoot, "node_modules");
-const dstNodeModules = path.join(appDir, "node_modules");
+if (installProd) {
+  runNpmCiProd(appDir);
+} else {
+  const srcNodeModules = path.join(repoRoot, "node_modules");
+  const dstNodeModules = path.join(appDir, "node_modules");
 
-fs.cpSync(srcNodeModules, dstNodeModules, {
-  recursive: true,
-  filter: (src) => {
-    const rel = path.relative(srcNodeModules, src);
-    if (rel === "") return true;
-    const first = rel.split(path.sep)[0];
-    if (first === "electron") return false;
-    if (first === ".bin") return false;
-    return true;
-  },
-});
+  fs.cpSync(srcNodeModules, dstNodeModules, {
+    recursive: true,
+    filter: (src) => {
+      const rel = path.relative(srcNodeModules, src);
+      if (rel === "") return true;
+      const first = rel.split(path.sep)[0];
+      if (first === "electron") return false;
+      if (first === ".bin") return false;
+      return true;
+    },
+  });
+}
+
+const localesDir = requestedPlatform === "darwin" ? path.join(resourcesDir, "locales") : path.join(targetDir, "locales");
+maybePruneLocales(localesDir, keepLocales);
 
 if (requestedPlatform === "linux") {
   const srcExe = path.join(targetDir, "electron");

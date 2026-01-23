@@ -53,7 +53,15 @@ jobs:
 
       - name: Package (tag only)
         if: startsWith(github.ref, 'refs/tags/v')
-        run: node scripts/package-dir.mjs
+        run: node scripts/package-dir.mjs --install-prod --keep-locales=en-US,zh-CN
+
+      - name: Generate Windows icon (tag only)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        run: node scripts/generate-ico.mjs --src TrayIcon.png --out dist/app-icon.ico
+
+      - name: Set Windows exe icon (tag only)
+        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
+        run: node scripts/set-win-exe-icon.mjs --exe dist/win-unpacked/flowith-web-account-manager.exe --icon dist/app-icon.ico
 
       - name: Archive release asset (linux)
         if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Linux'
