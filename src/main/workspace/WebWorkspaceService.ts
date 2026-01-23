@@ -124,7 +124,7 @@ export class WebWorkspaceService {
     view.webContents.on("context-menu", (_event, params) => {
       const menu = Menu.buildFromTemplate([
         {
-          label: "Reload",
+          label: "页面刷新",
           accelerator: "CmdOrCtrl+R",
           click: () => {
             view.webContents.reload();
