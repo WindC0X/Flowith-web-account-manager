@@ -662,10 +662,10 @@ export default function WorkspaceShell() {
     if (!el) return;
     const rect = el.getBoundingClientRect();
     await window.desktop.workspace.setViewportBounds({
-      x: Math.round(rect.left),
-      y: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
+      x: Math.floor(rect.left),
+      y: Math.floor(rect.top),
+      width: Math.floor(rect.width),
+      height: Math.floor(rect.height),
     });
   }, []);
 
@@ -1082,7 +1082,7 @@ export default function WorkspaceShell() {
         <div className="brand">
           <img
             className="brand-logo"
-            src={uiPrefs.theme === "dark" ? logoOnDark : logoOnLight}
+            src={uiPrefs.theme === "dark" ? logoOnLight : logoOnDark}
             alt="Flowith"
           />
           <div>
