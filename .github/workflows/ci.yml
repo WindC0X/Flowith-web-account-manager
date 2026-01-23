@@ -51,37 +51,23 @@ jobs:
           name: out-${{ runner.os }}-${{ runner.arch }}
           path: out/**
 
-      - name: Package (tag only)
+      - name: Sync version from tag (tag only)
         if: startsWith(github.ref, 'refs/tags/v')
-        run: node scripts/package-dir.mjs --install-prod --keep-locales=en-US,zh-CN
+        run: node -e "const fs=require('node:fs');const tag=(process.env.GITHUB_REF_NAME||'').replace(/^v/,'');if(!tag){throw new Error('missing GITHUB_REF_NAME');}const p='package.json';const pkg=JSON.parse(fs.readFileSync(p,'utf8'));pkg.version=tag;fs.writeFileSync(p,JSON.stringify(pkg,null,2)+'\\n');console.log('Set package.json version ->',tag);"
 
-      - name: Generate Windows icon (tag only)
-        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
-        run: node scripts/generate-ico.mjs --src TrayIcon.png --out dist/app-icon.ico
+      - name: Build installers (tag only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: npx --no-install electron-builder --publish never
 
-      - name: Set Windows exe icon (tag only)
-        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
-        run: node scripts/set-win-exe-icon.mjs --exe dist/win-unpacked/flowith-web-account-manager.exe --icon dist/app-icon.ico
-
-      - name: Archive release asset (linux)
-        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Linux'
-        run: tar -czf "dist/flowith-web-account-manager-${{ github.ref_name }}-linux-${{ runner.arch }}.tar.gz" -C dist linux-unpacked
-
-      - name: Archive release asset (windows)
-        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'Windows'
-        shell: pwsh
-        run: Compress-Archive -Path "dist/win-unpacked" -DestinationPath "dist/flowith-web-account-manager-${{ github.ref_name }}-win-${{ runner.arch }}.zip"
-
-      - name: Archive release asset (macos)
-        if: startsWith(github.ref, 'refs/tags/v') && runner.os == 'macOS'
-        run: ditto -c -k --sequesterRsrc --keepParent "dist/mac-unpacked" "dist/flowith-web-account-manager-${{ github.ref_name }}-mac-${{ runner.arch }}.zip"
-
-      - name: Upload release asset (tag only)
+      - name: Upload release assets (tag only)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: release-assets-${{ runner.os }}-${{ runner.arch }}
-          path: dist/flowith-web-account-manager-${{ github.ref_name }}-*
+          path: |
+            dist/release/**/*.exe
+            dist/release/**/*.dmg
+            dist/release/**/*.AppImage
 
   release:
     name: Release (tag only)
@@ -102,4 +88,4 @@ jobs:
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*
+          files: release-assets/**

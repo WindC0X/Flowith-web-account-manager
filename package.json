@@ -3,6 +3,49 @@
   "private": true,
   "version": "0.0.0",
   "main": "out/main/index.js",
+  "build": {
+    "appId": "io.flowith.web.account-manager",
+    "productName": "Flowith Web Account Manager",
+    "artifactName": "flowith-web-account-manager-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist/release"
+    },
+    "files": [
+      "out/**",
+      "package.json",
+      "TrayIcon.png",
+      "TrayIconLight.png"
+    ],
+    "asar": true,
+    "npmRebuild": false,
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Utility",
+      "icon": "build/icon.png"
+    }
+  },
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -10,6 +53,7 @@
     "dist:win": "npm run build && node scripts/package-dir.mjs --platform=win32",
     "dist:linux": "npm run build && node scripts/package-dir.mjs --platform=linux",
     "dist:mac": "npm run build && node scripts/package-dir.mjs --platform=darwin",
+    "release": "npm run build && electron-builder --publish never",
     "preview": "electron-vite preview",
     "lint": "eslint \"src/**/*.{ts,tsx}\"",
     "test": "vitest run",
@@ -32,6 +76,7 @@
     "eslint": "^9.39.2",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.0.1",
+    "electron-builder": "^26.4.0",
     "pngjs": "^7.0.0",
     "rcedit": "^4.0.1",
     "typescript": "^5.9.3",
