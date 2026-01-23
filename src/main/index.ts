@@ -1,11 +1,34 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, nativeImage, nativeTheme } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { registerIpcHandlers } from "./ipc";
 import { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
 import { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 
-function resolveAppIconPath(): string | null {
+type IconCandidate = { path: string; image: Electron.NativeImage; luma: number };
+
+function averageLuma(image: Electron.NativeImage): number {
+  const { width, height } = image.getSize();
+  if (width <= 0 || height <= 0) return 0;
+  const bitmap = image.toBitmap();
+  if (bitmap.length < 4) return 0;
+
+  let sum = 0;
+  let count = 0;
+  for (let i = 0; i + 3 < bitmap.length; i += 4) {
+    const alpha = bitmap[i + 3] ?? 0;
+    if (alpha < 16) continue;
+    const r = bitmap[i] ?? 0;
+    const g = bitmap[i + 1] ?? 0;
+    const b = bitmap[i + 2] ?? 0;
+    sum += 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    count++;
+  }
+
+  return count > 0 ? sum / count : 0;
+}
+
+function resolveAppIcon(): Electron.NativeImage | null {
   const fileNames = ["TrayIcon.png", "TrayIconLight.png"];
   const candidatePaths: string[] = [];
 
@@ -20,17 +43,28 @@ function resolveAppIconPath(): string | null {
     }
   }
 
-  for (const candidate of candidatePaths) {
-    if (existsSync(candidate)) return candidate;
+  const unique = [...new Set(candidatePaths)];
+  const candidates: IconCandidate[] = [];
+
+  for (const candidatePath of unique) {
+    if (!existsSync(candidatePath)) continue;
+    const image = nativeImage.createFromPath(candidatePath);
+    if (image.isEmpty()) continue;
+    candidates.push({ path: candidatePath, image, luma: averageLuma(image) });
   }
 
-  return null;
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0]!.image;
+
+  const preferLightIcon = nativeTheme.shouldUseDarkColors;
+  candidates.sort((a, b) => a.luma - b.luma);
+  return preferLightIcon ? candidates[candidates.length - 1]!.image : candidates[0]!.image;
 }
 
 function createWindow(): BrowserWindow {
-  const iconPath = resolveAppIconPath();
+  const icon = resolveAppIcon();
   const mainWindow = new BrowserWindow({
-    ...(iconPath ? { icon: iconPath } : {}),
+    ...(icon ? { icon } : {}),
     width: 1280,
     height: 800,
     show: false,
