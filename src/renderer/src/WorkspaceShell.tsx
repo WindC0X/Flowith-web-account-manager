@@ -163,7 +163,8 @@ const UI_STRINGS = {
     close: "关闭",
 
     importDialogTitle: "导入 refresh_token",
-    importDialogNote: "每行一个 refresh_token。导入后账号状态为“未校验”。",
+    importDialogNote:
+      "每行一个 refresh_token。导入时会尝试刷新 Supabase Session 以校验 token；导入结果会在弹窗内显示。",
     importPlaceholder: "每行一个 refresh_token",
     importHint: "UI 中只显示 token 指纹/掩码；导出才会输出明文。",
     cancel: "取消",
@@ -280,7 +281,8 @@ const UI_STRINGS = {
     close: "Close",
 
     importDialogTitle: "Import refresh_token",
-    importDialogNote: "One refresh_token per line. Imported accounts are unverified.",
+    importDialogNote:
+      "One refresh_token per line. Import validates each token by refreshing a Supabase session; results are shown in the dialog.",
     importPlaceholder: "One refresh_token per line",
     importHint: "UI never displays tokens. Export is the only plaintext flow.",
     cancel: "Cancel",
@@ -868,7 +870,6 @@ export default function WorkspaceShell() {
       setImportResult(result);
       setImportText("");
       await refreshAccounts();
-      setImportDialogOpen(false);
     } catch (e) {
       setError(toErrorMessage(e));
     } finally {
@@ -1101,7 +1102,15 @@ export default function WorkspaceShell() {
               onChange={(e) => setSearchText(e.target.value)}
               disabled={busy}
             />
-            <button className="btn" onClick={() => setImportDialogOpen(true)} disabled={busy}>
+            <button
+              className="btn"
+              onClick={() => {
+                setImportResult(null);
+                setImportText("");
+                setImportDialogOpen(true);
+              }}
+              disabled={busy}
+            >
               {t("import")}
             </button>
             <button className="btn" onClick={runExport} disabled={busy || selected.length === 0}>
@@ -1841,8 +1850,12 @@ export default function WorkspaceShell() {
         onCancel={(e) => {
           e.preventDefault();
           setImportDialogOpen(false);
+          setImportText("");
         }}
-        onClose={() => setImportDialogOpen(false)}
+        onClose={() => {
+          setImportDialogOpen(false);
+          setImportText("");
+        }}
         aria-label={t("importDialogTitle")}
       >
         <div className="modal">
@@ -1854,7 +1867,10 @@ export default function WorkspaceShell() {
             <button
               className="btn btn-icon"
               title={t("close")}
-              onClick={() => setImportDialogOpen(false)}
+              onClick={() => {
+                setImportDialogOpen(false);
+                setImportText("");
+              }}
               disabled={busy}
             >
               ×
@@ -1865,18 +1881,55 @@ export default function WorkspaceShell() {
             <textarea
               className="secret-textarea"
               value={importText}
-              onChange={(e) => setImportText(e.target.value)}
+              onChange={(e) => {
+                setImportText(e.target.value);
+                if (importResult) setImportResult(null);
+              }}
               placeholder={t("importPlaceholder")}
               disabled={busy}
             />
             <div className="muted" style={{ fontSize: 12 }}>
               {t("importHint")}
             </div>
+
+            {importResult ? (
+              <div style={{ display: "grid", gap: 10 }}>
+                <div className="chip" style={{ alignSelf: "flex-start" }}>
+                  <span className={clsx("dot", importResult.failed > 0 ? "dot-bad" : "dot-ok")} />
+                  {format(t("importResultChip"), {
+                    ok: importResult.imported,
+                    fail: importResult.failed,
+                  })}
+                </div>
+
+                {importResult.warnings.length > 0 ? (
+                  <div className="muted" style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>
+                    {importResult.warnings.join("\n")}
+                  </div>
+                ) : null}
+
+                {importResult.errors.length > 0 ? (
+                  <div
+                    className="danger-note mono"
+                    style={{ whiteSpace: "pre-wrap", maxHeight: 240, overflow: "auto" }}
+                  >
+                    {importResult.errors.join("\n")}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="modal-actions">
-            <button className="btn" onClick={() => setImportDialogOpen(false)} disabled={busy}>
-              {t("cancel")}
+            <button
+              className="btn"
+              onClick={() => {
+                setImportDialogOpen(false);
+                setImportText("");
+              }}
+              disabled={busy}
+            >
+              {importResult ? t("done") : t("cancel")}
             </button>
             <button
               className="btn btn-primary"
