@@ -1092,24 +1092,26 @@ export default function WorkspaceShell() {
         </div>
 
         <div className="topbar-group topbar-group-right" aria-label="Global actions">
-          <input
-            className="input topbar-search"
-            type="text"
-            placeholder={t("searchPlaceholder")}
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            disabled={busy}
-          />
-          <button className="btn" onClick={() => setImportDialogOpen(true)} disabled={busy}>
-            {t("import")}
-          </button>
-          <button className="btn" onClick={runExport} disabled={busy || selected.length === 0}>
-            {t("export")}
-          </button>
-          <button className="btn" onClick={refreshAccounts} disabled={busy}>
-            {t("refresh")}
-          </button>
-          <div style={{ position: "relative" }} ref={settingsContainerRef}>
+          <div className="topbar-actions">
+            <input
+              className="input topbar-search"
+              type="text"
+              placeholder={t("searchPlaceholder")}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              disabled={busy}
+            />
+            <button className="btn" onClick={() => setImportDialogOpen(true)} disabled={busy}>
+              {t("import")}
+            </button>
+            <button className="btn" onClick={runExport} disabled={busy || selected.length === 0}>
+              {t("export")}
+            </button>
+            <button className="btn" onClick={refreshAccounts} disabled={busy}>
+              {t("refresh")}
+            </button>
+          </div>
+          <div className="topbar-settings" style={{ position: "relative" }} ref={settingsContainerRef}>
             <button
               className="btn btn-ghost btn-icon"
               title={t("settings")}
@@ -1243,21 +1245,35 @@ export default function WorkspaceShell() {
           !inspectorOpen && "inspector-hidden"
         )}
       >
+        {sidebarCollapsed ? (
+          <button
+            type="button"
+            className="sidebar-expand-float-btn"
+            title={t("expandSidebar")}
+            aria-label={t("expandSidebar")}
+            onClick={() => updateUiPrefs({ sidebarCollapsed: false })}
+            disabled={busy}
+          >
+            »
+          </button>
+        ) : null}
+
         <aside className={clsx("sidebar", sidebarCollapsed && "collapsed")} id="sidebar">
           <div className="sidebar-header">
             <div className="sidebar-title">{t("sidebarTitle")}</div>
             <div className="sidebar-header-right">
-              <button
-                className="btn btn-ghost btn-icon"
-                title={sidebarCollapsed ? t("expandSidebar") : t("collapseSidebar")}
-                aria-label={sidebarCollapsed ? t("expandSidebar") : t("collapseSidebar")}
-                onClick={() => updateUiPrefs({ sidebarCollapsed: !sidebarCollapsed })}
-                disabled={busy}
-              >
-                {sidebarCollapsed ? "»" : "«"}
-              </button>
               {!sidebarCollapsed ? (
                 <>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-icon"
+                    title={t("collapseSidebar")}
+                    aria-label={t("collapseSidebar")}
+                    onClick={() => updateUiPrefs({ sidebarCollapsed: true })}
+                    disabled={busy}
+                  >
+                    «
+                  </button>
                   <button
                     className="btn btn-ghost btn-icon"
                     title={t("viewCards")}

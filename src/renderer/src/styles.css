@@ -339,6 +339,20 @@ textarea:focus {
   justify-content: flex-end;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+.topbar-settings {
+  flex: none;
+}
+
 .window-controls {
   display: flex;
   align-items: center;
@@ -437,8 +451,7 @@ textarea:focus {
 }
 
 .sidebar.collapsed .sidebar-header {
-  justify-content: center;
-  padding: 12px 0;
+  display: none;
 }
 
 .sidebar-header {
@@ -462,6 +475,25 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.sidebar-expand-float-btn {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border-default);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
 .sidebar-subheader {
