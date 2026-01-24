@@ -9,7 +9,6 @@ import {
   findAccountIdByFingerprint,
   isTokenEncryptionAvailable,
   setRefreshToken,
-  upsertAccountFingerprint,
   upsertAccountMeta,
 } from "./vault";
 
@@ -72,10 +71,23 @@ export async function importRefreshTokens(
       if (error) throw error;
       if (!data?.session) throw new Error("Supabase refresh returned no session.");
 
-      const existingAccountId = findAccountIdByFingerprint(fingerprint);
-      const accountId = existingAccountId ?? createAccountId();
-      if (!existingAccountId) {
-        upsertAccountFingerprint(accountId, fingerprint);
+      const rotatedRefreshToken = data.session.refresh_token ?? refreshToken;
+      const rotatedFingerprint =
+        rotatedRefreshToken === refreshToken ? fingerprint : fingerprintRefreshToken(rotatedRefreshToken);
+
+      const existingByInput = findAccountIdByFingerprint(fingerprint);
+      const existingByRotated =
+        rotatedFingerprint === fingerprint ? existingByInput : findAccountIdByFingerprint(rotatedFingerprint);
+
+      if (existingByInput && existingByRotated && existingByInput !== existingByRotated) {
+        throw new Error(
+          `Refresh token fingerprint conflict: input=${maskedFingerprint} rotated=${maskFingerprint(rotatedFingerprint)}`
+        );
+      }
+
+      const accountId = existingByRotated ?? existingByInput ?? createAccountId();
+      const isNewAccount = !existingByRotated && !existingByInput;
+      if (isNewAccount) {
         const uaPresetId = importUa ? null : pickRandomUaPresetId();
         const email = data.session.user?.email;
         upsertAccountMeta(accountId, {
@@ -85,7 +97,7 @@ export async function importRefreshTokens(
           ua: importUa ?? (uaPresetId ? { mode: "preset", value: uaPresetId } : { mode: "default" }),
         });
       }
-      setRefreshToken(accountId, refreshToken);
+      setRefreshToken(accountId, rotatedRefreshToken);
       imported += 1;
     } catch (e) {
       failed += 1;

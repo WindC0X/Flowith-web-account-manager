@@ -1,5 +1,6 @@
 import { safeStorage } from "electron";
 import StoreImport from "electron-store";
+import crypto from "node:crypto";
 import type { AccountMetaPatch, AccountSummary } from "../../shared/ipc";
 import { normalizeTags } from "../../shared/tags";
 
@@ -26,6 +27,10 @@ type VaultStore = StoreImport<VaultStoreSchema>;
 
 let store: VaultStore | null = null;
 const runtimeTokens = new Map<string, string>();
+
+function fingerprintRefreshToken(refreshToken: string): string {
+  return crypto.createHash("sha256").update(refreshToken).digest("hex").slice(0, 12);
+}
 
 export function isTokenEncryptionAvailable(): boolean {
   try {
@@ -84,6 +89,19 @@ export function upsertAccountFingerprint(accountId: string, fingerprint: string)
 export function setRefreshToken(accountId: string, refreshToken: string): { persisted: boolean } {
   const vault = getVault();
   const account = vault.accounts[accountId] ?? { id: accountId };
+
+  const fingerprint = fingerprintRefreshToken(refreshToken);
+  let fingerprintCollision = false;
+  for (const [id, other] of Object.entries(vault.accounts)) {
+    if (id === accountId) continue;
+    if (other.fingerprint === fingerprint) {
+      fingerprintCollision = true;
+      break;
+    }
+  }
+  if (!fingerprintCollision) {
+    account.fingerprint = fingerprint;
+  }
 
   const canEncrypt = isTokenEncryptionAvailable();
   if (canEncrypt) {
