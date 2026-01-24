@@ -101,6 +101,21 @@ app.whenReady().then(() => {
   const loginBootstrap = new FlowithLoginBootstrapService(workspace);
   registerIpcHandlers({ workspace, loginBootstrap });
 
+  let flushingBeforeQuit = false;
+  app.on("before-quit", (event) => {
+    if (flushingBeforeQuit) return;
+    flushingBeforeQuit = true;
+    event.preventDefault();
+    void (async () => {
+      try {
+        await loginBootstrap.syncOpenTabsBeforeQuit({ totalTimeoutMs: 2000, perTabTimeoutMs: 800 });
+      } catch {
+        // best-effort
+      }
+      app.quit();
+    })();
+  });
+
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       const w = createWindow();

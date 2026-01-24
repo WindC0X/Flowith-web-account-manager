@@ -98,6 +98,7 @@ export function registerIpcHandlers(deps: IpcDeps) {
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_CLOSE_TAB, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
+      await deps.loginBootstrap.syncFromOpenTab(accountId, { timeoutMs: 1000 });
       deps.workspace.closeTab(accountId);
     } catch (e) {
       throw new Error(safeErrorMessage(e));
@@ -343,6 +344,7 @@ export function registerIpcHandlers(deps: IpcDeps) {
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_DELETE, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
+      await deps.loginBootstrap.syncFromOpenTab(accountId, { timeoutMs: 1000 });
       deps.workspace.closeTab(accountId);
 
       const deleted = deleteAccount(accountId);

@@ -76,6 +76,10 @@ export class WebWorkspaceService {
     view?.webContents.reload();
   }
 
+  listOpenTabs(): string[] {
+    return [...this.views.keys()];
+  }
+
   getWebContents(accountId: string) {
     return this.views.get(accountId)?.webContents ?? null;
   }

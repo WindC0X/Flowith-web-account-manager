@@ -255,13 +255,41 @@ export class FlowithLoginBootstrapService {
     this.tokenSync.set(accountId, { stop });
   }
 
-  async syncFromOpenTab(accountId: string): Promise<void> {
+  async syncFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<void> {
     const webContents = this.workspace.getWebContents(accountId);
     if (!webContents) return;
-    try {
-      await this.syncTokensFromWebContents(accountId, webContents);
-    } catch {
-      // best-effort
+    const timeoutMs = options?.timeoutMs ?? 0;
+    const task = (async () => {
+      try {
+        await this.syncTokensFromWebContents(accountId, webContents);
+      } catch {
+        // best-effort
+      }
+    })();
+
+    if (timeoutMs <= 0) {
+      await task;
+      return;
+    }
+
+    await Promise.race([
+      task,
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, timeoutMs);
+      }),
+    ]);
+  }
+
+  async syncOpenTabsBeforeQuit(options?: { totalTimeoutMs?: number; perTabTimeoutMs?: number }): Promise<void> {
+    const totalTimeoutMs = options?.totalTimeoutMs ?? 2000;
+    const perTabTimeoutMs = options?.perTabTimeoutMs ?? 800;
+    const deadline = Date.now() + totalTimeoutMs;
+
+    for (const accountId of this.workspace.listOpenTabs()) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      const budget = Math.min(perTabTimeoutMs, remaining);
+      await this.syncFromOpenTab(accountId, { timeoutMs: budget });
     }
   }
 
