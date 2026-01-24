@@ -77,7 +77,7 @@ function syncSavePath(record: DownloadRecord, item: DownloadItem): void {
   record.savePath = path;
 }
 
-function saveAsDedupKey(accountId: string, item: DownloadItem, filename: string): string {
+function saveAsDedupKeys(accountId: string, item: DownloadItem, filename: string): string[] {
   const normalizedFilename = filename.trim() || "download";
 
   const isStableUrl = (value: string): boolean => {
@@ -86,7 +86,7 @@ function saveAsDedupKey(accountId: string, item: DownloadItem, filename: string)
     return !(trimmed.startsWith("blob:") || trimmed.startsWith("data:") || trimmed.startsWith("about:"));
   };
 
-  const bestUrl = (): string => {
+  const bestUrl = (): string | null => {
     try {
       const chain = item.getURLChain();
       for (let i = chain.length - 1; i >= 0; i--) {
@@ -104,10 +104,13 @@ function saveAsDedupKey(accountId: string, item: DownloadItem, filename: string)
       // ignore
     }
 
-    return "";
+    return null;
   };
 
-  return `${accountId}:${bestUrl() || normalizedFilename}`;
+  const keys: string[] = [`${accountId}:name:${normalizedFilename}`];
+  const url = bestUrl();
+  if (url) keys.push(`${accountId}:url:${url}`);
+  return [...new Set(keys)];
 }
 
 function trackDownload(
@@ -176,17 +179,18 @@ export function attachDownloadsToSession(
     const prefs = getDownloadsPreferencesInternal();
     const autoDir = resolveAutoDirectory(prefs.mode, prefs.customDir);
     const filename = item.getFilename() || "download";
-    const saveAsKey = saveAsDedupKey(accountId, item, filename);
+    const saveAsKeys = saveAsDedupKeys(accountId, item, filename);
 
     if (!autoDir) {
-      const inFlight = saveAsInFlightByKey.get(saveAsKey);
-      if (typeof inFlight === "number") {
+      const hasInFlight = saveAsKeys.some((key) => typeof saveAsInFlightByKey.get(key) === "number");
+      if (hasInFlight) {
         item.cancel();
         return;
       }
-      saveAsInFlightByKey.set(saveAsKey, Date.now());
+      const now = Date.now();
+      for (const key of saveAsKeys) saveAsInFlightByKey.set(key, now);
       item.once("done", () => {
-        saveAsInFlightByKey.delete(saveAsKey);
+        for (const key of saveAsKeys) saveAsInFlightByKey.delete(key);
       });
     }
 
@@ -203,39 +207,15 @@ export function attachDownloadsToSession(
       totalBytes: record.totalBytes,
     });
 
-    if (!autoDir) {
-      try {
-        item.pause();
-      } catch {
-        // ignore
-      }
-      void (async () => {
-        try {
-          const defaultPath = nextAvailablePath(app.getPath("downloads"), filename);
-          const win = getWindow();
-          const result =
-            win && !win.isDestroyed()
-              ? await dialog.showSaveDialog(win, { title: "Save As", defaultPath })
-              : await dialog.showSaveDialog({ title: "Save As", defaultPath });
-
-          if (result.canceled || !result.filePath) {
-            item.cancel();
-            return;
-          }
-
-          record.savePath = result.filePath;
-          item.setSavePath(result.filePath);
-          try {
-            item.resume();
-          } catch {
-            // ignore
-          }
-        } catch {
-          item.cancel();
-        }
-      })();
-      return;
-    }
+	    if (!autoDir) {
+	      try {
+	        const defaultPath = nextAvailablePath(app.getPath("downloads"), filename);
+	        item.setSaveDialogOptions({ defaultPath });
+	      } catch {
+	        // ignore
+	      }
+	      return;
+	    }
 
     const savePath = nextAvailablePath(autoDir, filename);
     record.savePath = savePath;
