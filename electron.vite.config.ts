@@ -16,6 +16,8 @@ export default defineConfig({
         "@renderer": resolve("src/renderer/src"),
       },
     },
+    server: {
+      host: "127.0.0.1",
+    },
   },
 });
-
