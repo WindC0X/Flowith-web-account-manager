@@ -31,11 +31,6 @@ const attachedSessions = new WeakSet<Session>();
 const downloadsById = new Map<string, DownloadRecord>();
 const downloadIdByItem = new WeakMap<DownloadItem, string>();
 const saveAsInFlightByKey = new Map<string, number>();
-let saveAsDialogQueue: Promise<void> = Promise.resolve();
-
-function enqueueSaveAsDialog(task: () => Promise<void>): void {
-  saveAsDialogQueue = saveAsDialogQueue.then(task, task).catch(() => void 0);
-}
 
 function sendEvent(getWindow: () => BrowserWindow | null, event: DownloadEvent) {
   const win = getWindow();
@@ -63,6 +58,23 @@ function resolveAutoDirectory(mode: DownloadSaveMode, customDir: string | null):
   if (mode === "downloads") return app.getPath("downloads");
   if (mode === "customDir" && customDir && existsSync(customDir)) return customDir;
   return null;
+}
+
+function readItemSavePath(item: DownloadItem): string | null {
+  try {
+    const raw = item.getSavePath();
+    if (typeof raw !== "string") return null;
+    const trimmed = raw.trim();
+    return trimmed ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function syncSavePath(record: DownloadRecord, item: DownloadItem): void {
+  const path = readItemSavePath(item);
+  if (!path) return;
+  record.savePath = path;
 }
 
 function saveAsDedupKey(accountId: string, item: DownloadItem, filename: string): string {
@@ -97,7 +109,7 @@ function trackDownload(
     receivedBytes: 0,
     totalBytes: Math.max(0, item.getTotalBytes()),
     item,
-    savePath: null,
+    savePath: readItemSavePath(item),
     lastProgressEventAt: 0,
   };
 
@@ -106,6 +118,7 @@ function trackDownload(
   item.on("updated", () => {
     record.receivedBytes = Math.max(0, item.getReceivedBytes());
     record.totalBytes = Math.max(0, item.getTotalBytes());
+    syncSavePath(record, item);
 
     const now = Date.now();
     if (now - record.lastProgressEventAt < 350) return;
@@ -122,6 +135,7 @@ function trackDownload(
   item.on("done", (_event, state) => {
     record.receivedBytes = Math.max(0, item.getReceivedBytes());
     record.totalBytes = Math.max(0, item.getTotalBytes());
+    syncSavePath(record, item);
     record.item = null;
 
     sendEvent(getWindow, {
@@ -177,29 +191,12 @@ export function attachDownloadsToSession(
     });
 
     if (!autoDir) {
-      item.pause();
-      enqueueSaveAsDialog(async () => {
-        const win = getWindow();
+      try {
         const defaultPath = nextAvailablePath(app.getPath("downloads"), filename);
-        try {
-          const { canceled, filePath } = win
-            ? await dialog.showSaveDialog(win, { defaultPath })
-            : await dialog.showSaveDialog({ defaultPath });
-
-          if (canceled || !filePath) {
-            item.cancel();
-            return;
-          }
-
-          record.savePath = filePath;
-          item.setSavePath(filePath);
-          item.resume();
-        } catch {
-          item.cancel();
-        } finally {
-          saveAsInFlightByKey.delete(saveAsKey);
-        }
-      });
+        item.setSaveDialogOptions({ defaultPath });
+      } catch {
+        // ignore
+      }
       return;
     }
 
