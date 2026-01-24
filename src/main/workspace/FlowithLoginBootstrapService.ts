@@ -1,7 +1,7 @@
 import type { BeforeSendResponse, OnBeforeSendHeadersListenerDetails, WebContents } from "electron";
 import type { Session } from "@supabase/supabase-js";
-import { getFlowithSupabaseClient, resolveFlowithSupabaseConfig } from "../flowith/supabase";
-import { getRefreshToken, setRefreshToken } from "../accounts/vault";
+import { resolveFlowithSupabaseConfig } from "../flowith/supabase";
+import { refreshFlowithSessionForAccount } from "../flowith/sessionRefresh";
 import { redactSensitive } from "../security/redact";
 import type { WebWorkspaceService } from "./WebWorkspaceService";
 
@@ -215,26 +215,14 @@ export class FlowithLoginBootstrapService {
   }
 
   async bootstrap(accountId: string) {
-    const refreshToken = getRefreshToken(accountId);
-    if (!refreshToken) {
-      throw new Error("No refresh_token available for this account. Import token first.");
-    }
-
-    const supabase = getFlowithSupabaseClient();
-    const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
-    if (error) throw error;
-    if (!data?.session) throw new Error("Supabase refresh returned no session.");
-
-    if (data.session.refresh_token) {
-      setRefreshToken(accountId, data.session.refresh_token);
-    }
+    const flowithSession = await refreshFlowithSessionForAccount(accountId);
 
     const webContents = this.workspace.getWebContents(accountId);
     if (!webContents) throw new Error("Workspace webContents not found for account.");
 
     await waitForFlowithReady(webContents, 30_000);
-    await injectSupabaseSession(webContents, data.session);
-    this.ensureAuthHeaderInjection(accountId, webContents, data.session.access_token);
+    await injectSupabaseSession(webContents, flowithSession);
+    this.ensureAuthHeaderInjection(accountId, webContents, flowithSession.access_token ?? "");
     webContents.reload();
   }
 }

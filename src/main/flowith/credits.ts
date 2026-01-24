@@ -1,10 +1,10 @@
 import { session } from "electron";
 import type { AccountCredits } from "../../shared/ipc";
-import { getAccount, getRefreshToken, setRefreshToken } from "../accounts/vault";
+import { getAccount } from "../accounts/vault";
 import { applyProxy } from "../network/proxy";
 import { partitionForAccount } from "../workspace/WebWorkspaceService";
 import { parseUserCreditsResponse } from "./creditsParsing";
-import { getFlowithSupabaseClient } from "./supabase";
+import { refreshFlowithSessionForAccount } from "./sessionRefresh";
 
 const FLOWITH_EDGE_CREDITS_URL = "https://edge.flowith.net/user/credits";
 
@@ -16,21 +16,8 @@ function toAuthorizationHeader(accessToken: string): string {
 }
 
 export async function refreshAccountCredits(accountId: string): Promise<AccountCredits> {
-  const refreshToken = getRefreshToken(accountId);
-  if (!refreshToken) {
-    throw new Error("No refresh_token available for this account. Import token first.");
-  }
-
-  const supabase = getFlowithSupabaseClient();
-  const { data, error } = await supabase.auth.refreshSession({ refresh_token: refreshToken });
-  if (error) throw error;
-  if (!data?.session) throw new Error("Supabase refresh returned no session.");
-
-  if (data.session.refresh_token) {
-    setRefreshToken(accountId, data.session.refresh_token);
-  }
-
-  const auth = toAuthorizationHeader(data.session.access_token ?? "");
+  const flowithSession = await refreshFlowithSessionForAccount(accountId);
+  const auth = toAuthorizationHeader(flowithSession.access_token ?? "");
   if (!auth) throw new Error("Supabase session returned no access_token.");
 
   const account = getAccount(accountId);
