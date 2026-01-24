@@ -504,6 +504,7 @@ export default function WorkspaceShell() {
 
   const [connectivity, setConnectivity] = useState<ConnectivityCheck[] | null>(null);
   const [connectivityPopoverOpen, setConnectivityPopoverOpen] = useState(false);
+  const [connectivityPopoverFlipUp, setConnectivityPopoverFlipUp] = useState(false);
 
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
   const [selectOverlayOpen, setSelectOverlayOpen] = useState(false);
@@ -520,6 +521,7 @@ export default function WorkspaceShell() {
   const importDialogRef = useRef<HTMLDialogElement | null>(null);
   const exportDialogRef = useRef<HTMLDialogElement | null>(null);
   const deleteDialogRef = useRef<HTMLDialogElement | null>(null);
+  const connectivityPopoverAnchorRef = useRef<HTMLDivElement | null>(null);
   const connectivityPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -787,6 +789,38 @@ export default function WorkspaceShell() {
       document.removeEventListener("mousedown", onDown, true);
     };
   }, [connectivityPopoverOpen]);
+
+  useEffect(() => {
+    if (!connectivityPopoverOpen) {
+      setConnectivityPopoverFlipUp(false);
+      return;
+    }
+
+    const measure = () => {
+      const popover = connectivityPopoverRef.current;
+      const anchor = connectivityPopoverAnchorRef.current;
+      if (!popover || !anchor) return;
+
+      const popoverRect = popover.getBoundingClientRect();
+      const anchorRect = anchor.getBoundingClientRect();
+
+      const margin = 12;
+      const spaceBelow = window.innerHeight - anchorRect.bottom - margin;
+      const spaceAbove = anchorRect.top - margin;
+
+      const shouldFlipUp = spaceBelow < popoverRect.height + 8 && spaceAbove > spaceBelow;
+      setConnectivityPopoverFlipUp(shouldFlipUp);
+    };
+
+    const raf = window.requestAnimationFrame(measure);
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+    };
+  }, [connectivityPopoverOpen, connectivity]);
 
   useEffect(() => {
     if (!settingsPopoverOpen) return;
@@ -1154,6 +1188,22 @@ export default function WorkspaceShell() {
     setError(null);
     setBusy(true);
     try {
+      const proxy =
+        proxyMode === "custom"
+          ? { mode: "custom" as const, rules: proxyRules }
+          : { mode: proxyMode };
+      const savedProxy = focusedAccount?.net.proxy ?? { mode: "system" as const };
+      const savedRules = savedProxy.mode === "custom" ? (savedProxy.rules ?? "") : "";
+      const draftRules = proxy.mode === "custom" ? (proxy.rules ?? "") : "";
+      const shouldPersistDraft = savedProxy.mode !== proxy.mode || savedRules !== draftRules;
+      if (shouldPersistDraft) {
+        const updated = await window.desktop.accounts.updateAccountMeta(focusedAccountId, {
+          net: {
+            proxy,
+          },
+        });
+        setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      }
       const report = await window.desktop.accounts.testConnectivity(focusedAccountId);
       setConnectivity(report);
       setConnectivityPopoverOpen(true);
@@ -1162,7 +1212,7 @@ export default function WorkspaceShell() {
     } finally {
       setBusy(false);
     }
-  }, [focusedAccountId]);
+  }, [focusedAccount, focusedAccountId, proxyMode, proxyRules]);
 
   const openTab = useCallback(
     async (accountId: string) => {
@@ -1985,12 +2035,20 @@ export default function WorkspaceShell() {
                     <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
                       {t("saveProxy")}
                     </button>
-                    <div style={{ position: "relative" }}>
+                    <div style={{ position: "relative" }} ref={connectivityPopoverAnchorRef}>
                       <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
                         {t("connectivity")}
                       </button>
                       {connectivityPopoverOpen && connectivity ? (
-                        <div className="popover popover-end" ref={connectivityPopoverRef}>
+                        <div
+                          className="popover popover-end"
+                          ref={connectivityPopoverRef}
+                          style={
+                            connectivityPopoverFlipUp
+                              ? { top: "auto", bottom: "calc(100% + 8px)" }
+                              : undefined
+                          }
+                        >
                           <div className="popover-title">{t("connectivityTitle")}</div>
                           <div style={{ display: "grid", gap: 8 }}>
                             {connectivity.map((c) => (

@@ -29,7 +29,7 @@
 
   --surface-workspace: #0b0b0d;
   --surface-tabs: rgba(18, 21, 22, 0.9);
-  --surface-popover: rgba(18, 21, 22, 0.92);
+  --surface-popover: rgb(18, 21, 22);
   --surface-tab-active: #0b0b0d;
 
   --glass-highlight: rgba(255, 255, 255, 0.03);
@@ -65,7 +65,7 @@
 
   --surface-workspace: #eef2f7;
   --surface-tabs: rgba(255, 255, 255, 0.86);
-  --surface-popover: rgba(255, 255, 255, 0.92);
+  --surface-popover: rgb(255, 255, 255);
   --surface-tab-active: #ffffff;
 
   --glass-highlight: rgba(0, 0, 0, 0.025);
