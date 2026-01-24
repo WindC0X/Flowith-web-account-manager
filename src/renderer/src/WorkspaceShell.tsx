@@ -545,6 +545,58 @@ function persistUiPreferences(prefs: UiPreferencesV1): void {
   }
 }
 
+const ACCOUNT_INFO_CACHE_KEY = "fwd_account_info_cache_v1";
+
+type AccountInfoCacheV1 = {
+  version: 1;
+  byId: Record<string, { subscription: string | null; credits: string | null; updatedAt: number }>;
+};
+
+function loadAccountInfoCache(): Record<string, AccountInfoEntry> {
+  try {
+    const raw = window.localStorage.getItem(ACCOUNT_INFO_CACHE_KEY);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed)) return {};
+    if (parsed.version !== 1) return {};
+    if (!isRecord(parsed.byId)) return {};
+
+    const next: Record<string, AccountInfoEntry> = {};
+    for (const [accountId, entry] of Object.entries(parsed.byId)) {
+      if (!isRecord(entry)) continue;
+      const updatedAt = entry.updatedAt;
+      if (typeof updatedAt !== "number" || !Number.isFinite(updatedAt) || updatedAt <= 0) continue;
+      const subscription = typeof entry.subscription === "string" ? entry.subscription : null;
+      const credits = typeof entry.credits === "string" ? entry.credits : null;
+      next[accountId] = { status: "ready", subscription, credits, updatedAt, error: null };
+    }
+
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function persistAccountInfoCache(entries: Record<string, AccountInfoEntry>): void {
+  const byId: AccountInfoCacheV1["byId"] = {};
+  for (const [accountId, entry] of Object.entries(entries)) {
+    if (!entry.updatedAt) continue;
+    if (entry.status === "idle") continue;
+    byId[accountId] = {
+      subscription: entry.subscription ?? null,
+      credits: entry.credits ?? null,
+      updatedAt: entry.updatedAt,
+    };
+  }
+
+  try {
+    const payload: AccountInfoCacheV1 = { version: 1, byId };
+    window.localStorage.setItem(ACCOUNT_INFO_CACHE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+}
+
 export default function WorkspaceShell() {
   const [uiPrefs, setUiPrefs] = useState<UiPreferencesV1>(() => loadUiPreferences());
 
@@ -650,7 +702,7 @@ export default function WorkspaceShell() {
   const [downloadPrefs, setDownloadPrefs] = useState<DownloadPreferencesPublic | null>(null);
   const [downloadToasts, setDownloadToasts] = useState<DownloadToastState[]>([]);
 
-  const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>({});
+  const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>(() => loadAccountInfoCache());
 
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -714,6 +766,10 @@ export default function WorkspaceShell() {
     document.documentElement.lang = uiPrefs.locale;
     persistUiPreferences(uiPrefs);
   }, [uiPrefs]);
+
+  useEffect(() => {
+    persistAccountInfoCache(accountInfoById);
+  }, [accountInfoById]);
 
   useEffect(() => {
     if (!isWindows) return;
