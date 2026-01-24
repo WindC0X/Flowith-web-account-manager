@@ -2,6 +2,8 @@
 
 This document describes how to use **Flowith Web Account Manager (Desktop)**.
 
+> 中文小白版：`docs/usage.zh-CN.md`
+
 ## Run (Dev)
 
 ```bash
