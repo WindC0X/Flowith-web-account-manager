@@ -9,6 +9,7 @@ import type {
   ProxyMode,
   UaMode,
 } from "../../shared/ipc";
+import { USER_AGENT_PRESETS, findUserAgentPreset } from "../../shared/userAgentPresets";
 import logoOnDark from "./assets/logo-on-dark.png";
 import logoOnLight from "./assets/logo-on-light.png";
 
@@ -159,7 +160,11 @@ const UI_STRINGS = {
     uaPreset: "预设",
     uaCustom: "自定义",
     uaValueLabel: "值",
-    uaHint: "修改 User-Agent 通常需要刷新当前 Tab 生效。",
+    uaHint: "默认：跟随系统；预设：从内置列表选择；自定义：输入 UA 字符串。修改后通常需要刷新当前 Tab 生效。",
+    uaErrorRequired: "请填写有效的 User-Agent。",
+    uaErrorTooLong: "User-Agent 过长（最多 512 字符）。",
+    uaErrorSingleLine: "User-Agent 不能包含换行。",
+    uaErrorPresetUnknown: "请选择一个有效的 User-Agent 预设。",
 	    openTab: "打开 Tab",
 	    closeTab: "关闭 Tab",
 	    saveUa: "保存 UA",
@@ -281,7 +286,12 @@ const UI_STRINGS = {
     uaPreset: "Preset",
     uaCustom: "Custom",
     uaValueLabel: "Value",
-    uaHint: "Changing User-Agent usually requires reloading the tab.",
+    uaHint:
+      "Default: follow system; Preset: choose from built-in list; Custom: enter UA string. Changing User-Agent usually requires reloading the tab.",
+    uaErrorRequired: "Please enter a valid User-Agent.",
+    uaErrorTooLong: "User-Agent is too long (max 512 chars).",
+    uaErrorSingleLine: "User-Agent must be single-line.",
+    uaErrorPresetUnknown: "Please select a valid User-Agent preset.",
 	    openTab: "Open tab",
 	    closeTab: "Close tab",
 	    saveUa: "Save UA",
@@ -523,8 +533,24 @@ export default function WorkspaceShell() {
     if (!focusedAccount) return;
     setProxyMode(focusedAccount.net.proxy.mode);
     setProxyRules(focusedAccount.net.proxy.rules ?? "");
-    setUaMode(focusedAccount.ua.mode);
-    setUaValue(focusedAccount.ua.value ?? "");
+    const uaMode = focusedAccount.ua.mode;
+    const uaValue = focusedAccount.ua.value ?? "";
+    if (uaMode === "preset") {
+      const preset = uaValue ? findUserAgentPreset(uaValue) : null;
+      if (preset) {
+        setUaMode("preset");
+        setUaValue(preset.id);
+      } else if (uaValue.trim()) {
+        setUaMode("custom");
+        setUaValue(uaValue);
+      } else {
+        setUaMode("preset");
+        setUaValue(USER_AGENT_PRESETS[0]?.id ?? "");
+      }
+    } else {
+      setUaMode(uaMode);
+      setUaValue(uaValue);
+    }
   }, [focusedAccount]);
 
   useEffect(() => {
@@ -1005,13 +1031,33 @@ export default function WorkspaceShell() {
 
   const saveUserAgent = useCallback(async () => {
     if (!focusedAccountId) return;
+    const trimmed = uaValue.trim();
+    if (uaMode !== "default") {
+      if (!trimmed) {
+        setError(t("uaErrorRequired"));
+        return;
+      }
+      if (trimmed.length > 512) {
+        setError(t("uaErrorTooLong"));
+        return;
+      }
+      if (/[\r\n]/.test(trimmed)) {
+        setError(t("uaErrorSingleLine"));
+        return;
+      }
+      if (uaMode === "preset" && !findUserAgentPreset(trimmed)) {
+        setError(t("uaErrorPresetUnknown"));
+        return;
+      }
+    }
+
     setError(null);
     setBusy(true);
     try {
       const ua =
         uaMode === "default"
           ? { mode: "default" as const }
-          : { mode: uaMode, value: uaValue };
+          : { mode: uaMode, value: trimmed };
       await window.desktop.accounts.updateAccountMeta(focusedAccountId, { ua });
       await refreshAccounts();
     } catch (e) {
@@ -1019,7 +1065,7 @@ export default function WorkspaceShell() {
     } finally {
       setBusy(false);
     }
-  }, [focusedAccountId, refreshAccounts, uaMode, uaValue]);
+  }, [focusedAccountId, refreshAccounts, t, uaMode, uaValue]);
 
   const refreshCreditsForAccount = useCallback(async (accountId: string) => {
     setAccountInfoById((prev) => {
@@ -1918,7 +1964,18 @@ export default function WorkspaceShell() {
                         onBlur={closeSelectOverlay}
                         onChange={(e) => {
                           closeSelectOverlay();
-                          setUaMode(e.target.value as UaMode);
+                          const nextMode = e.target.value as UaMode;
+                          if (nextMode === "preset") {
+                            const current = uaValue.trim();
+                            const preset = current ? findUserAgentPreset(current) : null;
+                            setUaValue(preset?.id ?? USER_AGENT_PRESETS[0]?.id ?? "");
+                          } else if (nextMode === "default") {
+                            setUaValue("");
+                          } else if (uaMode === "preset") {
+                            const preset = findUserAgentPreset(uaValue);
+                            if (preset) setUaValue(preset.value);
+                          }
+                          setUaMode(nextMode);
                         }}
                         disabled={busy}
                         aria-label="User-Agent mode"
@@ -1929,7 +1986,39 @@ export default function WorkspaceShell() {
                       </select>
                     </div>
 
-                    {uaMode === "default" ? null : (
+                    {uaMode === "default" ? null : uaMode === "preset" ? (
+                      <>
+                        <div className="setting-row">
+                          <div className="muted">{t("uaPreset")}</div>
+                          <select
+                            value={uaValue}
+                            onPointerDown={openSelectOverlay}
+                            onBlur={closeSelectOverlay}
+                            onChange={(e) => {
+                              closeSelectOverlay();
+                              setUaValue(e.target.value);
+                            }}
+                            disabled={busy}
+                            aria-label={t("uaPreset")}
+                          >
+                            {USER_AGENT_PRESETS.map((preset) => (
+                              <option key={preset.id} value={preset.id}>
+                                {preset.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                        {findUserAgentPreset(uaValue)?.value ? (
+                          <div
+                            className="muted mono"
+                            style={{ fontSize: 11, whiteSpace: "pre-wrap" }}
+                            title={findUserAgentPreset(uaValue)?.value ?? undefined}
+                          >
+                            {findUserAgentPreset(uaValue)?.value}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
                       <div className="setting-row">
                         <div className="muted">{t("uaValueLabel")}</div>
                         <input

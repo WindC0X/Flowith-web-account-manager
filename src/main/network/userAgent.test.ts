@@ -12,12 +12,20 @@ describe("validateUaConfig", () => {
     expect(() => validateUaConfig({ mode: "preset", value: "   " })).toThrow(/required/i);
   });
 
+  it("accepts known preset ids", () => {
+    expect(() => validateUaConfig({ mode: "preset", value: "chrome_win" })).not.toThrow();
+  });
+
+  it("rejects unknown preset ids", () => {
+    expect(() => validateUaConfig({ mode: "preset", value: "nope" })).toThrow(/Unknown User-Agent preset/i);
+  });
+
   it("rejects invalid mode", () => {
     expect(() => validateUaConfig({ mode: "nope" } as unknown as UaConfig)).toThrow(/Invalid User-Agent mode/);
   });
 
   it("rejects newline and overly long values", () => {
-    expect(() => validateUaConfig({ mode: "custom", value: "UA\\nX" })).toThrow(/single-line/i);
+    expect(() => validateUaConfig({ mode: "custom", value: "UA\nX" })).toThrow(/single-line/i);
     expect(() => validateUaConfig({ mode: "custom", value: "a".repeat(513) })).toThrow(/too long/i);
   });
 });
@@ -28,8 +36,12 @@ describe("resolveUserAgent", () => {
     expect(resolveUserAgent({ mode: "custom", value: "   " })).toBeNull();
   });
 
-  it("returns trimmed value for custom/preset", () => {
+  it("returns trimmed value for custom", () => {
     expect(resolveUserAgent({ mode: "custom", value: "  UA  " })).toBe("UA");
+  });
+
+  it("resolves preset ids and keeps legacy preset values", () => {
+    expect(resolveUserAgent({ mode: "preset", value: "chrome_win" })).toMatch(/Chrome\/122/);
     expect(resolveUserAgent({ mode: "preset", value: "UA" })).toBe("UA");
   });
 });
@@ -42,5 +54,9 @@ describe("normalizeUaConfig", () => {
   it("trims value for non-default", () => {
     expect(normalizeUaConfig({ mode: "custom", value: "  UA  " })).toEqual({ mode: "custom", value: "UA" });
   });
-});
 
+  it("normalizes preset values", () => {
+    expect(normalizeUaConfig({ mode: "preset", value: " chrome_win " })).toEqual({ mode: "preset", value: "chrome_win" });
+    expect(normalizeUaConfig({ mode: "preset", value: " UA " })).toEqual({ mode: "custom", value: "UA" });
+  });
+});

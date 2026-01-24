@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import type { ImportRefreshTokensResult } from "../../shared/ipc";
+import { USER_AGENT_PRESETS } from "../../shared/userAgentPresets";
 import { getFlowithSupabaseClient } from "../flowith/supabase";
 import { redactSensitive } from "../security/redact";
 import {
@@ -21,6 +22,12 @@ function maskFingerprint(fingerprint: string): string {
 
 function createAccountId(): string {
   return `acc_${crypto.randomBytes(8).toString("hex")}`;
+}
+
+function pickRandomUaPresetId(): string | null {
+  if (USER_AGENT_PRESETS.length === 0) return null;
+  const idx = crypto.randomInt(USER_AGENT_PRESETS.length);
+  return USER_AGENT_PRESETS[idx]?.id ?? null;
 }
 
 export async function importRefreshTokens(tokens: string[]): Promise<ImportRefreshTokensResult> {
@@ -59,12 +66,15 @@ export async function importRefreshTokens(tokens: string[]): Promise<ImportRefre
 
       const existingAccountId = findAccountIdByFingerprint(fingerprint);
       const accountId = existingAccountId ?? createAccountId();
-      if (!existingAccountId) upsertAccountFingerprint(accountId, fingerprint);
-
-      upsertAccountMeta(accountId, {
-        displayName: `Account ${maskedFingerprint}`,
-        tags: [],
-      });
+      if (!existingAccountId) {
+        upsertAccountFingerprint(accountId, fingerprint);
+        const uaPresetId = pickRandomUaPresetId();
+        upsertAccountMeta(accountId, {
+          displayName: `Account ${maskedFingerprint}`,
+          tags: [],
+          ua: uaPresetId ? { mode: "preset", value: uaPresetId } : { mode: "default" },
+        });
+      }
       setRefreshToken(accountId, refreshToken);
       imported += 1;
     } catch (e) {
