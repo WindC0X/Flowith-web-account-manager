@@ -1,9 +1,11 @@
 import type { BeforeSendResponse, OnBeforeSendHeadersListenerDetails, WebContents } from "electron";
 import type { Session } from "@supabase/supabase-js";
 import { resolveFlowithSupabaseConfig } from "../flowith/supabase";
+import { getRefreshToken, setRefreshToken } from "../accounts/vault";
 import { refreshFlowithSessionForAccount } from "../flowith/sessionRefresh";
 import { redactSensitive } from "../security/redact";
 import type { WebWorkspaceService } from "./WebWorkspaceService";
+import { extractSupabaseSessionTokensFromStorageValue } from "./supabaseAuthStorage";
 
 const FLOWITH_WEB_TARGET_HOSTS = ["flowith.io", "flowith.net", "flo.ing"] as const;
 
@@ -144,9 +146,123 @@ async function injectSupabaseSession(webContents: WebContents, session: Session)
 export class FlowithLoginBootstrapService {
   private workspace: WebWorkspaceService;
   private headerInjection = new Map<string, { setAccessToken: (token: string) => void }>();
+  private tokenSync = new Map<string, { stop: () => void }>();
 
   constructor(workspace: WebWorkspaceService) {
     this.workspace = workspace;
+  }
+
+  private async syncTokensFromWebContents(accountId: string, webContents: WebContents): Promise<void> {
+    if (webContents.isDestroyed()) return;
+
+    let href: unknown;
+    try {
+      href = await webContents.executeJavaScript("location.href", true);
+    } catch {
+      return;
+    }
+    if (typeof href !== "string" || !isFlowithUrl(href)) return;
+
+    const keys = storageKeysFromSupabaseUrl();
+    const script = `
+		  (() => {
+		    const keys = ${JSON.stringify(keys)};
+		    const values = [];
+		    const read = (storage, name) => {
+		      for (const k of keys) {
+		        try {
+		          const v = storage.getItem(k);
+		          if (typeof v === "string" && v.trim()) values.push({ storage: name, key: k, value: v });
+		        } catch {
+		          // ignore
+		        }
+		      }
+		    };
+		    try { read(localStorage, "local"); } catch {}
+		    try { read(sessionStorage, "session"); } catch {}
+		    return { ok: true, values };
+		  })();
+		`;
+
+    const result = (await webContents.executeJavaScript(script, true)) as
+      | { ok: true; values?: Array<{ storage: "local" | "session"; key: string; value: string }> }
+      | { ok: false; error?: string }
+      | undefined;
+
+    if (!result || result.ok !== true || !Array.isArray(result.values)) return;
+
+    let nextRefreshToken: string | null = null;
+    let nextAccessToken: string | null = null;
+
+    for (const entry of result.values) {
+      const extracted = extractSupabaseSessionTokensFromStorageValue(entry.value);
+      if (!extracted) continue;
+      if (!nextAccessToken && extracted.accessToken) nextAccessToken = extracted.accessToken;
+      if (!nextRefreshToken && extracted.refreshToken) nextRefreshToken = extracted.refreshToken;
+      if (nextAccessToken && nextRefreshToken) break;
+    }
+
+    if (nextRefreshToken) {
+      const current = getRefreshToken(accountId);
+      if (current !== nextRefreshToken) {
+        setRefreshToken(accountId, nextRefreshToken);
+      }
+    }
+
+    if (nextAccessToken) {
+      this.ensureAuthHeaderInjection(accountId, webContents, nextAccessToken);
+    }
+  }
+
+  private ensureTokenSync(accountId: string, webContents: WebContents) {
+    if (this.tokenSync.has(accountId)) return;
+    if (webContents.isDestroyed()) return;
+
+    let stopped = false;
+    let handle: ReturnType<typeof setTimeout> | null = null;
+
+    const stop = () => {
+      stopped = true;
+      if (handle) clearTimeout(handle);
+      this.tokenSync.delete(accountId);
+    };
+
+    const tick = async () => {
+      if (stopped) return;
+      if (webContents.isDestroyed()) {
+        stop();
+        return;
+      }
+
+      try {
+        await this.syncTokensFromWebContents(accountId, webContents);
+      } catch {
+        // best-effort
+      }
+
+      if (!stopped) {
+        handle = setTimeout(tick, 45_000);
+      }
+    };
+
+    try {
+      webContents.once("destroyed", stop);
+    } catch {
+      // ignore
+    }
+
+    handle = setTimeout(tick, 8_000);
+    this.tokenSync.set(accountId, { stop });
+  }
+
+  async syncFromOpenTab(accountId: string): Promise<void> {
+    const webContents = this.workspace.getWebContents(accountId);
+    if (!webContents) return;
+    try {
+      await this.syncTokensFromWebContents(accountId, webContents);
+    } catch {
+      // best-effort
+    }
   }
 
   private ensureAuthHeaderInjection(accountId: string, webContents: WebContents, accessToken: string) {
@@ -224,5 +340,6 @@ export class FlowithLoginBootstrapService {
     await injectSupabaseSession(webContents, flowithSession);
     this.ensureAuthHeaderInjection(accountId, webContents, flowithSession.access_token ?? "");
     webContents.reload();
+    this.ensureTokenSync(accountId, webContents);
   }
 }

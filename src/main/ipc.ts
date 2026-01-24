@@ -362,6 +362,7 @@ export function registerIpcHandlers(deps: IpcDeps) {
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
+      await deps.loginBootstrap.syncFromOpenTab(accountId);
       return await refreshAccountCredits(accountId);
     } catch (e) {
       throw new Error(safeErrorMessage(e));
