@@ -185,13 +185,8 @@ export function attachDownloadsToSession(
         return;
       }
       saveAsInFlightByKey.set(saveAsKey, Date.now());
-      const maybeReleaseKey = () => {
-        if (readItemSavePath(item)) saveAsInFlightByKey.delete(saveAsKey);
-      };
-      item.on("updated", maybeReleaseKey);
       item.once("done", () => {
         saveAsInFlightByKey.delete(saveAsKey);
-        item.off("updated", maybeReleaseKey);
       });
     }
 
@@ -210,11 +205,35 @@ export function attachDownloadsToSession(
 
     if (!autoDir) {
       try {
-        const defaultPath = nextAvailablePath(app.getPath("downloads"), filename);
-        item.setSaveDialogOptions({ defaultPath });
+        item.pause();
       } catch {
         // ignore
       }
+      void (async () => {
+        try {
+          const defaultPath = nextAvailablePath(app.getPath("downloads"), filename);
+          const win = getWindow();
+          const result =
+            win && !win.isDestroyed()
+              ? await dialog.showSaveDialog(win, { title: "Save As", defaultPath })
+              : await dialog.showSaveDialog({ title: "Save As", defaultPath });
+
+          if (result.canceled || !result.filePath) {
+            item.cancel();
+            return;
+          }
+
+          record.savePath = result.filePath;
+          item.setSavePath(result.filePath);
+          try {
+            item.resume();
+          } catch {
+            // ignore
+          }
+        } catch {
+          item.cancel();
+        }
+      })();
       return;
     }
 
