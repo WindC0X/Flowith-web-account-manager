@@ -65,6 +65,26 @@ function resolveAutoDirectory(mode: DownloadSaveMode, customDir: string | null):
   return null;
 }
 
+function saveAsDedupKey(accountId: string, item: DownloadItem, filename: string): string {
+  let url = "";
+  try {
+    const chain = item.getURLChain();
+    url = chain[chain.length - 1] ?? "";
+  } catch {
+    url = "";
+  }
+
+  if (!url) {
+    try {
+      url = item.getURL();
+    } catch {
+      url = "";
+    }
+  }
+
+  return `${accountId}:${url || filename}`;
+}
+
 function trackDownload(
   downloadId: string,
   item: DownloadItem,
@@ -129,7 +149,7 @@ export function attachDownloadsToSession(
     const prefs = getDownloadsPreferencesInternal();
     const autoDir = resolveAutoDirectory(prefs.mode, prefs.customDir);
     const filename = item.getFilename() || "download";
-    const saveAsKey = `${accountId}:${filename}`;
+    const saveAsKey = saveAsDedupKey(accountId, item, filename);
 
     if (!autoDir) {
       const inFlight = saveAsInFlightByKey.get(saveAsKey);
