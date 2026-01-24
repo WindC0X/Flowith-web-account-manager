@@ -990,6 +990,112 @@ dialog::backdrop {
   border-bottom: 1px solid rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.1);
   padding: 10px 14px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.error-banner-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.error-banner-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  background: rgba(239, 68, 68, 0.12);
+  color: rgba(254, 202, 202, 1);
+  cursor: pointer;
+  flex: none;
+}
+
+.error-banner-close:hover {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+.ui-toasts {
+  position: fixed;
+  top: 58px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(520px, calc(100vw - 24px));
+  z-index: 70;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.ui-toast {
+  pointer-events: auto;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-default);
+  background: var(--surface-popover);
+  box-shadow: var(--shadow-popover);
+}
+
+.ui-toast + .ui-toast {
+  margin-top: 10px;
+}
+
+.ui-toast-success {
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.ui-toast-error {
+  border-color: rgba(239, 68, 68, 0.5);
+}
+
+.ui-toast-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex: none;
+}
+
+.ui-toast-dot-info {
+  background: #60a5fa;
+}
+
+.ui-toast-dot-ok {
+  background: #10b981;
+}
+
+.ui-toast-dot-bad {
+  background: #ef4444;
+}
+
+.ui-toast-message {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-toast-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border-subtle);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  flex: none;
+}
+
+.ui-toast-close:hover {
+  border-color: var(--color-border-default);
+  color: var(--color-text-primary);
+  background: var(--color-background-glass);
 }
 
 .error-banner-title {

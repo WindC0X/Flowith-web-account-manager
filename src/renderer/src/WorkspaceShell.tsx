@@ -46,6 +46,14 @@ type DownloadToastState = {
   updatedAt: number;
 };
 
+type UiToastKind = "success" | "error" | "info";
+type UiToastState = {
+  id: string;
+  kind: UiToastKind;
+  message: string;
+  createdAt: number;
+};
+
 type UiPreferencesV1 = {
   version: 1;
   theme: Theme;
@@ -93,6 +101,10 @@ const UI_STRINGS = {
     downloadStateCompleted: "已完成",
     downloadStateCancelled: "已取消",
     downloadStateInterrupted: "已中断",
+    toastDownloadStarted: "开始下载：{filename}",
+    toastDownloadCompleted: "下载已完成：{filename}",
+    toastDownloadCancelled: "下载已取消：{filename}",
+    toastDownloadInterrupted: "下载已中断：{filename}",
     searchPlaceholder: "搜索：displayName / id / tag",
 
     expandSidebar: "展开账号面板",
@@ -117,6 +129,7 @@ const UI_STRINGS = {
     proxyRulesLabel: "代理地址",
     proxyHint: "代理设置按账号生效。修改后通常需要刷新当前 Tab 生效。",
     saveProxy: "保存代理",
+    toastProxySaved: "代理已保存",
     connectivity: "连通性测试",
     connectivityTitle: "连通性",
     statusOk: "OK",
@@ -132,6 +145,10 @@ const UI_STRINGS = {
     refresh: "刷新",
 
     errorTitle: "错误",
+    toastTabOpened: "已打开 Tab",
+    toastTabClosed: "已关闭 Tab",
+    toastTabReloaded: "已刷新当前 Tab",
+    toastCreditsRefreshed: "积分已更新",
 
     tabsAria: "账号标签页",
     noTabs: "暂无 Tab",
@@ -151,6 +168,7 @@ const UI_STRINGS = {
     tagsLabel: "标签",
     tagsPlaceholder: "tag1, tag2",
     saveTags: "保存标签",
+    toastTagsSaved: "标签已保存",
     accountInfoTitle: "账号信息",
     subscriptionLabel: "订阅",
     creditsLabel: "积分",
@@ -171,8 +189,10 @@ const UI_STRINGS = {
 	    openTab: "打开 Tab",
 	    closeTab: "关闭 Tab",
 	    saveUa: "保存 UA",
+	    toastUaSaved: "User-Agent 已保存",
 	    reload: "刷新",
 	    deleteAccount: "删除账号",
+	    toastAccountDeleted: "账号已删除",
 	    close: "关闭",
 
     importDialogTitle: "导入 refresh_token",
@@ -220,6 +240,10 @@ const UI_STRINGS = {
     downloadStateCompleted: "Completed",
     downloadStateCancelled: "Cancelled",
     downloadStateInterrupted: "Interrupted",
+    toastDownloadStarted: "Download started: {filename}",
+    toastDownloadCompleted: "Download completed: {filename}",
+    toastDownloadCancelled: "Download cancelled: {filename}",
+    toastDownloadInterrupted: "Download interrupted: {filename}",
     searchPlaceholder: "Search: displayName / id / tag",
 
     expandSidebar: "Expand accounts",
@@ -244,6 +268,7 @@ const UI_STRINGS = {
     proxyRulesLabel: "Proxy",
     proxyHint: "Proxy settings apply per-account. Reload the active tab to apply.",
     saveProxy: "Save proxy",
+    toastProxySaved: "Proxy saved",
     connectivity: "Connectivity",
     connectivityTitle: "Connectivity",
     statusOk: "OK",
@@ -259,6 +284,10 @@ const UI_STRINGS = {
     refresh: "Refresh",
 
     errorTitle: "Error",
+    toastTabOpened: "Tab opened",
+    toastTabClosed: "Tab closed",
+    toastTabReloaded: "Tab reloaded",
+    toastCreditsRefreshed: "Credits updated",
 
     tabsAria: "Account tabs",
     noTabs: "No tabs",
@@ -279,6 +308,7 @@ const UI_STRINGS = {
     tagsLabel: "Tags",
     tagsPlaceholder: "tag1, tag2",
     saveTags: "Save tags",
+    toastTagsSaved: "Tags saved",
     accountInfoTitle: "Account info",
     subscriptionLabel: "Subscription",
     creditsLabel: "Credits",
@@ -297,12 +327,14 @@ const UI_STRINGS = {
     uaErrorTooLong: "User-Agent is too long (max 512 chars).",
     uaErrorSingleLine: "User-Agent must be single-line.",
     uaErrorPresetUnknown: "Please select a valid User-Agent preset.",
-	    openTab: "Open tab",
-	    closeTab: "Close tab",
-	    saveUa: "Save UA",
-	    reload: "Reload",
-	    deleteAccount: "Delete account",
-	    close: "Close",
+		    openTab: "Open tab",
+		    closeTab: "Close tab",
+		    saveUa: "Save UA",
+		    toastUaSaved: "User-Agent saved",
+		    reload: "Reload",
+		    deleteAccount: "Delete account",
+		    toastAccountDeleted: "Account deleted",
+		    close: "Close",
 
     importDialogTitle: "Import refresh_token",
     importDialogNote:
@@ -474,12 +506,60 @@ export default function WorkspaceShell() {
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uiToasts, setUiToasts] = useState<UiToastState[]>([]);
   const [searchText, setSearchText] = useState("");
 
   const strings = UI_STRINGS[uiPrefs.locale];
   const t = useCallback((key: StringKey) => strings[key], [strings]);
   const isWindows = useMemo(() => /windows/i.test(navigator.userAgent), []);
   const [windowMaximized, setWindowMaximized] = useState(false);
+
+  const dismissUiToast = useCallback((toastId: string) => {
+    const handle = uiToastTimersRef.current.get(toastId);
+    if (typeof handle === "number") {
+      window.clearTimeout(handle);
+      uiToastTimersRef.current.delete(toastId);
+    }
+    setUiToasts((prev) => prev.filter((t) => t.id !== toastId));
+  }, []);
+
+  const pushUiToast = useCallback(
+    (kind: UiToastKind, message: string, opts?: { autoDismissMs?: number }) => {
+      for (const handle of uiToastTimersRef.current.values()) window.clearTimeout(handle);
+      uiToastTimersRef.current.clear();
+
+      const id =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+      const normalized = message.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+
+      setUiToasts([{ id, kind, message: normalized, createdAt: Date.now() }]);
+
+      const autoDismissMs = opts?.autoDismissMs ?? (kind === "error" ? 8000 : 3500);
+      const timeout = window.setTimeout(() => dismissUiToast(id), autoDismissMs);
+      uiToastTimersRef.current.set(id, timeout);
+    },
+    [dismissUiToast]
+  );
+
+  useEffect(() => {
+    const uiToastTimers = uiToastTimersRef.current;
+    const downloadTimers = downloadAutoDismissTimersRef.current;
+    return () => {
+      for (const handle of uiToastTimers.values()) window.clearTimeout(handle);
+      uiToastTimers.clear();
+      for (const handle of downloadTimers.values()) window.clearTimeout(handle);
+      downloadTimers.clear();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!error) return;
+    const timeout = window.setTimeout(() => setError(null), 8000);
+    return () => window.clearTimeout(timeout);
+  }, [error]);
 
   const viewMode = uiPrefs.accountListView;
   const sidebarCollapsed = uiPrefs.sidebarCollapsed;
@@ -525,6 +605,9 @@ export default function WorkspaceShell() {
   const connectivityPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsContainerRef = useRef<HTMLDivElement | null>(null);
+  const uiToastTimersRef = useRef<Map<string, number>>(new Map());
+  const downloadAutoDismissTimersRef = useRef<Map<string, number>>(new Map());
+  const downloadFilenameByIdRef = useRef<Map<string, string>>(new Map());
 
   const selected = useMemo(() => [...selectedIds], [selectedIds]);
 
@@ -848,8 +931,11 @@ export default function WorkspaceShell() {
     try {
       unsubscribe = window.desktop.downloads.subscribe((event: DownloadEvent) => {
         const now = Date.now();
+        const filenameCache = downloadFilenameByIdRef.current;
+
         setDownloadToasts((prev) => {
           if (event.type === "start") {
+            filenameCache.set(event.id, event.filename);
             const next: DownloadToastState = {
               id: event.id,
               accountId: event.accountId,
@@ -887,6 +973,27 @@ export default function WorkspaceShell() {
           }
           return next;
         });
+
+        if (event.type === "start") {
+          pushUiToast("info", format(t("toastDownloadStarted"), { filename: event.filename }));
+          return;
+        }
+
+        if (event.type === "done") {
+          const filename = filenameCache.get(event.id) ?? "";
+          filenameCache.delete(event.id);
+
+          const toastKey: StringKey =
+            event.state === "completed"
+              ? "toastDownloadCompleted"
+              : event.state === "cancelled"
+                ? "toastDownloadCancelled"
+                : "toastDownloadInterrupted";
+          const kind: UiToastKind =
+            event.state === "interrupted" ? "error" : event.state === "completed" ? "success" : "info";
+
+          pushUiToast(kind, format(t(toastKey), { filename: filename || event.id }));
+        }
       });
     } catch {
       // ignore
@@ -899,11 +1006,29 @@ export default function WorkspaceShell() {
         // ignore
       }
     };
-  }, []);
+  }, [pushUiToast, t]);
 
   const dismissDownloadToast = useCallback((id: string) => {
     setDownloadToasts((prev) => prev.filter((d) => d.id !== id));
   }, []);
+
+  useEffect(() => {
+    const timers = downloadAutoDismissTimersRef.current;
+    const active = new Set(downloadToasts.map((d) => d.id));
+
+    for (const [id, handle] of [...timers.entries()]) {
+      if (active.has(id)) continue;
+      window.clearTimeout(handle);
+      timers.delete(id);
+    }
+
+    for (const toast of downloadToasts) {
+      if (toast.state === "progressing") continue;
+      if (timers.has(toast.id)) continue;
+      const handle = window.setTimeout(() => dismissDownloadToast(toast.id), 12_000);
+      timers.set(toast.id, handle);
+    }
+  }, [dismissDownloadToast, downloadToasts]);
 
   const setDownloadMode = useCallback(async (mode: DownloadSaveMode) => {
     setError(null);
@@ -976,12 +1101,16 @@ export default function WorkspaceShell() {
       setImportResult(result);
       setImportText("");
       await refreshAccounts();
+      const summary = format(t("importResultChip"), { ok: result.imported, fail: result.failed });
+      pushUiToast(result.failed > 0 ? "error" : "success", summary);
     } catch (e) {
-      setError(toErrorMessage(e));
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [importText, refreshAccounts]);
+  }, [importText, pushUiToast, refreshAccounts, t]);
 
   const runExport = useCallback(async () => {
     setError(null);
@@ -1043,12 +1172,15 @@ export default function WorkspaceShell() {
       });
 
       setDeleteDialog({ open: false });
+      pushUiToast("success", t("toastAccountDeleted"));
     } catch (e) {
-      setError(toErrorMessage(e));
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [activeTabId, deleteDialog, openTabIds]);
+  }, [activeTabId, deleteDialog, openTabIds, pushUiToast, t]);
 
   const saveProxy = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -1065,12 +1197,15 @@ export default function WorkspaceShell() {
         },
       });
       await refreshAccounts();
+      pushUiToast("success", t("toastProxySaved"));
     } catch (e) {
-      setError(toErrorMessage(e));
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [focusedAccountId, proxyMode, proxyRules, refreshAccounts]);
+  }, [focusedAccountId, proxyMode, proxyRules, pushUiToast, refreshAccounts, t]);
 
   const saveTags = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -1080,12 +1215,15 @@ export default function WorkspaceShell() {
       const tags = parseTagsInput(tagsDraft);
       await window.desktop.accounts.updateAccountMeta(focusedAccountId, { tags });
       await refreshAccounts();
+      pushUiToast("success", t("toastTagsSaved"));
     } catch (e) {
-      setError(toErrorMessage(e));
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [focusedAccountId, refreshAccounts, tagsDraft]);
+  }, [focusedAccountId, pushUiToast, refreshAccounts, t, tagsDraft]);
 
   const saveUserAgent = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -1119,14 +1257,17 @@ export default function WorkspaceShell() {
           : { mode: uaMode, value: trimmed };
       await window.desktop.accounts.updateAccountMeta(focusedAccountId, { ua });
       await refreshAccounts();
+      pushUiToast("success", t("toastUaSaved"));
     } catch (e) {
-      setUaInlineError(toErrorMessage(e));
+      const message = toErrorMessage(e);
+      setUaInlineError(message);
+      pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [focusedAccountId, refreshAccounts, t, uaMode, uaValue]);
+  }, [focusedAccountId, pushUiToast, refreshAccounts, t, uaMode, uaValue]);
 
-  const refreshCreditsForAccount = useCallback(async (accountId: string) => {
+  const refreshCreditsForAccount = useCallback(async (accountId: string, opts?: { announce?: boolean }) => {
     setAccountInfoById((prev) => {
       const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
       return {
@@ -1154,6 +1295,9 @@ export default function WorkspaceShell() {
           },
         };
       });
+      if (opts?.announce) {
+        pushUiToast("success", t("toastCreditsRefreshed"));
+      }
     } catch (e) {
       const message = toErrorMessage(e);
       setAccountInfoById((prev) => {
@@ -1168,12 +1312,15 @@ export default function WorkspaceShell() {
           },
         };
       });
+      if (opts?.announce) {
+        pushUiToast("error", message);
+      }
     }
-  }, []);
+  }, [pushUiToast, t]);
 
   const refreshAccountInfo = useCallback(() => {
     if (!focusedAccountId) return;
-    void refreshCreditsForAccount(focusedAccountId);
+    void refreshCreditsForAccount(focusedAccountId, { announce: true });
   }, [focusedAccountId, refreshCreditsForAccount]);
 
   useEffect(() => {
@@ -1223,13 +1370,16 @@ export default function WorkspaceShell() {
         await window.desktop.workspace.openTab(accountId);
         setOpenTabIds((prev) => (prev.includes(accountId) ? prev : [...prev, accountId]));
         setActiveTabId(accountId);
+        pushUiToast("success", t("toastTabOpened"));
       } catch (e) {
-        setError(toErrorMessage(e));
+        const message = toErrorMessage(e);
+        setError(message);
+        pushUiToast("error", message);
       } finally {
         setBusy(false);
       }
     },
-    [pushViewportBounds]
+    [pushUiToast, pushViewportBounds, t]
   );
 
   const closeTab = useCallback(
@@ -1245,13 +1395,16 @@ export default function WorkspaceShell() {
           if (next) void window.desktop.workspace.setActiveTab(next);
           return next;
         });
+        pushUiToast("info", t("toastTabClosed"));
       } catch (e) {
-        setError(toErrorMessage(e));
+        const message = toErrorMessage(e);
+        setError(message);
+        pushUiToast("error", message);
       } finally {
         setBusy(false);
       }
     },
-    [openTabIds]
+    [openTabIds, pushUiToast, t]
   );
 
   const activateTab = useCallback(async (accountId: string) => {
@@ -1261,23 +1414,28 @@ export default function WorkspaceShell() {
       await window.desktop.workspace.setActiveTab(accountId);
       setActiveTabId(accountId);
     } catch (e) {
-      setError(toErrorMessage(e));
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [pushUiToast]);
 
   const reloadWorkspace = useCallback(async () => {
     setError(null);
     setBusy(true);
     try {
       await window.desktop.workspace.reloadActive();
+      pushUiToast("info", t("toastTabReloaded"));
     } catch (e) {
-      setError(toErrorMessage(e));
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [pushUiToast, t]);
 
   const batchOpenTabs = useCallback(async () => {
     for (const id of selected) {
@@ -1522,8 +1680,55 @@ export default function WorkspaceShell() {
 
       {error ? (
         <div className="error-banner" role="status">
-          <div className="error-banner-title">{t("errorTitle")}</div>
-          <div className="error-banner-body">{error}</div>
+          <div className="error-banner-content">
+            <div className="error-banner-title">{t("errorTitle")}</div>
+            <div className="error-banner-body">{error}</div>
+          </div>
+          <button
+            type="button"
+            className="error-banner-close"
+            title={t("close")}
+            aria-label={t("close")}
+            onClick={() => setError(null)}
+          >
+            ×
+          </button>
+        </div>
+      ) : null}
+
+      {uiToasts.length > 0 ? (
+        <div className="ui-toasts" aria-label="Notifications">
+          {uiToasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={clsx(
+                "ui-toast",
+                toast.kind === "success" && "ui-toast-success",
+                toast.kind === "error" && "ui-toast-error"
+              )}
+              role={toast.kind === "error" ? "alert" : "status"}
+              title={toast.message}
+            >
+              <span
+                className={clsx(
+                  "ui-toast-dot",
+                  toast.kind === "success" && "ui-toast-dot-ok",
+                  toast.kind === "error" && "ui-toast-dot-bad",
+                  toast.kind === "info" && "ui-toast-dot-info"
+                )}
+              />
+              <div className="ui-toast-message">{toast.message}</div>
+              <button
+                type="button"
+                className="ui-toast-close"
+                title={t("close")}
+                aria-label={t("close")}
+                onClick={() => dismissUiToast(toast.id)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
         </div>
       ) : null}
 
