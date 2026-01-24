@@ -1,18 +1,18 @@
 import { BrowserView, BrowserWindow, Menu, shell } from "electron";
 import type { Rect } from "../../shared/ipc";
-import { getAccount } from "../accounts/vault";
+import { getAccount, isTokenEncryptionAvailable } from "../accounts/vault";
 import { attachDownloadsToSession } from "../downloads/service";
 import { applyProxy } from "../network/proxy";
 import { resolveUserAgent } from "../network/userAgent";
 
-const FLOWITH_URL = "https://flowith.io";
+const FLOWITH_WEB_TARGET_HOSTS = ["flowith.io", "flowith.net", "flo.ing"] as const;
+const FLOWITH_URL = "https://flowith.io/blank";
 
 function isTrustedUrl(rawUrl: string): boolean {
   try {
     const url = new URL(rawUrl);
-    if (url.origin === "https://flowith.io") return true;
-    if (url.hostname.endsWith(".flowith.io")) return true;
-    return false;
+    if (url.protocol !== "https:") return false;
+    return FLOWITH_WEB_TARGET_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
   } catch {
     return false;
   }
@@ -20,7 +20,8 @@ function isTrustedUrl(rawUrl: string): boolean {
 
 export function partitionForAccount(accountId: string): string {
   const safe = accountId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  return `persist:flowith-web-${safe}`;
+  const persist = isTokenEncryptionAvailable() ? "persist:" : "";
+  return `${persist}flowith-web-${safe}`;
 }
 
 export class WebWorkspaceService {

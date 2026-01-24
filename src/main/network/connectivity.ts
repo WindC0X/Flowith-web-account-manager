@@ -1,6 +1,7 @@
 import { session } from "electron";
 import type { ConnectivityCheck } from "../../shared/ipc";
 import { getAccount } from "../accounts/vault";
+import { resolveFlowithSupabaseConfig } from "../flowith/supabase";
 import { redactSensitive } from "../security/redact";
 import { partitionForAccount } from "../workspace/WebWorkspaceService";
 import { applyProxy } from "./proxy";
@@ -20,8 +21,12 @@ export async function testConnectivity(accountId: string): Promise<ConnectivityC
     { name: "flowith-edge", url: FLOWITH_EDGE },
   ];
 
-  const supabaseUrl = process.env.FLOWITH_SUPABASE_URL;
-  if (supabaseUrl) endpoints.push({ name: "flowith-supabase", url: supabaseUrl });
+  try {
+    const { url: supabaseUrl } = resolveFlowithSupabaseConfig();
+    if (supabaseUrl) endpoints.push({ name: "flowith-supabase", url: supabaseUrl });
+  } catch {
+    // ignore invalid config
+  }
 
   const results: ConnectivityCheck[] = [];
 
@@ -52,4 +57,3 @@ export async function testConnectivity(accountId: string): Promise<ConnectivityC
 
   return results;
 }
-
