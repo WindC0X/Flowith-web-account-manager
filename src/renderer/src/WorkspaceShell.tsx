@@ -703,6 +703,7 @@ export default function WorkspaceShell() {
   const [connectivityPopoverStyle, setConnectivityPopoverStyle] = useState<CSSProperties | null>(null);
 
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
+  const [downloadsPopoverOpen, setDownloadsPopoverOpen] = useState(false);
   const [selectOverlayOpen, setSelectOverlayOpen] = useState(false);
   const [downloadPrefs, setDownloadPrefs] = useState<DownloadPreferencesPublic | null>(null);
   const [downloadToasts, setDownloadToasts] = useState<DownloadToastState[]>([]);
@@ -723,6 +724,8 @@ export default function WorkspaceShell() {
   const connectivityPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsContainerRef = useRef<HTMLDivElement | null>(null);
+  const downloadsPopoverRef = useRef<HTMLDivElement | null>(null);
+  const downloadsPopoverContainerRef = useRef<HTMLDivElement | null>(null);
   const uiToastTimersRef = useRef<Map<string, number>>(new Map());
   const downloadAutoDismissTimersRef = useRef<Map<string, number>>(new Map());
   const downloadFilenameByIdRef = useRef<Map<string, string>>(new Map());
@@ -928,6 +931,7 @@ export default function WorkspaceShell() {
       batchTagsDialog.open ||
       batchDeleteDialog.open ||
       settingsPopoverOpen ||
+      downloadsPopoverOpen ||
       connectivityPopoverOpen ||
       selectOverlayOpen
     ) {
@@ -951,6 +955,7 @@ export default function WorkspaceShell() {
     batchTagsDialog.open,
     exportDialog.open,
     importDialogOpen,
+    downloadsPopoverOpen,
     selectOverlayOpen,
     settingsPopoverOpen,
   ]);
@@ -1056,6 +1061,26 @@ export default function WorkspaceShell() {
       document.removeEventListener("mousedown", onDown, true);
     };
   }, [settingsPopoverOpen]);
+
+  useEffect(() => {
+    if (!downloadsPopoverOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof Node)) return;
+      if (downloadsPopoverContainerRef.current?.contains(target)) return;
+      setDownloadsPopoverOpen(false);
+    };
+    document.addEventListener("mousedown", onDown, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown, true);
+    };
+  }, [downloadsPopoverOpen]);
+
+  useEffect(() => {
+    if (!downloadsPopoverOpen) return;
+    if (downloadToasts.length > 0) return;
+    setDownloadsPopoverOpen(false);
+  }, [downloadToasts, downloadsPopoverOpen]);
 
   useEffect(() => {
     void window.desktop.downloads
@@ -1840,6 +1865,32 @@ export default function WorkspaceShell() {
     }
   }, [batchDeleteDialog.open]);
 
+  const downloadInProgressCount = downloadToasts.reduce(
+    (acc, d) => acc + (d.state === "progressing" ? 1 : 0),
+    0
+  );
+  const latestDownloadToast = downloadToasts[0] ?? null;
+  const downloadIndicatorBadgeText =
+    downloadToasts.length === 0
+      ? null
+      : downloadInProgressCount > 0
+        ? downloadInProgressCount > 99
+          ? "99+"
+          : String(downloadInProgressCount)
+        : latestDownloadToast?.state === "completed"
+          ? "✓"
+          : latestDownloadToast
+            ? "!"
+            : null;
+  const downloadIndicatorTitle =
+    downloadToasts.length === 0
+      ? t("downloadsSectionTitle")
+      : downloadInProgressCount > 0
+        ? `${t("downloadStateProgress")} · ${downloadIndicatorBadgeText}`
+        : latestDownloadToast
+          ? `${t("downloadsSectionTitle")} · ${formatDownloadStateLabel(latestDownloadToast.state, t)}`
+          : t("downloadsSectionTitle");
+
   return (
     <div className="app">
       <header className="topbar">
@@ -1883,6 +1934,111 @@ export default function WorkspaceShell() {
               {t("refresh")}
             </button>
           </div>
+          {downloadToasts.length > 0 ? (
+            <div className="topbar-downloads" style={{ position: "relative" }} ref={downloadsPopoverContainerRef}>
+              <button
+                className="btn btn-ghost btn-icon download-indicator"
+                title={downloadIndicatorTitle}
+                aria-label={t("downloadsSectionTitle")}
+                onClick={() => setDownloadsPopoverOpen((prev) => !prev)}
+                disabled={busy}
+              >
+                ⬇
+                {downloadIndicatorBadgeText ? (
+                  <span
+                    className={clsx(
+                      "download-indicator-badge",
+                      downloadInProgressCount === 0 &&
+                        latestDownloadToast?.state === "completed" &&
+                        "download-indicator-badge-ok",
+                      downloadInProgressCount === 0 &&
+                        latestDownloadToast &&
+                        latestDownloadToast.state !== "completed" &&
+                        "download-indicator-badge-bad"
+                    )}
+                  >
+                    {downloadIndicatorBadgeText}
+                  </span>
+                ) : null}
+              </button>
+              {downloadsPopoverOpen ? (
+                <div className="popover popover-end" ref={downloadsPopoverRef}>
+                  <div className="popover-title">{t("downloadsSectionTitle")}</div>
+                  <div className="downloads-popover-list">
+                    {downloadToasts.map((d) => {
+                      const percent = d.totalBytes > 0 ? Math.min(1, d.receivedBytes / d.totalBytes) : null;
+                      const progressText =
+                        d.state === "progressing"
+                          ? d.totalBytes > 0 && percent !== null
+                            ? `${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)} (${Math.round(percent * 100)}%)`
+                            : formatBytes(d.receivedBytes)
+                          : formatDownloadStateLabel(d.state, t);
+
+                      const barClass = clsx(
+                        "download-progress-bar",
+                        d.state === "completed" && "download-progress-bar-ok",
+                        (d.state === "cancelled" || d.state === "interrupted") && "download-progress-bar-bad"
+                      );
+
+                      const barWidth =
+                        percent !== null
+                          ? `${Math.round(percent * 100)}%`
+                          : d.state === "progressing"
+                            ? "20%"
+                            : "100%";
+
+                      return (
+                        <div key={d.id} className="download-toast glass">
+                          <div className="download-toast-head">
+                            <div className="download-toast-title" title={d.filename}>
+                              {d.filename}
+                            </div>
+                            <button
+                              className="btn btn-ghost btn-icon"
+                              title={t("close")}
+                              aria-label={t("close")}
+                              onClick={() => dismissDownloadToast(d.id)}
+                            >
+                              ×
+                            </button>
+                          </div>
+
+                          <div className="download-toast-meta muted">
+                            <span>{progressText}</span>
+                            {d.copiedAt ? <span className="chip download-chip">{t("downloadCopied")}</span> : null}
+                          </div>
+
+                          <div className="download-progress">
+                            <div className={barClass} style={{ width: barWidth }} />
+                          </div>
+
+                          <div className="download-actions">
+                            {d.state === "progressing" ? (
+                              <button className="btn" onClick={() => cancelDownloadToast(d.id)}>
+                                {t("downloadCancelDownload")}
+                              </button>
+                            ) : d.state === "completed" ? (
+                              <>
+                                <button className="btn" onClick={() => showDownloadInFolder(d.id)}>
+                                  {t("downloadShowInFolder")}
+                                </button>
+                                <button className="btn btn-primary" onClick={() => openDownloadedFile(d.id)}>
+                                  {t("downloadOpenFile")}
+                                </button>
+                                <button className="btn" onClick={() => copyDownloadPath(d.id)}>
+                                  {t("downloadCopyPath")}
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
           <div className="topbar-settings" style={{ position: "relative" }} ref={settingsContainerRef}>
             <button
               className="btn btn-ghost btn-icon"
@@ -2802,85 +2958,11 @@ export default function WorkspaceShell() {
             </div>
           </aside>
         ) : null}
-      </div>
+	      </div>
 
-      {downloadToasts.length > 0 ? (
-        <div className="download-toasts" aria-label={t("downloadsSectionTitle")}>
-          {downloadToasts.map((d) => {
-            const percent = d.totalBytes > 0 ? Math.min(1, d.receivedBytes / d.totalBytes) : null;
-            const progressText =
-              d.state === "progressing"
-                ? d.totalBytes > 0 && percent !== null
-                  ? `${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)} (${Math.round(percent * 100)}%)`
-                  : formatBytes(d.receivedBytes)
-                : formatDownloadStateLabel(d.state, t);
-
-            const barClass = clsx(
-              "download-progress-bar",
-              d.state === "completed" && "download-progress-bar-ok",
-              (d.state === "cancelled" || d.state === "interrupted") && "download-progress-bar-bad"
-            );
-
-            const barWidth =
-              percent !== null
-                ? `${Math.round(percent * 100)}%`
-                : d.state === "progressing"
-                  ? "20%"
-                  : "100%";
-
-            return (
-              <div key={d.id} className="download-toast glass">
-                <div className="download-toast-head">
-                  <div className="download-toast-title" title={d.filename}>
-                    {d.filename}
-                  </div>
-                  <button
-                    className="btn btn-ghost btn-icon"
-                    title={t("close")}
-                    aria-label={t("close")}
-                    onClick={() => dismissDownloadToast(d.id)}
-                  >
-                    ×
-                  </button>
-                </div>
-
-                <div className="download-toast-meta muted">
-                  <span>{progressText}</span>
-                  {d.copiedAt ? <span className="chip download-chip">{t("downloadCopied")}</span> : null}
-                </div>
-
-                <div className="download-progress">
-                  <div className={barClass} style={{ width: barWidth }} />
-                </div>
-
-                <div className="download-actions">
-                  {d.state === "progressing" ? (
-                    <button className="btn" onClick={() => cancelDownloadToast(d.id)}>
-                      {t("downloadCancelDownload")}
-                    </button>
-                  ) : d.state === "completed" ? (
-                    <>
-                      <button className="btn" onClick={() => showDownloadInFolder(d.id)}>
-                        {t("downloadShowInFolder")}
-                      </button>
-                      <button className="btn btn-primary" onClick={() => openDownloadedFile(d.id)}>
-                        {t("downloadOpenFile")}
-                      </button>
-                      <button className="btn" onClick={() => copyDownloadPath(d.id)}>
-                        {t("downloadCopyPath")}
-                      </button>
-                    </>
-                  ) : null}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
-      <dialog
-        ref={importDialogRef}
-        onCancel={(e) => {
+	      <dialog
+	        ref={importDialogRef}
+	        onCancel={(e) => {
           e.preventDefault();
           setImportDialogOpen(false);
           setImportText("");

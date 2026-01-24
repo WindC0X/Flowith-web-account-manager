@@ -1132,6 +1132,43 @@ dialog::backdrop {
   grid-column: 2 / -1;
 }
 
+.download-indicator {
+  position: relative;
+}
+
+.download-indicator-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--color-accent-primary);
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.download-indicator-badge-ok {
+  background: #10b981;
+}
+
+.download-indicator-badge-bad {
+  background: #ef4444;
+}
+
+.downloads-popover-list {
+  display: grid;
+  gap: 10px;
+}
+
 .download-toasts {
   position: fixed;
   right: 12px;
