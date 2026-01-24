@@ -22,6 +22,14 @@ type DeleteDialogState =
   | { open: false }
   | { open: true; accountId: string; displayName: string };
 
+type BatchTagsDialogState =
+  | { open: false }
+  | { open: true; accountIds: string[] };
+
+type BatchDeleteDialogState =
+  | { open: false }
+  | { open: true; accountIds: string[] };
+
 type Theme = "dark" | "light";
 type Locale = "zh-CN" | "en";
 type AccountListViewMode = "cards" | "table";
@@ -142,6 +150,8 @@ const UI_STRINGS = {
     import: "导入",
     export: "导出",
     batchOpen: "批量打开",
+    batchTags: "批量标签",
+    batchDelete: "批量删除",
     refresh: "刷新",
 
     errorTitle: "错误",
@@ -211,8 +221,16 @@ const UI_STRINGS = {
 	    deleteAccountTitle: "删除账号",
 	    deleteAccountNote: "将移除本地保存的账号信息与登录态，并关闭对应 Tab。此操作不可撤销。",
 	    confirmDelete: "确认删除",
-	    closeTabTitle: "关闭 Tab",
-	  },
+    closeTabTitle: "关闭 Tab",
+
+    batchTagsTitle: "批量设置标签",
+    batchTagsNote: "将把标签应用到已选择的 {count} 个账号（逗号/空白分隔）。",
+    batchDeleteTitle: "批量删除账号",
+    batchDeleteNote: "将删除已选择的 {count} 个账号并关闭对应 Tab。此操作不可撤销。",
+    confirmApply: "应用",
+    toastBatchTagsResult: "批量标签：成功 {ok} · 失败 {fail}",
+    toastBatchDeleteResult: "批量删除：成功 {ok} · 失败 {fail}",
+  },
   en: {
     subtitle: "Desktop MVP · Workspace UI",
     language: "Language",
@@ -281,6 +299,8 @@ const UI_STRINGS = {
     import: "Import",
     export: "Export",
     batchOpen: "Open tabs",
+    batchTags: "Batch tags",
+    batchDelete: "Batch delete",
     refresh: "Refresh",
 
     errorTitle: "Error",
@@ -353,8 +373,16 @@ const UI_STRINGS = {
 	    deleteAccountTitle: "Delete account",
 	    deleteAccountNote: "Removes local account data and closes its tab. This cannot be undone.",
 	    confirmDelete: "Delete",
-	    closeTabTitle: "Close tab",
-	  },
+    closeTabTitle: "Close tab",
+
+    batchTagsTitle: "Batch tags",
+    batchTagsNote: "Applies tags to {count} selected account(s) (comma/space separated).",
+    batchDeleteTitle: "Batch delete",
+    batchDeleteNote: "Deletes {count} selected account(s) and closes their tabs. This cannot be undone.",
+    confirmApply: "Apply",
+    toastBatchTagsResult: "Batch tags: ok {ok} · failed {fail}",
+    toastBatchDeleteResult: "Batch delete: ok {ok} · failed {fail}",
+  },
 } as const;
 
 type StringKey = keyof (typeof UI_STRINGS)["zh-CN"];
@@ -574,6 +602,9 @@ export default function WorkspaceShell() {
 
   const [exportDialog, setExportDialog] = useState<ExportDialogState>({ open: false });
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
+  const [batchTagsDialog, setBatchTagsDialog] = useState<BatchTagsDialogState>({ open: false });
+  const [batchTagsDraft, setBatchTagsDraft] = useState("");
+  const [batchDeleteDialog, setBatchDeleteDialog] = useState<BatchDeleteDialogState>({ open: false });
 
   const [tagsDraft, setTagsDraft] = useState("");
   const [proxyMode, setProxyMode] = useState<ProxyMode>("system");
@@ -601,6 +632,8 @@ export default function WorkspaceShell() {
   const importDialogRef = useRef<HTMLDialogElement | null>(null);
   const exportDialogRef = useRef<HTMLDialogElement | null>(null);
   const deleteDialogRef = useRef<HTMLDialogElement | null>(null);
+  const batchTagsDialogRef = useRef<HTMLDialogElement | null>(null);
+  const batchDeleteDialogRef = useRef<HTMLDialogElement | null>(null);
   const connectivityPopoverAnchorRef = useRef<HTMLDivElement | null>(null);
   const connectivityPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -802,6 +835,8 @@ export default function WorkspaceShell() {
       importDialogOpen ||
       exportDialog.open ||
       deleteDialog.open ||
+      batchTagsDialog.open ||
+      batchDeleteDialog.open ||
       settingsPopoverOpen ||
       connectivityPopoverOpen ||
       selectOverlayOpen
@@ -822,6 +857,8 @@ export default function WorkspaceShell() {
   }, [
     connectivityPopoverOpen,
     deleteDialog.open,
+    batchDeleteDialog.open,
+    batchTagsDialog.open,
     exportDialog.open,
     importDialogOpen,
     selectOverlayOpen,
@@ -1449,6 +1486,86 @@ export default function WorkspaceShell() {
     }
   }, [closeTab, selected]);
 
+  const openBatchTagsDialog = useCallback(() => {
+    if (selected.length === 0) return;
+    setBatchTagsDraft("");
+    setBatchTagsDialog({ open: true, accountIds: selected });
+  }, [selected]);
+
+  const runBatchTags = useCallback(async () => {
+    if (!batchTagsDialog.open) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const tags = parseTagsInput(batchTagsDraft);
+      let ok = 0;
+      let fail = 0;
+      for (const accountId of batchTagsDialog.accountIds) {
+        try {
+          await window.desktop.accounts.updateAccountMeta(accountId, { tags });
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+      await refreshAccounts();
+      setSelectedIds(new Set());
+      setBatchTagsDialog({ open: false });
+      pushUiToast(
+        fail > 0 ? "error" : "success",
+        format(t("toastBatchTagsResult"), {
+          ok,
+          fail,
+        })
+      );
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [batchTagsDialog, batchTagsDraft, pushUiToast, refreshAccounts, t]);
+
+  const openBatchDeleteDialog = useCallback(() => {
+    if (selected.length === 0) return;
+    setBatchDeleteDialog({ open: true, accountIds: selected });
+  }, [selected]);
+
+  const runBatchDelete = useCallback(async () => {
+    if (!batchDeleteDialog.open) return;
+    setError(null);
+    setBusy(true);
+    try {
+      let ok = 0;
+      let fail = 0;
+      for (const accountId of batchDeleteDialog.accountIds) {
+        try {
+          await window.desktop.accounts.delete(accountId);
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+      setBatchDeleteDialog({ open: false });
+      setSelectedIds(new Set());
+      await refreshAccounts();
+      pushUiToast(
+        fail > 0 ? "error" : "success",
+        format(t("toastBatchDeleteResult"), {
+          ok,
+          fail,
+        })
+      );
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [batchDeleteDialog, pushUiToast, refreshAccounts, t]);
+
   useEffect(() => {
     const dlg = importDialogRef.current;
     if (!dlg) return;
@@ -1490,6 +1607,34 @@ export default function WorkspaceShell() {
       // ignore dialog show/close failures in non-standard runtimes
     }
   }, [deleteDialog.open]);
+
+  useEffect(() => {
+    const dlg = batchTagsDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (batchTagsDialog.open) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [batchTagsDialog.open]);
+
+  useEffect(() => {
+    const dlg = batchDeleteDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (batchDeleteDialog.open) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [batchDeleteDialog.open]);
 
   return (
     <div className="app">
@@ -1987,23 +2132,29 @@ export default function WorkspaceShell() {
             )}
           </div>
 
-          {selected.length > 0 ? (
-            <div className="batchbar">
-              <div className="batchbar-left">{format(t("selectedCount"), { count: selected.length })}</div>
-              <div className="batchbar-actions">
-                <button className="btn btn-primary" onClick={batchOpenTabs} disabled={busy}>
-                  {t("openTab")}
-                </button>
-                <button className="btn" onClick={batchCloseTabs} disabled={busy}>
-                  {t("closeTab")}
-                </button>
-                <button className="btn" onClick={runExport} disabled={busy}>
-                  {t("export")}
-                </button>
-              </div>
-            </div>
-          ) : null}
-        </aside>
+	          {selected.length > 0 ? (
+	            <div className="batchbar">
+	              <div className="batchbar-left">{format(t("selectedCount"), { count: selected.length })}</div>
+	              <div className="batchbar-actions">
+	                <button className="btn btn-primary" onClick={batchOpenTabs} disabled={busy}>
+	                  {t("openTab")}
+	                </button>
+	                <button className="btn" onClick={batchCloseTabs} disabled={busy}>
+	                  {t("closeTab")}
+	                </button>
+	                <button className="btn" onClick={openBatchTagsDialog} disabled={busy}>
+	                  {t("batchTags")}
+	                </button>
+	                <button className="btn" onClick={runExport} disabled={busy}>
+	                  {t("export")}
+	                </button>
+	                <button className="btn btn-danger" onClick={openBatchDeleteDialog} disabled={busy}>
+	                  {t("batchDelete")}
+	                </button>
+	              </div>
+	            </div>
+	          ) : null}
+	        </aside>
 
         <main className="workspace">
           <div className="tabs" role="tablist" aria-label={t("tabsAria")}>
@@ -2681,6 +2832,111 @@ export default function WorkspaceShell() {
                 {t("cancel")}
               </button>
               <button className="btn btn-danger" onClick={runDeleteAccount} disabled={busy}>
+                {t("confirmDelete")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </dialog>
+
+      <dialog
+        ref={batchTagsDialogRef}
+        onCancel={(e) => {
+          e.preventDefault();
+          setBatchTagsDialog({ open: false });
+          setBatchTagsDraft("");
+        }}
+        onClose={() => {
+          setBatchTagsDialog({ open: false });
+          setBatchTagsDraft("");
+        }}
+        aria-label={t("batchTagsTitle")}
+      >
+        {batchTagsDialog.open ? (
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">{t("batchTagsTitle")}</div>
+                <div className="modal-note">
+                  {format(t("batchTagsNote"), { count: batchTagsDialog.accountIds.length })}
+                </div>
+              </div>
+              <button
+                className="btn btn-icon"
+                title={t("close")}
+                onClick={() => {
+                  setBatchTagsDialog({ open: false });
+                  setBatchTagsDraft("");
+                }}
+                disabled={busy}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modal-grid">
+              <input
+                className="input"
+                type="text"
+                value={batchTagsDraft}
+                onChange={(e) => setBatchTagsDraft(e.target.value)}
+                placeholder={t("tagsPlaceholder")}
+                disabled={busy}
+              />
+            </div>
+
+            <div className="modal-actions">
+              <button
+                className="btn"
+                onClick={() => {
+                  setBatchTagsDialog({ open: false });
+                  setBatchTagsDraft("");
+                }}
+                disabled={busy}
+              >
+                {t("cancel")}
+              </button>
+              <button className="btn btn-primary" onClick={runBatchTags} disabled={busy}>
+                {t("confirmApply")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </dialog>
+
+      <dialog
+        ref={batchDeleteDialogRef}
+        onCancel={(e) => {
+          e.preventDefault();
+          setBatchDeleteDialog({ open: false });
+        }}
+        onClose={() => setBatchDeleteDialog({ open: false })}
+        aria-label={t("batchDeleteTitle")}
+      >
+        {batchDeleteDialog.open ? (
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">{t("batchDeleteTitle")}</div>
+                <div className="modal-note">
+                  {format(t("batchDeleteNote"), { count: batchDeleteDialog.accountIds.length })}
+                </div>
+              </div>
+              <button
+                className="btn btn-icon"
+                title={t("close")}
+                onClick={() => setBatchDeleteDialog({ open: false })}
+                disabled={busy}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setBatchDeleteDialog({ open: false })} disabled={busy}>
+                {t("cancel")}
+              </button>
+              <button className="btn btn-danger" onClick={runBatchDelete} disabled={busy}>
                 {t("confirmDelete")}
               </button>
             </div>
