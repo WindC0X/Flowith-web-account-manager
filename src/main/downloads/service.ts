@@ -15,6 +15,7 @@ import {
   setDownloadsMode,
   toDownloadsPreferencesPublic,
 } from "./preferences";
+import { computeSaveAsDedupKeys } from "./saveAsDedup";
 
 type DownloadRecord = {
   id: string;
@@ -75,42 +76,6 @@ function syncSavePath(record: DownloadRecord, item: DownloadItem): void {
   const path = readItemSavePath(item);
   if (!path) return;
   record.savePath = path;
-}
-
-function saveAsDedupKeys(accountId: string, item: DownloadItem, filename: string): string[] {
-  const normalizedFilename = filename.trim() || "download";
-
-  const isStableUrl = (value: string): boolean => {
-    const trimmed = value.trim();
-    if (!trimmed) return false;
-    return !(trimmed.startsWith("blob:") || trimmed.startsWith("data:") || trimmed.startsWith("about:"));
-  };
-
-  const bestUrl = (): string | null => {
-    try {
-      const chain = item.getURLChain();
-      for (let i = chain.length - 1; i >= 0; i--) {
-        const candidate = chain[i];
-        if (typeof candidate === "string" && isStableUrl(candidate)) return candidate.trim();
-      }
-    } catch {
-      // ignore
-    }
-
-    try {
-      const candidate = item.getURL();
-      if (typeof candidate === "string" && isStableUrl(candidate)) return candidate.trim();
-    } catch {
-      // ignore
-    }
-
-    return null;
-  };
-
-  const keys: string[] = [`${accountId}:name:${normalizedFilename}`];
-  const url = bestUrl();
-  if (url) keys.push(`${accountId}:url:${url}`);
-  return [...new Set(keys)];
 }
 
 function trackDownload(
@@ -179,7 +144,7 @@ export function attachDownloadsToSession(
     const prefs = getDownloadsPreferencesInternal();
     const autoDir = resolveAutoDirectory(prefs.mode, prefs.customDir);
     const filename = item.getFilename() || "download";
-    const saveAsKeys = saveAsDedupKeys(accountId, item, filename);
+    const saveAsKeys = computeSaveAsDedupKeys(accountId, item, filename);
 
     if (!autoDir) {
       const hasInFlight = saveAsKeys.some((key) => typeof saveAsInFlightByKey.get(key) === "number");
