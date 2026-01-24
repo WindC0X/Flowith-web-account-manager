@@ -122,19 +122,19 @@ export class WebWorkspaceService {
       void shell.openExternal(url);
     });
 
-    view.webContents.on("context-menu", (_event, params) => {
-      const menu = Menu.buildFromTemplate([
-        {
-          label: "页面刷新",
-          accelerator: "CmdOrCtrl+R",
-          click: () => {
-            view.webContents.reload();
-          },
-        },
-      ]);
-      menu.popup({ window: this.window, x: Math.round(params.x), y: Math.round(params.y) });
-    });
-  }
+	    view.webContents.on("context-menu", () => {
+	      const menu = Menu.buildFromTemplate([
+	        {
+	          label: "页面刷新",
+	          accelerator: "CmdOrCtrl+R",
+	          click: () => {
+	            view.webContents.reload();
+	          },
+	        },
+	      ]);
+	      menu.popup({ window: this.window });
+	    });
+	  }
 
   private detachActive() {
     this.window.setBrowserView(null);
