@@ -9,9 +9,9 @@
 你需要两类东西：
 
 1. **应用安装包**（从 GitHub Release 下载）
-2. **Supabase 配置（必须）**：用于校验/刷新 token、自动进入登录态
+2. **账号的 `refresh_token`**（导入时一行一个）
 
-应用通过环境变量读取 Supabase 配置：
+另外：如果你在导入/打开 Tab 时看到“缺少 Supabase 配置”之类的提示，则需要额外配置 Supabase（用于校验/刷新 token、自动进入登录态）。应用通过环境变量读取该配置：
 
 - `FLOWITH_SUPABASE_URL`
 - `FLOWITH_SUPABASE_ANON_KEY`
@@ -45,7 +45,7 @@ chmod +x Flowith-web-account-manager*.AppImage
 ./Flowith-web-account-manager*.AppImage
 ```
 
-## 3. 配置 Supabase（必须）
+## 3. 配置 Supabase（如需）
 
 ### 3.1 Windows（图形界面方式）
 
@@ -89,11 +89,9 @@ export FLOWITH_SUPABASE_ANON_KEY="your_anon_key"
 
 1. 在账号列表里选中一个账号。
 2. 点击 **打开 Tab**（或卡片上的快捷按钮）。
-3. 应用会做两件事：
-   - 用 `refresh_token` 刷新 session
-   - 把登录态写入该账号的独立存储空间（Electron `partition`），然后刷新页面
-
-> 每个账号都有独立的 `partition`，Cookie/localStorage 不会串号。
+3. 应用会自动：
+   - 用 `refresh_token` 校验并刷新登录态
+   - 为每个账号使用独立的浏览器存储空间，避免 Cookie/localStorage 串号
 
 ## 6. 代理与 User-Agent（按账号设置）
 
@@ -151,7 +149,7 @@ export FLOWITH_SUPABASE_ANON_KEY="your_anon_key"
 
 ### 8.1 怎么检查更新？
 
-自动更新只在 **打包后的安装版**可用（dev 模式不可用）：
+自动更新只在 **打包后的安装版**可用（从源码运行的开发版不可用）：
 
 1. 打开 **设置（⚙）** → **Updates**
 2. 点击 **Check updates**
@@ -179,26 +177,3 @@ export FLOWITH_SUPABASE_ANON_KEY="your_anon_key"
 2. 关闭 Tab 重新打开
 3. 尽量在非 Sandbox 的真实系统环境运行
 4. 若错误信息包含 `href=... readyState=...`，把它连同复现步骤提供出来方便定位
-
-### 9.2 dev 模式启动失败：`listen EACCES ... :5173`
-
-这是开发端口被占用/权限受限导致的，处理方式：
-
-- 释放 5173 端口后重试
-- 或配置 Vite 使用其它端口再运行
-
-## 10.（可选）开发者运行
-
-```bash
-npm install
-npm run dev
-```
-
-质量检查：
-
-```bash
-npm run lint
-npm run typecheck
-npm test
-```
-
