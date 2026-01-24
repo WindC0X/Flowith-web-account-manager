@@ -27,6 +27,7 @@ import { testConnectivity } from "./network/connectivity";
 import { validateProxyConfig } from "./network/proxy";
 import { validateUaConfig } from "./network/userAgent";
 import { redactSensitive } from "./security/redact";
+import { checkForUpdates, downloadUpdate, getUpdaterStatus, quitAndInstall } from "./updater/service";
 import { partitionForAccount, type WebWorkspaceService } from "./workspace/WebWorkspaceService";
 import type { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
 
@@ -184,6 +185,34 @@ export function registerIpcHandlers(deps: IpcDeps) {
     try {
       assertString(downloadId, "downloadId");
       copyDownloadedPath(downloadId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_GET_STATUS, async () => {
+    return getUpdaterStatus();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_CHECK, async () => {
+    try {
+      return await checkForUpdates();
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_DOWNLOAD, async () => {
+    try {
+      return await downloadUpdate();
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.UPDATER_QUIT_AND_INSTALL, async () => {
+    try {
+      quitAndInstall();
     } catch (e) {
       throw new Error(safeErrorMessage(e));
     }

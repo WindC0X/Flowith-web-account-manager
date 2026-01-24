@@ -4,6 +4,7 @@ import {
   IPC_EVENTS,
   type DesktopApi,
   type DownloadEvent,
+  type UpdaterEvent,
   type IpcArgs,
   type IpcChannel,
   type IpcResult,
@@ -38,6 +39,21 @@ const api: DesktopApi = {
     open: (downloadId) => invoke(IPC_CHANNELS.DOWNLOADS_OPEN, downloadId),
     cancel: (downloadId) => invoke(IPC_CHANNELS.DOWNLOADS_CANCEL, downloadId),
     copyPath: (downloadId) => invoke(IPC_CHANNELS.DOWNLOADS_COPY_PATH, downloadId),
+  },
+  updater: {
+    subscribe: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: UpdaterEvent) => {
+        listener(payload);
+      };
+      ipcRenderer.on(IPC_EVENTS.UPDATER_EVENT, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC_EVENTS.UPDATER_EVENT, handler);
+      };
+    },
+    getStatus: () => invoke(IPC_CHANNELS.UPDATER_GET_STATUS),
+    check: () => invoke(IPC_CHANNELS.UPDATER_CHECK),
+    download: () => invoke(IPC_CHANNELS.UPDATER_DOWNLOAD),
+    quitAndInstall: () => invoke(IPC_CHANNELS.UPDATER_QUIT_AND_INSTALL),
   },
   window: {
     minimize: () => invoke(IPC_CHANNELS.WINDOW_MINIMIZE),

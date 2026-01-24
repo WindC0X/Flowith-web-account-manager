@@ -7,6 +7,13 @@
     "appId": "io.flowith.web.account-manager",
     "productName": "Flowith Web Account Manager",
     "artifactName": "flowith-web-account-manager-${version}-${os}-${arch}.${ext}",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "WindC0X",
+        "repo": "Flowith-web-account-manager"
+      }
+    ],
     "directories": {
       "output": "dist/release"
     },
@@ -34,7 +41,8 @@
     },
     "mac": {
       "target": [
-        "dmg"
+        "dmg",
+        "zip"
       ],
       "icon": "build/icon.png"
     },
@@ -61,6 +69,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.91.0",
+    "electron-updater": "^6.6.0",
     "electron-store": "^11.0.2",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"

@@ -66,8 +66,13 @@ jobs:
           name: release-assets-${{ runner.os }}-${{ runner.arch }}
           path: |
             dist/release/**/*.exe
+            dist/release/**/*.exe.blockmap
             dist/release/**/*.dmg
+            dist/release/**/*.zip
+            dist/release/**/*.zip.blockmap
             dist/release/**/*.AppImage
+            dist/release/**/*.AppImage.blockmap
+            dist/release/latest*.yml
 
   release:
     name: Release (tag only)

@@ -2,6 +2,7 @@ import { app, BrowserWindow, nativeImage, nativeTheme } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { registerIpcHandlers } from "./ipc";
+import { initUpdater } from "./updater/service";
 import { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
 import { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 
@@ -94,6 +95,8 @@ function createWindow(): BrowserWindow {
 
 app.whenReady().then(() => {
   const mainWindow = createWindow();
+  let activeWindow = mainWindow;
+  initUpdater(() => activeWindow);
   const workspace = new WebWorkspaceService(mainWindow);
   const loginBootstrap = new FlowithLoginBootstrapService(workspace);
   registerIpcHandlers({ workspace, loginBootstrap });
@@ -101,6 +104,7 @@ app.whenReady().then(() => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) {
       const w = createWindow();
+      activeWindow = w;
       workspace.setWindow(w);
     }
   });

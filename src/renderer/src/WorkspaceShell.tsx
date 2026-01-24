@@ -9,6 +9,8 @@ import type {
   ImportRefreshTokensOptions,
   ImportRefreshTokensResult,
   ProxyMode,
+  UpdaterEvent,
+  UpdaterStatus,
   UaMode,
 } from "../../shared/ipc";
 import { parseTagsInput } from "../../shared/tags";
@@ -112,11 +114,27 @@ const UI_STRINGS = {
     downloadStateCompleted: "已完成",
     downloadStateCancelled: "已取消",
     downloadStateInterrupted: "已中断",
-    toastDownloadStarted: "开始下载：{filename}",
-    toastDownloadCompleted: "下载已完成：{filename}",
-    toastDownloadCancelled: "下载已取消：{filename}",
-    toastDownloadInterrupted: "下载已中断：{filename}",
-    searchPlaceholder: "搜索：displayName / id / tag",
+	    toastDownloadStarted: "开始下载：{filename}",
+	    toastDownloadCompleted: "下载已完成：{filename}",
+	    toastDownloadCancelled: "下载已取消：{filename}",
+	    toastDownloadInterrupted: "下载已中断：{filename}",
+	    updatesSectionTitle: "更新",
+	    updateCurrentVersion: "当前版本",
+	    updateStateLabel: "状态",
+	    updateActionsLabel: "操作",
+	    updateProgressLabel: "进度",
+	    updateCheck: "检查更新",
+	    updateDownload: "下载更新",
+	    updateInstall: "重启安装",
+	    updateUnsupportedHint: "仅发布版（安装包）可用",
+	    updateStateIdle: "未检查",
+	    updateStateChecking: "检查中…",
+	    updateStateAvailable: "发现新版本",
+	    updateStateNotAvailable: "已是最新版本",
+	    updateStateDownloading: "下载中…",
+	    updateStateDownloaded: "已下载",
+	    updateStateError: "更新失败",
+	    searchPlaceholder: "搜索：displayName / id / tag",
 
     expandSidebar: "展开账号面板",
     collapseSidebar: "折叠账号面板",
@@ -265,11 +283,27 @@ const UI_STRINGS = {
     downloadStateCompleted: "Completed",
     downloadStateCancelled: "Cancelled",
     downloadStateInterrupted: "Interrupted",
-    toastDownloadStarted: "Download started: {filename}",
-    toastDownloadCompleted: "Download completed: {filename}",
-    toastDownloadCancelled: "Download cancelled: {filename}",
-    toastDownloadInterrupted: "Download interrupted: {filename}",
-    searchPlaceholder: "Search: displayName / id / tag",
+	    toastDownloadStarted: "Download started: {filename}",
+	    toastDownloadCompleted: "Download completed: {filename}",
+	    toastDownloadCancelled: "Download cancelled: {filename}",
+	    toastDownloadInterrupted: "Download interrupted: {filename}",
+	    updatesSectionTitle: "Updates",
+	    updateCurrentVersion: "Current version",
+	    updateStateLabel: "Status",
+	    updateActionsLabel: "Actions",
+	    updateProgressLabel: "Progress",
+	    updateCheck: "Check updates",
+	    updateDownload: "Download",
+	    updateInstall: "Restart & install",
+	    updateUnsupportedHint: "Only available in packaged builds",
+	    updateStateIdle: "Idle",
+	    updateStateChecking: "Checking…",
+	    updateStateAvailable: "Update available",
+	    updateStateNotAvailable: "Up to date",
+	    updateStateDownloading: "Downloading…",
+	    updateStateDownloaded: "Downloaded",
+	    updateStateError: "Update failed",
+	    searchPlaceholder: "Search: displayName / id / tag",
 
     expandSidebar: "Expand accounts",
     collapseSidebar: "Collapse accounts",
@@ -464,6 +498,16 @@ function formatDownloadStateLabel(state: DownloadToastState["state"], t: (key: S
   if (state === "completed") return t("downloadStateCompleted");
   if (state === "cancelled") return t("downloadStateCancelled");
   return t("downloadStateInterrupted");
+}
+
+function formatUpdaterStateLabel(state: UpdaterStatus["state"], t: (key: StringKey) => string): string {
+  if (state === "idle") return t("updateStateIdle");
+  if (state === "checking") return t("updateStateChecking");
+  if (state === "available") return t("updateStateAvailable");
+  if (state === "notAvailable") return t("updateStateNotAvailable");
+  if (state === "downloading") return t("updateStateDownloading");
+  if (state === "downloaded") return t("updateStateDownloaded");
+  return t("updateStateError");
 }
 
 function toErrorMessage(error: unknown): string {
@@ -707,6 +751,8 @@ export default function WorkspaceShell() {
   const [selectOverlayOpen, setSelectOverlayOpen] = useState(false);
   const [downloadPrefs, setDownloadPrefs] = useState<DownloadPreferencesPublic | null>(null);
   const [downloadToasts, setDownloadToasts] = useState<DownloadToastState[]>([]);
+  const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus | null>(null);
+  const [updaterRunning, setUpdaterRunning] = useState(false);
 
   const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>(() => loadAccountInfoCache());
 
@@ -1090,6 +1136,31 @@ export default function WorkspaceShell() {
   }, []);
 
   useEffect(() => {
+    void window.desktop.updater
+      .getStatus()
+      .then((next) => setUpdaterStatus(next))
+      .catch(() => void 0);
+
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = window.desktop.updater.subscribe((event: UpdaterEvent) => {
+        if (event.type !== "status") return;
+        setUpdaterStatus(event.status);
+      });
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     let unsubscribe: (() => void) | null = null;
     try {
       unsubscribe = window.desktop.downloads.subscribe((event: DownloadEvent) => {
@@ -1255,6 +1326,50 @@ export default function WorkspaceShell() {
       setError(toErrorMessage(e));
     }
   }, []);
+
+  const checkForUpdates = useCallback(async () => {
+    setError(null);
+    setUpdaterRunning(true);
+    try {
+      const next = await window.desktop.updater.check();
+      setUpdaterStatus(next);
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setUpdaterRunning(false);
+    }
+  }, [pushUiToast]);
+
+  const downloadAppUpdate = useCallback(async () => {
+    setError(null);
+    setUpdaterRunning(true);
+    try {
+      const next = await window.desktop.updater.download();
+      setUpdaterStatus(next);
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setUpdaterRunning(false);
+    }
+  }, [pushUiToast]);
+
+  const installUpdate = useCallback(async () => {
+    setError(null);
+    setUpdaterRunning(true);
+    try {
+      await window.desktop.updater.quitAndInstall();
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setUpdaterRunning(false);
+    }
+  }, [pushUiToast]);
 
   const runImport = useCallback(async () => {
     setImportProxyInlineError(null);
@@ -2121,10 +2236,10 @@ export default function WorkspaceShell() {
                     </select>
                   </div>
 
-                  <div className="setting-row">
-                    <div className="muted">{t("downloadsCustomDir")}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                      <div
+	                  <div className="setting-row">
+	                    <div className="muted">{t("downloadsCustomDir")}</div>
+	                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+	                      <div
                         className="muted"
                         style={{
                           flex: 1,
@@ -2142,13 +2257,94 @@ export default function WorkspaceShell() {
                       <button className="btn" onClick={pickDownloadDirectory} disabled={busy}>
                         {t("downloadsPickDirectory")}
                       </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
+	                    </div>
+	                  </div>
+	                </div>
+
+	                <div className="popover-title" style={{ marginTop: 10 }}>
+	                  {t("updatesSectionTitle")}
+	                </div>
+	                <div className="setting-grid">
+	                  <div className="setting-row">
+	                    <div className="muted">{t("updateCurrentVersion")}</div>
+	                    <div className="mono" style={{ fontSize: 12 }}>
+	                      {updaterStatus?.currentVersion ?? "-"}
+	                    </div>
+	                  </div>
+
+	                  <div className="setting-row">
+	                    <div className="muted">{t("updateStateLabel")}</div>
+	                    <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+	                      <span>
+	                        {updaterStatus ? formatUpdaterStateLabel(updaterStatus.state, t) : "-"}
+	                      </span>
+	                      {updaterStatus?.availableVersion ? (
+	                        <span className="chip" title={updaterStatus.availableVersion}>
+	                          {updaterStatus.availableVersion}
+	                        </span>
+	                      ) : null}
+	                    </div>
+	                  </div>
+
+	                  <div className="setting-row">
+	                    <div className="muted">{t("updateActionsLabel")}</div>
+	                    {updaterStatus ? (
+	                      updaterStatus.supported ? (
+	                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+	                          <button className="btn" onClick={checkForUpdates} disabled={busy || updaterRunning}>
+	                            {t("updateCheck")}
+	                          </button>
+	                          {updaterStatus.state === "available" ? (
+	                            <button className="btn" onClick={downloadAppUpdate} disabled={busy || updaterRunning}>
+	                              {t("updateDownload")}
+	                            </button>
+	                          ) : null}
+	                          {updaterStatus.state === "downloaded" ? (
+	                            <button
+	                              className="btn btn-primary"
+	                              onClick={installUpdate}
+	                              disabled={busy || updaterRunning}
+	                            >
+	                              {t("updateInstall")}
+	                            </button>
+	                          ) : null}
+	                        </div>
+	                      ) : (
+	                        <div className="muted" style={{ fontSize: 11, lineHeight: 1.45 }}>
+	                          {t("updateUnsupportedHint")}
+	                        </div>
+	                      )
+	                    ) : (
+	                      <div className="muted" style={{ fontSize: 11, lineHeight: 1.45 }}>
+	                        -
+	                      </div>
+	                    )}
+	                  </div>
+
+	                  {updaterStatus?.progress ? (
+	                    <div className="setting-row">
+	                      <div className="muted">{t("updateProgressLabel")}</div>
+	                      <div style={{ display: "grid", gap: 6 }}>
+	                        <div className="muted" style={{ fontSize: 11 }}>
+	                          {Math.round(updaterStatus.progress.percent)}% · {formatBytes(updaterStatus.progress.transferred)} /{" "}
+	                          {formatBytes(updaterStatus.progress.total)}
+	                        </div>
+	                        <div className="download-progress">
+	                          <div
+	                            className="download-progress-bar"
+	                            style={{ width: `${Math.round(updaterStatus.progress.percent)}%` }}
+	                          />
+	                        </div>
+	                      </div>
+	                    </div>
+	                  ) : null}
+
+	                  {updaterStatus?.error ? <div className="inline-error">{updaterStatus.error}</div> : null}
+	                </div>
+	              </div>
+	            ) : null}
+	          </div>
+	        </div>
 
         {isWindows ? (
           <div className="window-controls" aria-label="Window controls">

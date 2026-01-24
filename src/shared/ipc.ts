@@ -106,6 +106,34 @@ export type DownloadEvent =
       error?: string;
     };
 
+export type UpdaterState =
+  | "idle"
+  | "checking"
+  | "available"
+  | "notAvailable"
+  | "downloading"
+  | "downloaded"
+  | "error";
+
+export type UpdaterProgress = {
+  percent: number;
+  transferred: number;
+  total: number;
+  bytesPerSecond: number;
+};
+
+export type UpdaterStatus = {
+  supported: boolean;
+  currentVersion: string;
+  state: UpdaterState;
+  availableVersion: string | null;
+  progress: UpdaterProgress | null;
+  error: string | null;
+  lastCheckedAt: number | null;
+};
+
+export type UpdaterEvent = { type: "status"; status: UpdaterStatus };
+
 export type DesktopApi = {
   workspace: {
     openTab(accountId: string): Promise<void>;
@@ -123,6 +151,13 @@ export type DesktopApi = {
     open(downloadId: string): Promise<void>;
     cancel(downloadId: string): Promise<void>;
     copyPath(downloadId: string): Promise<void>;
+  };
+  updater: {
+    subscribe(listener: (event: UpdaterEvent) => void): () => void;
+    getStatus(): Promise<UpdaterStatus>;
+    check(): Promise<UpdaterStatus>;
+    download(): Promise<UpdaterStatus>;
+    quitAndInstall(): Promise<void>;
   };
   window: {
     minimize(): Promise<void>;
@@ -163,6 +198,11 @@ export const IPC_CHANNELS = {
   DOWNLOADS_CANCEL: "downloads:cancel",
   DOWNLOADS_COPY_PATH: "downloads:copyPath",
 
+  UPDATER_GET_STATUS: "updater:getStatus",
+  UPDATER_CHECK: "updater:check",
+  UPDATER_DOWNLOAD: "updater:download",
+  UPDATER_QUIT_AND_INSTALL: "updater:quitAndInstall",
+
   WINDOW_MINIMIZE: "window:minimize",
   WINDOW_TOGGLE_MAXIMIZE: "window:toggleMaximize",
   WINDOW_IS_MAXIMIZED: "window:isMaximized",
@@ -182,6 +222,7 @@ export const IPC_CHANNELS = {
 
 export const IPC_EVENTS = {
   DOWNLOAD_EVENT: "downloads:event",
+  UPDATER_EVENT: "updater:event",
 } as const;
 
 export type IpcInvokeMap = {
@@ -207,6 +248,11 @@ export type IpcInvokeMap = {
   [IPC_CHANNELS.DOWNLOADS_OPEN]: { args: [downloadId: string]; result: void };
   [IPC_CHANNELS.DOWNLOADS_CANCEL]: { args: [downloadId: string]; result: void };
   [IPC_CHANNELS.DOWNLOADS_COPY_PATH]: { args: [downloadId: string]; result: void };
+
+  [IPC_CHANNELS.UPDATER_GET_STATUS]: { args: []; result: UpdaterStatus };
+  [IPC_CHANNELS.UPDATER_CHECK]: { args: []; result: UpdaterStatus };
+  [IPC_CHANNELS.UPDATER_DOWNLOAD]: { args: []; result: UpdaterStatus };
+  [IPC_CHANNELS.UPDATER_QUIT_AND_INSTALL]: { args: []; result: void };
 
   [IPC_CHANNELS.WINDOW_MINIMIZE]: { args: []; result: void };
   [IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE]: { args: []; result: void };

@@ -76,6 +76,14 @@ Endpoints include:
 
 The Inspector includes a **Credits / Subscription** section. If the backend API is not integrated/available, clicking **Refresh credits** shows a placeholder message and does not crash the UI.
 
+## Updates
+
+Auto-updates are available in **packaged** builds only:
+
+- Open **Settings (⚙)** → **Updates** → **Check updates**.
+- When an update is downloaded, click **Restart & install**.
+- Dev mode / unpackaged builds show an “only available in packaged builds” hint.
+
 ## Smoke Checklist
 
 Run the end-to-end manual checklist before release:
