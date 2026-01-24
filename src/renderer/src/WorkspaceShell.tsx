@@ -489,6 +489,7 @@ export default function WorkspaceShell() {
   const [connectivityPopoverOpen, setConnectivityPopoverOpen] = useState(false);
 
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
+  const [selectOverlayOpen, setSelectOverlayOpen] = useState(false);
   const [downloadPrefs, setDownloadPrefs] = useState<DownloadPreferencesPublic | null>(null);
   const [downloadToasts, setDownloadToasts] = useState<DownloadToastState[]>([]);
 
@@ -673,8 +674,18 @@ export default function WorkspaceShell() {
     setInspectorOpen(true);
   }, []);
 
+  const openSelectOverlay = useCallback(() => setSelectOverlayOpen(true), []);
+  const closeSelectOverlay = useCallback(() => setSelectOverlayOpen(false), []);
+
   const pushViewportBounds = useCallback(async () => {
-    if (importDialogOpen || exportDialog.open || deleteDialog.open) {
+    if (
+      importDialogOpen ||
+      exportDialog.open ||
+      deleteDialog.open ||
+      settingsPopoverOpen ||
+      connectivityPopoverOpen ||
+      selectOverlayOpen
+    ) {
       await window.desktop.workspace.setViewportBounds({ x: 0, y: 0, width: 0, height: 0 });
       return;
     }
@@ -688,7 +699,14 @@ export default function WorkspaceShell() {
       width: Math.floor(rect.width),
       height: Math.floor(rect.height),
     });
-  }, [deleteDialog.open, exportDialog.open, importDialogOpen]);
+  }, [
+    connectivityPopoverOpen,
+    deleteDialog.open,
+    exportDialog.open,
+    importDialogOpen,
+    selectOverlayOpen,
+    settingsPopoverOpen,
+  ]);
 
   useEffect(() => {
     void pushViewportBounds();
@@ -1255,7 +1273,12 @@ export default function WorkspaceShell() {
                     <div className="muted">{t("language")}</div>
                     <select
                       value={uiPrefs.locale}
-                      onChange={(e) => updateUiPrefs({ locale: e.target.value as Locale })}
+                      onPointerDown={openSelectOverlay}
+                      onBlur={closeSelectOverlay}
+                      onChange={(e) => {
+                        closeSelectOverlay();
+                        updateUiPrefs({ locale: e.target.value as Locale });
+                      }}
                       aria-label={t("language")}
                       disabled={busy}
                     >
@@ -1267,7 +1290,12 @@ export default function WorkspaceShell() {
                     <div className="muted">{t("theme")}</div>
                     <select
                       value={uiPrefs.theme}
-                      onChange={(e) => updateUiPrefs({ theme: e.target.value as Theme })}
+                      onPointerDown={openSelectOverlay}
+                      onBlur={closeSelectOverlay}
+                      onChange={(e) => {
+                        closeSelectOverlay();
+                        updateUiPrefs({ theme: e.target.value as Theme });
+                      }}
                       aria-label={t("theme")}
                       disabled={busy}
                     >
@@ -1285,7 +1313,12 @@ export default function WorkspaceShell() {
                     <div className="muted">{t("downloadsSaveMode")}</div>
                     <select
                       value={downloadPrefs?.mode ?? "saveAs"}
-                      onChange={(e) => setDownloadMode(e.target.value as DownloadSaveMode)}
+                      onPointerDown={openSelectOverlay}
+                      onBlur={closeSelectOverlay}
+                      onChange={(e) => {
+                        closeSelectOverlay();
+                        setDownloadMode(e.target.value as DownloadSaveMode);
+                      }}
                       aria-label={t("downloadsSaveMode")}
                       disabled={busy}
                     >
@@ -1794,7 +1827,12 @@ export default function WorkspaceShell() {
                       <div className="muted">{t("proxyMode")}</div>
                       <select
                         value={proxyMode}
-                        onChange={(e) => setProxyMode(e.target.value as ProxyMode)}
+                        onPointerDown={openSelectOverlay}
+                        onBlur={closeSelectOverlay}
+                        onChange={(e) => {
+                          closeSelectOverlay();
+                          setProxyMode(e.target.value as ProxyMode);
+                        }}
                         disabled={busy}
                         aria-label={t("proxyMode")}
                       >
@@ -1828,7 +1866,7 @@ export default function WorkspaceShell() {
                         {t("connectivity")}
                       </button>
                       {connectivityPopoverOpen && connectivity ? (
-                        <div className="popover" ref={connectivityPopoverRef}>
+                        <div className="popover popover-end" ref={connectivityPopoverRef}>
                           <div className="popover-title">{t("connectivityTitle")}</div>
                           <div style={{ display: "grid", gap: 8 }}>
                             {connectivity.map((c) => (
@@ -1876,7 +1914,12 @@ export default function WorkspaceShell() {
                       <div className="muted">{t("uaModeLabel")}</div>
                       <select
                         value={uaMode}
-                        onChange={(e) => setUaMode(e.target.value as UaMode)}
+                        onPointerDown={openSelectOverlay}
+                        onBlur={closeSelectOverlay}
+                        onChange={(e) => {
+                          closeSelectOverlay();
+                          setUaMode(e.target.value as UaMode);
+                        }}
                         disabled={busy}
                         aria-label="User-Agent mode"
                       >
