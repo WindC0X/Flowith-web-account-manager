@@ -1003,10 +1003,7 @@ export default function WorkspaceShell() {
     }
   }, [focusedAccountId, refreshAccounts, uaMode, uaValue]);
 
-  const refreshAccountInfo = useCallback(async () => {
-    if (!focusedAccountId) return;
-    const accountId = focusedAccountId;
-
+  const refreshCreditsForAccount = useCallback(async (accountId: string) => {
     setAccountInfoById((prev) => {
       const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
       return {
@@ -1049,7 +1046,19 @@ export default function WorkspaceShell() {
         };
       });
     }
-  }, [focusedAccountId]);
+  }, []);
+
+  const refreshAccountInfo = useCallback(() => {
+    if (!focusedAccountId) return;
+    void refreshCreditsForAccount(focusedAccountId);
+  }, [focusedAccountId, refreshCreditsForAccount]);
+
+  useEffect(() => {
+    if (!focusedAccountId || !inspectorOpen) return;
+    const info = accountInfoById[focusedAccountId];
+    if (info && info.status !== "idle") return;
+    void refreshCreditsForAccount(focusedAccountId);
+  }, [accountInfoById, focusedAccountId, inspectorOpen, refreshCreditsForAccount]);
 
   const runConnectivity = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -1441,13 +1450,17 @@ export default function WorkspaceShell() {
                 {accounts.length === 0 ? t("noAccounts") : t("noMatch")}
               </div>
             ) : (
-              filteredAccounts.map((a) => {
-                const selectedRow = selectedIds.has(a.id);
-                const focused = a.id === focusedAccountId;
-                return (
-                  <div
-                    key={a.id}
-                    className={clsx("account", (selectedRow || focused) && "selected")}
+	              filteredAccounts.map((a) => {
+	                const selectedRow = selectedIds.has(a.id);
+	                const focused = a.id === focusedAccountId;
+	                const info = accountInfoById[a.id] ?? DEFAULT_ACCOUNT_INFO;
+	                const subscription = info.subscription ?? "-";
+	                const credits = info.credits ?? "-";
+	                const updatedAt = info.updatedAt ? formatUpdatedAt(info.updatedAt, uiPrefs.locale) : null;
+	                return (
+	                  <div
+	                    key={a.id}
+	                    className={clsx("account", (selectedRow || focused) && "selected")}
                     role="button"
                     tabIndex={0}
                     onClick={() => focusAccount(a.id)}
@@ -1480,16 +1493,57 @@ export default function WorkspaceShell() {
                         <span className="dot dot-net" />
                         <span>{formatProxyModeLabel(a.net.proxy.mode, t)}</span>
                       </div>
-                    </div>
-
-                    <div className="account-meta">
-                      <span className="chip">UA: {formatUaModeLabel(a.ua.mode, t)}</span>
-                      {focused ? <span className="chip">{t("focusedChip")}</span> : null}
-                    </div>
-
-                    {a.tags.length ? (
-                      <div className="account-tags">
-                        {a.tags.map((t) => (
+	                    </div>
+	
+	                    <div className="account-meta">
+	                      <span className="chip">UA: {formatUaModeLabel(a.ua.mode, t)}</span>
+	                      <span className="chip" title={`${t("subscriptionLabel")}: ${subscription}`}>
+	                        {subscription}
+	                      </span>
+	                      <span className="chip mono" title={`${t("creditsLabel")}: ${credits}`}>
+	                        {credits}
+	                      </span>
+	                      {updatedAt ? (
+	                        <span className="muted" style={{ fontSize: 11 }} title={`${t("updatedAtLabel")}: ${updatedAt}`}>
+	                          {updatedAt}
+	                        </span>
+	                      ) : null}
+	                      <button
+	                        className="btn btn-ghost btn-icon"
+	                        title={t("refreshCredits")}
+	                        onClick={(e) => {
+	                          e.stopPropagation();
+	                          void refreshCreditsForAccount(a.id);
+	                        }}
+	                        disabled={busy || info.status === "loading"}
+	                      >
+	                        ⟳
+	                      </button>
+	                      {info.status === "loading" ? (
+	                        <span className="muted" style={{ fontSize: 11 }}>
+	                          …
+	                        </span>
+	                      ) : null}
+	                      {focused ? <span className="chip">{t("focusedChip")}</span> : null}
+	                    </div>
+	
+	                    {info.error ? (
+	                      <div
+	                        className="muted"
+	                        style={{
+	                          marginTop: 6,
+	                          fontSize: 11,
+	                          color: "rgba(248, 113, 113, 1)",
+	                          whiteSpace: "pre-wrap",
+	                        }}
+	                      >
+	                        {info.error}
+	                      </div>
+	                    ) : null}
+	
+	                    {a.tags.length ? (
+	                      <div className="account-tags">
+	                        {a.tags.map((t) => (
                           <span key={t} className="tag-chip">
                             {t}
                           </span>
