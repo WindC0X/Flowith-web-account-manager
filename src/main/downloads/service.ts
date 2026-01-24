@@ -29,6 +29,7 @@ type DownloadRecord = {
 
 const attachedSessions = new WeakSet<Session>();
 const downloadsById = new Map<string, DownloadRecord>();
+const downloadIdByItem = new WeakMap<DownloadItem, string>();
 
 function sendEvent(getWindow: () => BrowserWindow | null, event: DownloadEvent) {
   const win = getWindow();
@@ -116,7 +117,11 @@ export function attachDownloadsToSession(
   attachedSessions.add(session);
 
   session.on("will-download", (_event, item) => {
+    const existingId = downloadIdByItem.get(item);
+    if (existingId) return;
+
     const downloadId = randomUUID();
+    downloadIdByItem.set(item, downloadId);
     const record = trackDownload(downloadId, item, getWindow);
     record.accountId = accountId;
 
