@@ -429,6 +429,20 @@ function formatProxyModeLabel(mode: ProxyMode, t: (key: StringKey) => string): s
   return t("proxyDirect");
 }
 
+function containsProxyCredentials(text: string): boolean {
+  return /(^|\W)[^\s;,@/:]+:[^\s;,@/]+@/.test(text);
+}
+
+function validateProxyDraft(mode: ProxyMode, rules: string): string | null {
+  if (mode !== "custom") return null;
+  const trimmed = rules.trim();
+  if (!trimmed) return "Custom proxy rules are required.";
+  if (containsProxyCredentials(trimmed)) {
+    return "Proxy rules must not include username:password credentials.";
+  }
+  return null;
+}
+
 function formatUaModeLabel(mode: UaMode, t: (key: StringKey) => string): string {
   if (mode === "default") return t("uaDefault");
   if (mode === "preset") return t("uaPreset");
@@ -610,6 +624,7 @@ export default function WorkspaceShell() {
   const [tagsDraft, setTagsDraft] = useState("");
   const [proxyMode, setProxyMode] = useState<ProxyMode>("system");
   const [proxyRules, setProxyRules] = useState("");
+  const [proxyInlineError, setProxyInlineError] = useState<string | null>(null);
   const [uaMode, setUaMode] = useState<UaMode>("default");
   const [uaValue, setUaValue] = useState("");
   const [uaInlineError, setUaInlineError] = useState<string | null>(null);
@@ -658,6 +673,7 @@ export default function WorkspaceShell() {
   useEffect(() => {
     if (!focusedAccount) return;
     setUaInlineError(null);
+    setProxyInlineError(null);
     setTagsDraft(focusedAccount.tags.join(", "));
     setProxyMode(focusedAccount.net.proxy.mode);
     setProxyRules(focusedAccount.net.proxy.rules ?? "");
@@ -1233,6 +1249,12 @@ export default function WorkspaceShell() {
 
   const saveProxy = useCallback(async () => {
     if (!focusedAccountId) return;
+    setProxyInlineError(null);
+    const proxyError = validateProxyDraft(proxyMode, proxyRules);
+    if (proxyError) {
+      setProxyInlineError(proxyError);
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -1381,6 +1403,12 @@ export default function WorkspaceShell() {
 
   const runConnectivity = useCallback(async () => {
     if (!focusedAccountId) return;
+    setProxyInlineError(null);
+    const proxyError = validateProxyDraft(proxyMode, proxyRules);
+    if (proxyError) {
+      setProxyInlineError(proxyError);
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
@@ -2421,6 +2449,7 @@ export default function WorkspaceShell() {
                         }}
                         onChange={(e) => {
                           closeSelectOverlay();
+                          setProxyInlineError(null);
                           setProxyMode(e.target.value as ProxyMode);
                         }}
                         disabled={busy}
@@ -2440,9 +2469,13 @@ export default function WorkspaceShell() {
                           type="text"
                           placeholder={t("proxyPlaceholder")}
                           value={proxyRules}
-                          onChange={(e) => setProxyRules(e.target.value)}
+                          onChange={(e) => {
+                            setProxyInlineError(null);
+                            setProxyRules(e.target.value);
+                          }}
                           disabled={busy}
                         />
+                        {proxyInlineError ? <div className="inline-error">{proxyInlineError}</div> : null}
                       </div>
                     ) : null}
                   </div>
