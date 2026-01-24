@@ -86,7 +86,7 @@ const DEFAULT_ACCOUNT_INFO: AccountInfoEntry = {
 
 const UI_STRINGS = {
   "zh-CN": {
-    subtitle: "桌面端 MVP · 工作区",
+    subtitle: "桌面端 · 工作区",
     language: "语言",
     theme: "主题",
     themeDark: "深色",
@@ -154,6 +154,7 @@ const UI_STRINGS = {
     export: "导出",
     batchOpen: "批量打开",
     batchTags: "批量标签",
+    batchRefresh: "批量刷新",
     batchDelete: "批量删除",
     refresh: "刷新",
 
@@ -234,10 +235,11 @@ const UI_STRINGS = {
     batchDeleteNote: "将删除已选择的 {count} 个账号并关闭对应 Tab。此操作不可撤销。",
     confirmApply: "应用",
     toastBatchTagsResult: "批量标签：成功 {ok} · 失败 {fail}",
+    toastBatchRefreshResult: "批量刷新：成功 {ok} · 失败 {fail}",
     toastBatchDeleteResult: "批量删除：成功 {ok} · 失败 {fail}",
   },
   en: {
-    subtitle: "Desktop MVP · Workspace UI",
+    subtitle: "Desktop · Workspace UI",
     language: "Language",
     theme: "Theme",
     themeDark: "Dark",
@@ -305,6 +307,7 @@ const UI_STRINGS = {
     export: "Export",
     batchOpen: "Open tabs",
     batchTags: "Batch tags",
+    batchRefresh: "Batch refresh",
     batchDelete: "Batch delete",
     refresh: "Refresh",
 
@@ -388,6 +391,7 @@ const UI_STRINGS = {
     batchDeleteNote: "Deletes {count} selected account(s) and closes their tabs. This cannot be undone.",
     confirmApply: "Apply",
     toastBatchTagsResult: "Batch tags: ok {ok} · failed {fail}",
+    toastBatchRefreshResult: "Batch refresh: ok {ok} · failed {fail}",
     toastBatchDeleteResult: "Batch delete: ok {ok} · failed {fail}",
   },
 } as const;
@@ -684,6 +688,7 @@ export default function WorkspaceShell() {
   const [batchTagsDialog, setBatchTagsDialog] = useState<BatchTagsDialogState>({ open: false });
   const [batchTagsDraft, setBatchTagsDraft] = useState("");
   const [batchDeleteDialog, setBatchDeleteDialog] = useState<BatchDeleteDialogState>({ open: false });
+  const [batchRefreshRunning, setBatchRefreshRunning] = useState(false);
 
   const [tagsDraft, setTagsDraft] = useState("");
   const [proxyMode, setProxyMode] = useState<ProxyMode>("system");
@@ -1490,6 +1495,7 @@ export default function WorkspaceShell() {
       if (opts?.announce) {
         pushUiToast("success", t("toastCreditsRefreshed"));
       }
+      return true;
     } catch (e) {
       const message = toErrorMessage(e);
       setAccountInfoById((prev) => {
@@ -1507,6 +1513,7 @@ export default function WorkspaceShell() {
       if (opts?.announce) {
         pushUiToast("error", message);
       }
+      return false;
     }
   }, [pushUiToast, t]);
 
@@ -1646,6 +1653,36 @@ export default function WorkspaceShell() {
       await closeTab(id);
     }
   }, [closeTab, selected]);
+
+  const runBatchRefreshCredits = useCallback(async () => {
+    if (selected.length === 0) return;
+    setError(null);
+    setBatchRefreshRunning(true);
+    try {
+      let ok = 0;
+      let fail = 0;
+      for (const accountId of selected) {
+        const current = accountInfoById[accountId] ?? DEFAULT_ACCOUNT_INFO;
+        if (current.status === "loading") continue;
+        const success = await refreshCreditsForAccount(accountId);
+        if (success) ok++;
+        else fail++;
+      }
+      pushUiToast(
+        fail > 0 ? "error" : "success",
+        format(t("toastBatchRefreshResult"), {
+          ok,
+          fail,
+        })
+      );
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBatchRefreshRunning(false);
+    }
+  }, [accountInfoById, pushUiToast, refreshCreditsForAccount, selected, t]);
 
   const openBatchTagsDialog = useCallback(() => {
     if (selected.length === 0) return;
@@ -2349,26 +2386,37 @@ export default function WorkspaceShell() {
 
 	          {selected.length > 0 ? (
 	            <div className="batchbar">
-	              <div className="batchbar-left">{format(t("selectedCount"), { count: selected.length })}</div>
-	              <div className="batchbar-actions">
-	                <button className="btn btn-primary" onClick={batchOpenTabs} disabled={busy}>
-	                  {t("openTab")}
-	                </button>
-	                <button className="btn" onClick={batchCloseTabs} disabled={busy}>
-	                  {t("closeTab")}
-	                </button>
-	                <button className="btn" onClick={openBatchTagsDialog} disabled={busy}>
-	                  {t("batchTags")}
-	                </button>
-	                <button className="btn" onClick={runExport} disabled={busy}>
-	                  {t("export")}
-	                </button>
-	                <button className="btn btn-danger" onClick={openBatchDeleteDialog} disabled={busy}>
-	                  {t("batchDelete")}
-	                </button>
-	              </div>
-	            </div>
-	          ) : null}
+		              <div className="batchbar-left">{format(t("selectedCount"), { count: selected.length })}</div>
+		              <div className="batchbar-actions">
+		                <button className="btn btn-primary" onClick={batchOpenTabs} disabled={busy || batchRefreshRunning}>
+		                  {t("openTab")}
+		                </button>
+		                <button className="btn" onClick={batchCloseTabs} disabled={busy || batchRefreshRunning}>
+		                  {t("closeTab")}
+		                </button>
+                    <button
+                      className="btn"
+                      onClick={runBatchRefreshCredits}
+                      disabled={busy || batchRefreshRunning}
+                    >
+                      {t("batchRefresh")}
+                    </button>
+		                <button className="btn" onClick={openBatchTagsDialog} disabled={busy || batchRefreshRunning}>
+		                  {t("batchTags")}
+		                </button>
+		                <button className="btn" onClick={runExport} disabled={busy || batchRefreshRunning}>
+		                  {t("export")}
+		                </button>
+		                <button
+                      className="btn btn-danger"
+                      onClick={openBatchDeleteDialog}
+                      disabled={busy || batchRefreshRunning}
+                    >
+		                  {t("batchDelete")}
+		                </button>
+		              </div>
+		            </div>
+		          ) : null}
 	        </aside>
 
         <main className="workspace">
