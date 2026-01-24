@@ -1,5 +1,5 @@
 import { app } from "electron";
-import type { BrowserWindow } from "electron";
+import type { BrowserWindow, Session } from "electron";
 import { autoUpdater } from "electron-updater";
 import type { ProgressInfo, UpdateInfo } from "electron-updater";
 import { getNetSession } from "electron-updater/out/electronHttpExecutor";
@@ -11,7 +11,16 @@ import { redactSensitive } from "../security/redact";
 let getWindow: (() => BrowserWindow | null) | null = null;
 let initialized = false;
 
-const updaterSession = getNetSession();
+let updaterSession: Session | null = null;
+
+function ensureUpdaterSession(): Session {
+  if (updaterSession) return updaterSession;
+  if (!app.isReady()) {
+    throw new Error("Updater session can only be created when app is ready.");
+  }
+  updaterSession = getNetSession();
+  return updaterSession;
+}
 
 let status: UpdaterStatus = {
   supported: false,
@@ -98,12 +107,14 @@ function buildUpdaterProxyFallbackList(): ProxyConfig[] {
 }
 
 async function withUpdaterProxyFallback<T>(fn: () => Promise<T>): Promise<T> {
+  await app.whenReady();
+  const session = ensureUpdaterSession();
   const candidates = buildUpdaterProxyFallbackList();
   let lastError: unknown = null;
 
   for (const proxy of candidates) {
     try {
-      await applyProxy(updaterSession, proxy);
+      await applyProxy(session, proxy);
       return await fn();
     } catch (e) {
       lastError = e;
