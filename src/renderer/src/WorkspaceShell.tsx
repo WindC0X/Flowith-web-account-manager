@@ -500,6 +500,7 @@ export default function WorkspaceShell() {
   const [proxyRules, setProxyRules] = useState("");
   const [uaMode, setUaMode] = useState<UaMode>("default");
   const [uaValue, setUaValue] = useState("");
+  const [uaInlineError, setUaInlineError] = useState<string | null>(null);
 
   const [connectivity, setConnectivity] = useState<ConnectivityCheck[] | null>(null);
   const [connectivityPopoverOpen, setConnectivityPopoverOpen] = useState(false);
@@ -537,6 +538,7 @@ export default function WorkspaceShell() {
 
   useEffect(() => {
     if (!focusedAccount) return;
+    setUaInlineError(null);
     setTagsDraft(focusedAccount.tags.join(", "));
     setProxyMode(focusedAccount.net.proxy.mode);
     setProxyRules(focusedAccount.net.proxy.rules ?? "");
@@ -1053,22 +1055,23 @@ export default function WorkspaceShell() {
 
   const saveUserAgent = useCallback(async () => {
     if (!focusedAccountId) return;
+    setUaInlineError(null);
     const trimmed = uaValue.trim();
     if (uaMode !== "default") {
       if (!trimmed) {
-        setError(t("uaErrorRequired"));
+        setUaInlineError(t("uaErrorRequired"));
         return;
       }
       if (trimmed.length > 512) {
-        setError(t("uaErrorTooLong"));
+        setUaInlineError(t("uaErrorTooLong"));
         return;
       }
       if (/[\r\n]/.test(trimmed)) {
-        setError(t("uaErrorSingleLine"));
+        setUaInlineError(t("uaErrorSingleLine"));
         return;
       }
       if (uaMode === "preset" && !findUserAgentPreset(trimmed)) {
-        setError(t("uaErrorPresetUnknown"));
+        setUaInlineError(t("uaErrorPresetUnknown"));
         return;
       }
     }
@@ -1083,7 +1086,7 @@ export default function WorkspaceShell() {
       await window.desktop.accounts.updateAccountMeta(focusedAccountId, { ua });
       await refreshAccounts();
     } catch (e) {
-      setError(toErrorMessage(e));
+      setUaInlineError(toErrorMessage(e));
     } finally {
       setBusy(false);
     }
@@ -1343,6 +1346,9 @@ export default function WorkspaceShell() {
                       value={uiPrefs.locale}
                       onPointerDown={openSelectOverlay}
                       onBlur={closeSelectOverlay}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                      }}
                       onChange={(e) => {
                         closeSelectOverlay();
                         updateUiPrefs({ locale: e.target.value as Locale });
@@ -1360,6 +1366,9 @@ export default function WorkspaceShell() {
                       value={uiPrefs.theme}
                       onPointerDown={openSelectOverlay}
                       onBlur={closeSelectOverlay}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                      }}
                       onChange={(e) => {
                         closeSelectOverlay();
                         updateUiPrefs({ theme: e.target.value as Theme });
@@ -1383,6 +1392,9 @@ export default function WorkspaceShell() {
                       value={downloadPrefs?.mode ?? "saveAs"}
                       onPointerDown={openSelectOverlay}
                       onBlur={closeSelectOverlay}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                      }}
                       onChange={(e) => {
                         closeSelectOverlay();
                         setDownloadMode(e.target.value as DownloadSaveMode);
@@ -1653,15 +1665,24 @@ export default function WorkspaceShell() {
 	                      </div>
 	                    ) : null}
 	
-	                    {a.tags.length ? (
-	                      <div className="account-tags">
-	                        {a.tags.map((t) => (
-                          <span key={t} className="tag-chip">
-                            {t}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
+		                    {a.tags.length ? (
+		                      <div className="account-tags">
+		                        {a.tags.map((t) => (
+	                          <button
+	                            key={t}
+	                            type="button"
+	                            className="tag-chip"
+	                            onClick={(e) => {
+	                              e.stopPropagation();
+	                              setSearchText(t);
+	                            }}
+	                            disabled={busy}
+	                          >
+	                            {t}
+	                          </button>
+	                        ))}
+	                      </div>
+	                    ) : null}
 
                     <div className="account-table">
                       <input
@@ -1673,13 +1694,22 @@ export default function WorkspaceShell() {
                       />
                       <div className="account-table-title">
                         <div className="account-table-name">{a.displayName}</div>
-                        <div className="account-table-tags">
-                          {a.tags.slice(0, 3).map((t) => (
-                            <span key={t} className="tag-chip">
-                              {t}
-                            </span>
-                          ))}
-                        </div>
+	                      <div className="account-table-tags">
+	                        {a.tags.slice(0, 3).map((t) => (
+	                            <button
+	                              key={t}
+	                              type="button"
+	                              className="tag-chip"
+	                              onClick={(e) => {
+	                                e.stopPropagation();
+	                                setSearchText(t);
+	                              }}
+	                              disabled={busy}
+	                            >
+	                              {t}
+	                            </button>
+	                          ))}
+	                        </div>
                       </div>
                       <span className="mono">{maskFingerprint(a.fingerprint)}</span>
                       <span className="mono">{formatProxyModeLabel(a.net.proxy.mode, t)}</span>
@@ -1920,6 +1950,9 @@ export default function WorkspaceShell() {
                         value={proxyMode}
                         onPointerDown={openSelectOverlay}
                         onBlur={closeSelectOverlay}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                        }}
                         onChange={(e) => {
                           closeSelectOverlay();
                           setProxyMode(e.target.value as ProxyMode);
@@ -2007,8 +2040,12 @@ export default function WorkspaceShell() {
                         value={uaMode}
                         onPointerDown={openSelectOverlay}
                         onBlur={closeSelectOverlay}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                        }}
                         onChange={(e) => {
                           closeSelectOverlay();
+                          setUaInlineError(null);
                           const nextMode = e.target.value as UaMode;
                           if (nextMode === "preset") {
                             const current = uaValue.trim();
@@ -2039,8 +2076,12 @@ export default function WorkspaceShell() {
                             value={uaValue}
                             onPointerDown={openSelectOverlay}
                             onBlur={closeSelectOverlay}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                            }}
                             onChange={(e) => {
                               closeSelectOverlay();
+                              setUaInlineError(null);
                               setUaValue(e.target.value);
                             }}
                             disabled={busy}
@@ -2069,7 +2110,10 @@ export default function WorkspaceShell() {
                         <input
                           className="input mono"
                           value={uaValue}
-                          onChange={(e) => setUaValue(e.target.value)}
+                          onChange={(e) => {
+                            setUaInlineError(null);
+                            setUaValue(e.target.value);
+                          }}
                           placeholder="Mozilla/5.0 ..."
                           disabled={busy}
                         />
@@ -2077,6 +2121,14 @@ export default function WorkspaceShell() {
                     )}
                   </div>
 
+                  {uaInlineError ? (
+                    <div
+                      className="muted"
+                      style={{ marginTop: 8, fontSize: 11, color: "rgba(248, 113, 113, 1)", whiteSpace: "pre-wrap" }}
+                    >
+                      {uaInlineError}
+                    </div>
+                  ) : null}
                   <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
                     {t("uaHint")}
                   </div>
