@@ -83,4 +83,39 @@ describe("refreshFlowithSessionForAccount", () => {
     expect(setRefreshToken).toHaveBeenCalledWith("acc1", "rt_new2");
     expect(session.access_token).toBe("at");
   });
+
+  it("invokes onAlreadyUsed to allow recovery when vault token is stale", async () => {
+    const refreshSession = vi.fn<(args: RefreshSessionArgs) => Promise<RefreshSessionResponse>>();
+    let currentToken = "rt_old";
+    const getRefreshToken = vi.fn<(accountId: string) => string | null>((accountId) => {
+      void accountId;
+      return currentToken;
+    });
+    const setRefreshToken = vi.fn<(accountId: string, refreshToken: string) => unknown>();
+
+    refreshSession.mockImplementation(async (args) => {
+      if (args.refresh_token === "rt_old") {
+        return {
+          data: null,
+          error: new Error("Invalid Refresh Token: Already Used"),
+        };
+      }
+      return {
+        data: { session: { access_token: "at", refresh_token: "rt_new2" } },
+        error: null,
+      };
+    });
+
+    const { refreshFlowithSessionForAccount } = await loadModule({ refreshSession, getRefreshToken, setRefreshToken });
+
+    const onAlreadyUsed = vi.fn(async () => {
+      currentToken = "rt_new";
+    });
+
+    const session = await refreshFlowithSessionForAccount("acc1", { onAlreadyUsed });
+    expect(onAlreadyUsed).toHaveBeenCalledTimes(1);
+    expect(refreshSession).toHaveBeenCalledTimes(2);
+    expect(setRefreshToken).toHaveBeenCalledWith("acc1", "rt_new2");
+    expect(session.access_token).toBe("at");
+  });
 });

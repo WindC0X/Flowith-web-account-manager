@@ -316,6 +316,13 @@ export function registerIpcHandlers(deps: IpcDeps) {
         const unique = new Set(ids);
         if (unique.size !== ids.length) throw new Error("Invalid accountIds: duplicate ids.");
 
+        const exportSyncDeadline = Date.now() + 3000;
+        for (const id of ids) {
+          const remaining = exportSyncDeadline - Date.now();
+          if (remaining <= 0) break;
+          await deps.loginBootstrap.syncFromOpenTab(id, { timeoutMs: Math.min(1000, remaining) });
+        }
+
         const missing: string[] = [];
         const tokens: string[] = [];
 

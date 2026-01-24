@@ -22,7 +22,10 @@ async function refreshWithToken(accountId: string, refreshToken: string): Promis
   return data.session;
 }
 
-export async function refreshFlowithSessionForAccount(accountId: string): Promise<SupabaseSession> {
+export async function refreshFlowithSessionForAccount(
+  accountId: string,
+  options?: { onAlreadyUsed?: () => Promise<void> }
+): Promise<SupabaseSession> {
   const existing = inFlightByAccountId.get(accountId);
   if (existing) return existing;
 
@@ -36,6 +39,12 @@ export async function refreshFlowithSessionForAccount(accountId: string): Promis
       return await refreshWithToken(accountId, refreshToken);
     } catch (e) {
       if (!isAlreadyUsedError(e)) throw e;
+
+      try {
+        await options?.onAlreadyUsed?.();
+      } catch {
+        // best-effort
+      }
 
       const nextToken = getRefreshToken(accountId);
       if (!nextToken || nextToken === refreshToken) throw e;
@@ -51,4 +60,3 @@ export async function refreshFlowithSessionForAccount(accountId: string): Promis
     inFlightByAccountId.delete(accountId);
   }
 }
-

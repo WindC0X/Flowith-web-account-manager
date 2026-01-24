@@ -1,4 +1,9 @@
-import type { BeforeSendResponse, OnBeforeSendHeadersListenerDetails, WebContents } from "electron";
+import type {
+  BeforeSendResponse,
+  OnBeforeSendHeadersListenerDetails,
+  OnCompletedListenerDetails,
+  WebContents,
+} from "electron";
 import type { Session } from "@supabase/supabase-js";
 import { resolveFlowithSupabaseConfig } from "../flowith/supabase";
 import { getRefreshToken, setRefreshToken } from "../accounts/vault";
@@ -220,11 +225,32 @@ export class FlowithLoginBootstrapService {
 
     let stopped = false;
     let handle: ReturnType<typeof setTimeout> | null = null;
+    let refreshSyncDebounce: ReturnType<typeof setTimeout> | null = null;
 
     const stop = () => {
       stopped = true;
       if (handle) clearTimeout(handle);
+      if (refreshSyncDebounce) clearTimeout(refreshSyncDebounce);
+      try {
+        webContents.session.webRequest.onCompleted(null);
+      } catch {
+        // ignore
+      }
       this.tokenSync.delete(accountId);
+    };
+
+    const scheduleSyncSoon = () => {
+      if (stopped) return;
+      if (refreshSyncDebounce) clearTimeout(refreshSyncDebounce);
+      refreshSyncDebounce = setTimeout(async () => {
+        refreshSyncDebounce = null;
+        if (stopped || webContents.isDestroyed()) return;
+        try {
+          await this.syncTokensFromWebContents(accountId, webContents);
+        } catch {
+          // best-effort
+        }
+      }, 1000);
     };
 
     const tick = async () => {
@@ -241,12 +267,37 @@ export class FlowithLoginBootstrapService {
       }
 
       if (!stopped) {
-        handle = setTimeout(tick, 45_000);
+        handle = setTimeout(tick, 15_000);
       }
     };
 
     try {
       webContents.once("destroyed", stop);
+    } catch {
+      // ignore
+    }
+
+    try {
+      const supabaseHost = supabaseHostFromConfig();
+      const filter = {
+        urls: [`https://${supabaseHost}/auth/v1/token*`],
+      };
+
+      const listener = (details: OnCompletedListenerDetails) => {
+        if (stopped) return;
+        try {
+          const url = new URL(details.url);
+          if (!url.pathname.includes("/auth/v1/token")) return;
+          const grantType = url.searchParams.get("grant_type");
+          if (grantType && grantType !== "refresh_token") return;
+        } catch {
+          return;
+        }
+
+        scheduleSyncSoon();
+      };
+
+      webContents.session.webRequest.onCompleted(filter, listener);
     } catch {
       // ignore
     }
@@ -359,12 +410,17 @@ export class FlowithLoginBootstrapService {
   }
 
   async bootstrap(accountId: string) {
-    const flowithSession = await refreshFlowithSessionForAccount(accountId);
-
     const webContents = this.workspace.getWebContents(accountId);
     if (!webContents) throw new Error("Workspace webContents not found for account.");
 
     await waitForFlowithReady(webContents, 30_000);
+    await this.syncFromOpenTab(accountId, { timeoutMs: 1000 });
+
+    const flowithSession = await refreshFlowithSessionForAccount(accountId, {
+      onAlreadyUsed: async () => {
+        await this.syncFromOpenTab(accountId, { timeoutMs: 1000 });
+      },
+    });
     await injectSupabaseSession(webContents, flowithSession);
     this.ensureAuthHeaderInjection(accountId, webContents, flowithSession.access_token ?? "");
     webContents.reload();
