@@ -50,6 +50,7 @@ const api: DesktopApi = {
     importRefreshTokens: (text) => invoke(IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS, text),
     exportRefreshTokens: (accountIds) => invoke(IPC_CHANNELS.ACCOUNTS_EXPORT_REFRESH_TOKENS, accountIds),
     refreshCredits: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS, accountId),
+    delete: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_DELETE, accountId),
     testConnectivity: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY, accountId),
     updateAccountMeta: (accountId, patch) => invoke(IPC_CHANNELS.ACCOUNTS_UPDATE_META, accountId, patch),
   },

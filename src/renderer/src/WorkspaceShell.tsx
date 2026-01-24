@@ -16,6 +16,10 @@ type ExportDialogState =
   | { open: false }
   | { open: true; tokenText: string; selectedCount: number };
 
+type DeleteDialogState =
+  | { open: false }
+  | { open: true; accountId: string; displayName: string };
+
 type Theme = "dark" | "light";
 type Locale = "zh-CN" | "en";
 type AccountListViewMode = "cards" | "table";
@@ -156,11 +160,12 @@ const UI_STRINGS = {
     uaCustom: "自定义",
     uaValueLabel: "值",
     uaHint: "修改 User-Agent 通常需要刷新当前 Tab 生效。",
-    openTab: "打开 Tab",
-    closeTab: "关闭 Tab",
-    saveUa: "保存 UA",
-    reload: "刷新",
-    close: "关闭",
+	    openTab: "打开 Tab",
+	    closeTab: "关闭 Tab",
+	    saveUa: "保存 UA",
+	    reload: "刷新",
+	    deleteAccount: "删除账号",
+	    close: "关闭",
 
     importDialogTitle: "导入 refresh_token",
     importDialogNote:
@@ -172,11 +177,14 @@ const UI_STRINGS = {
 
     exportDialogTitle: "导出 refresh_token",
     exportDialogNote: "将导出当前勾选账号的 refresh_token（每行一个）。",
-    exportDanger: "注意：导出内容属于敏感凭据。UI 与日志中必须始终脱敏；请勿分享或粘贴到日志/工单中。",
-    exportHint: "已导出 {count} 个账号的 token。默认不自动复制。",
-    done: "完成",
-    closeTabTitle: "关闭 Tab",
-  },
+	    exportDanger: "注意：导出内容属于敏感凭据。UI 与日志中必须始终脱敏；请勿分享或粘贴到日志/工单中。",
+	    exportHint: "已导出 {count} 个账号的 token。默认不自动复制。",
+	    done: "完成",
+	    deleteAccountTitle: "删除账号",
+	    deleteAccountNote: "将移除本地保存的账号信息与登录态，并关闭对应 Tab。此操作不可撤销。",
+	    confirmDelete: "确认删除",
+	    closeTabTitle: "关闭 Tab",
+	  },
   en: {
     subtitle: "Desktop MVP · Workspace UI",
     language: "Language",
@@ -274,11 +282,12 @@ const UI_STRINGS = {
     uaCustom: "Custom",
     uaValueLabel: "Value",
     uaHint: "Changing User-Agent usually requires reloading the tab.",
-    openTab: "Open tab",
-    closeTab: "Close tab",
-    saveUa: "Save UA",
-    reload: "Reload",
-    close: "Close",
+	    openTab: "Open tab",
+	    closeTab: "Close tab",
+	    saveUa: "Save UA",
+	    reload: "Reload",
+	    deleteAccount: "Delete account",
+	    close: "Close",
 
     importDialogTitle: "Import refresh_token",
     importDialogNote:
@@ -290,12 +299,15 @@ const UI_STRINGS = {
 
     exportDialogTitle: "Export refresh_token",
     exportDialogNote: "Exports refresh_token for selected accounts (one per line).",
-    exportDanger:
-      "Sensitive: export contains credentials. Never paste into logs or tickets. UI/logs must remain redacted.",
-    exportHint: "Exported token(s) for {count} account(s). Nothing is auto-copied.",
-    done: "Done",
-    closeTabTitle: "Close tab",
-  },
+	    exportDanger:
+	      "Sensitive: export contains credentials. Never paste into logs or tickets. UI/logs must remain redacted.",
+	    exportHint: "Exported token(s) for {count} account(s). Nothing is auto-copied.",
+	    done: "Done",
+	    deleteAccountTitle: "Delete account",
+	    deleteAccountNote: "Removes local account data and closes its tab. This cannot be undone.",
+	    confirmDelete: "Delete",
+	    closeTabTitle: "Close tab",
+	  },
 } as const;
 
 type StringKey = keyof (typeof UI_STRINGS)["zh-CN"];
@@ -466,6 +478,7 @@ export default function WorkspaceShell() {
   const [importResult, setImportResult] = useState<ImportRefreshTokensResult | null>(null);
 
   const [exportDialog, setExportDialog] = useState<ExportDialogState>({ open: false });
+  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
 
   const [proxyMode, setProxyMode] = useState<ProxyMode>("system");
   const [proxyRules, setProxyRules] = useState("");
@@ -488,6 +501,7 @@ export default function WorkspaceShell() {
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const importDialogRef = useRef<HTMLDialogElement | null>(null);
   const exportDialogRef = useRef<HTMLDialogElement | null>(null);
+  const deleteDialogRef = useRef<HTMLDialogElement | null>(null);
   const connectivityPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsPopoverRef = useRef<HTMLDivElement | null>(null);
   const settingsContainerRef = useRef<HTMLDivElement | null>(null);
@@ -660,7 +674,7 @@ export default function WorkspaceShell() {
   }, []);
 
   const pushViewportBounds = useCallback(async () => {
-    if (importDialogOpen || exportDialog.open) {
+    if (importDialogOpen || exportDialog.open || deleteDialog.open) {
       await window.desktop.workspace.setViewportBounds({ x: 0, y: 0, width: 0, height: 0 });
       return;
     }
@@ -674,7 +688,7 @@ export default function WorkspaceShell() {
       width: Math.floor(rect.width),
       height: Math.floor(rect.height),
     });
-  }, [exportDialog.open, importDialogOpen]);
+  }, [deleteDialog.open, exportDialog.open, importDialogOpen]);
 
   useEffect(() => {
     void pushViewportBounds();
@@ -895,6 +909,60 @@ export default function WorkspaceShell() {
     }
   }, [selected]);
 
+  const openDeleteDialog = useCallback(() => {
+    if (!focusedAccount) return;
+    setDeleteDialog({
+      open: true,
+      accountId: focusedAccount.id,
+      displayName: focusedAccount.displayName,
+    });
+  }, [focusedAccount]);
+
+  const runDeleteAccount = useCallback(async () => {
+    if (!deleteDialog.open) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const accountId = deleteDialog.accountId;
+      await window.desktop.accounts.delete(accountId);
+
+      const nextOpenTabIds = openTabIds.filter((id) => id !== accountId);
+      setOpenTabIds(nextOpenTabIds);
+
+      const nextActiveTabId =
+        activeTabId && activeTabId !== accountId ? activeTabId : nextOpenTabIds[0] ?? null;
+
+      if (nextActiveTabId) {
+        await window.desktop.workspace.setActiveTab(nextActiveTabId);
+      }
+      setActiveTabId(nextActiveTabId);
+
+      setAccounts((prev) => prev.filter((a) => a.id !== accountId));
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(accountId);
+        return next;
+      });
+      setAccountInfoById((prev) => {
+        if (!Object.prototype.hasOwnProperty.call(prev, accountId)) return prev;
+        const next = { ...prev };
+        delete next[accountId];
+        return next;
+      });
+      setFocusedAccountId((prev) => {
+        if (prev !== accountId) return prev;
+        setInspectorOpen(false);
+        return null;
+      });
+
+      setDeleteDialog({ open: false });
+    } catch (e) {
+      setError(toErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [activeTabId, deleteDialog, openTabIds]);
+
   const saveProxy = useCallback(async () => {
     if (!focusedAccountId) return;
     setError(null);
@@ -1102,6 +1170,20 @@ export default function WorkspaceShell() {
       // ignore dialog show/close failures in non-standard runtimes
     }
   }, [exportDialog.open]);
+
+  useEffect(() => {
+    const dlg = deleteDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (deleteDialog.open) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [deleteDialog.open]);
 
   return (
     <div className="app">
@@ -1792,6 +1874,9 @@ export default function WorkspaceShell() {
               <button className="btn" onClick={reloadWorkspace} disabled={busy}>
                 {t("reload")}
               </button>
+              <button className="btn btn-danger" onClick={openDeleteDialog} disabled={busy || !focusedAccountId}>
+                {t("deleteAccount")}
+              </button>
             </div>
           </aside>
         ) : null}
@@ -2006,6 +2091,51 @@ export default function WorkspaceShell() {
             <div className="modal-actions">
               <button className="btn btn-primary" onClick={() => setExportDialog({ open: false })}>
                 {t("done")}
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </dialog>
+
+      <dialog
+        ref={deleteDialogRef}
+        onCancel={(e) => {
+          e.preventDefault();
+          setDeleteDialog({ open: false });
+        }}
+        onClose={() => setDeleteDialog({ open: false })}
+        aria-label={t("deleteAccountTitle")}
+      >
+        {deleteDialog.open ? (
+          <div className="modal">
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">{t("deleteAccountTitle")}</div>
+                <div className="modal-note">{t("deleteAccountNote")}</div>
+              </div>
+              <button
+                className="btn btn-icon"
+                title={t("close")}
+                onClick={() => setDeleteDialog({ open: false })}
+                disabled={busy}
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="danger-note">
+              <div style={{ fontWeight: 750 }}>{deleteDialog.displayName}</div>
+              <div className="mono" style={{ marginTop: 6 }}>
+                {deleteDialog.accountId}
+              </div>
+            </div>
+
+            <div className="modal-actions">
+              <button className="btn" onClick={() => setDeleteDialog({ open: false })} disabled={busy}>
+                {t("cancel")}
+              </button>
+              <button className="btn btn-danger" onClick={runDeleteAccount} disabled={busy}>
+                {t("confirmDelete")}
               </button>
             </div>
           </div>

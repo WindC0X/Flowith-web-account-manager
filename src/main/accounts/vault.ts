@@ -56,6 +56,16 @@ export function upsertAccountMeta(accountId: string, patch: AccountMetaPatch): A
   return toAccountSummary(next);
 }
 
+export function deleteAccount(accountId: string): boolean {
+  const vault = getVault();
+  const exists = vault.accounts[accountId];
+  if (!exists) return false;
+  delete vault.accounts[accountId];
+  setVault(vault);
+  runtimeTokens.delete(accountId);
+  return true;
+}
+
 export function findAccountIdByFingerprint(fingerprint: string): string | null {
   const vault = getVault();
   for (const [id, account] of Object.entries(vault.accounts)) {

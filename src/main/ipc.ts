@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain } from "electron";
+import { BrowserWindow, ipcMain, session } from "electron";
 import {
   IPC_CHANNELS,
   type AccountMetaPatch,
@@ -9,7 +9,7 @@ import {
 } from "../shared/ipc";
 import { importRefreshTokens } from "./accounts/import";
 import { normalizeAccountMetaPatch } from "./accounts/normalize";
-import { getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
+import { deleteAccount, getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
 import {
   cancelDownload,
   copyDownloadedPath,
@@ -24,7 +24,7 @@ import { testConnectivity } from "./network/connectivity";
 import { validateProxyConfig } from "./network/proxy";
 import { validateUaConfig } from "./network/userAgent";
 import { redactSensitive } from "./security/redact";
-import type { WebWorkspaceService } from "./workspace/WebWorkspaceService";
+import { partitionForAccount, type WebWorkspaceService } from "./workspace/WebWorkspaceService";
 import type { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
 
 const preferences: Preferences = {
@@ -262,6 +262,25 @@ export function registerIpcHandlers(deps: IpcDeps) {
       }
     }
   );
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_DELETE, async (_event, accountId: unknown) => {
+    try {
+      assertString(accountId, "accountId");
+      deps.workspace.closeTab(accountId);
+
+      const deleted = deleteAccount(accountId);
+      if (!deleted) throw new Error("Account not found.");
+
+      try {
+        const ses = session.fromPartition(partitionForAccount(accountId));
+        await ses.clearStorageData();
+      } catch {
+        void 0;
+      }
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
 
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS, async (_event, accountId: unknown) => {
     try {
