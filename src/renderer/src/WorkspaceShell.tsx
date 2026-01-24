@@ -930,7 +930,7 @@ export default function WorkspaceShell() {
     }
   }, [focusedAccountId, refreshAccounts, uaMode, uaValue]);
 
-  const refreshAccountInfo = useCallback(() => {
+  const refreshAccountInfo = useCallback(async () => {
     if (!focusedAccountId) return;
     const accountId = focusedAccountId;
 
@@ -942,20 +942,41 @@ export default function WorkspaceShell() {
       };
     });
 
-    const message = t("accountInfoUnavailable");
-    setAccountInfoById((prev) => {
-      const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
-      return {
-        ...prev,
-        [accountId]: {
-          ...current,
-          status: "unavailable",
-          error: message,
-          updatedAt: Date.now(),
-        },
-      };
-    });
-  }, [focusedAccountId, t]);
+    try {
+      const info = await window.desktop.accounts.refreshCredits(accountId);
+      const remaining = Math.round(info.remainingCredits);
+      const total = Math.round(info.totalCredits);
+
+      setAccountInfoById((prev) => {
+        const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
+        return {
+          ...prev,
+          [accountId]: {
+            ...current,
+            status: "ready",
+            subscription: info.subscriptionType,
+            credits: `${remaining}/${total}`,
+            updatedAt: info.fetchedAt,
+            error: null,
+          },
+        };
+      });
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setAccountInfoById((prev) => {
+        const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
+        return {
+          ...prev,
+          [accountId]: {
+            ...current,
+            status: "unavailable",
+            error: message,
+            updatedAt: Date.now(),
+          },
+        };
+      });
+    }
+  }, [focusedAccountId]);
 
   const runConnectivity = useCallback(async () => {
     if (!focusedAccountId) return;

@@ -19,6 +19,7 @@ import {
   setDownloadsSaveMode,
   showDownloadInFolder,
 } from "./downloads/service";
+import { refreshAccountCredits } from "./flowith/credits";
 import { testConnectivity } from "./network/connectivity";
 import { validateProxyConfig } from "./network/proxy";
 import { validateUaConfig } from "./network/userAgent";
@@ -261,6 +262,15 @@ export function registerIpcHandlers(deps: IpcDeps) {
       }
     }
   );
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS, async (_event, accountId: unknown) => {
+    try {
+      assertString(accountId, "accountId");
+      return await refreshAccountCredits(accountId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
 
   ipcMain.handle(
     IPC_CHANNELS.ACCOUNTS_UPDATE_META,

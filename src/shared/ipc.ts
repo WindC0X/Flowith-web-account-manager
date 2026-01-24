@@ -46,6 +46,13 @@ export type ImportRefreshTokensResult = {
   errors: string[];
 };
 
+export type AccountCredits = {
+  subscriptionType: string | null;
+  remainingCredits: number;
+  totalCredits: number;
+  fetchedAt: number;
+};
+
 export type ConnectivityCheck = {
   name: string;
   url: string;
@@ -120,6 +127,7 @@ export type DesktopApi = {
     list(): Promise<AccountSummary[]>;
     importRefreshTokens(text: string): Promise<ImportRefreshTokensResult>;
     exportRefreshTokens(accountIds: string[]): Promise<string>;
+    refreshCredits(accountId: string): Promise<AccountCredits>;
     testConnectivity(accountId: string): Promise<ConnectivityCheck[]>;
     updateAccountMeta(
       accountId: string,
@@ -155,6 +163,7 @@ export const IPC_CHANNELS = {
   ACCOUNTS_LIST: "accounts:list",
   ACCOUNTS_IMPORT_REFRESH_TOKENS: "accounts:importRefreshTokens",
   ACCOUNTS_EXPORT_REFRESH_TOKENS: "accounts:exportRefreshTokens",
+  ACCOUNTS_REFRESH_CREDITS: "accounts:refreshCredits",
   ACCOUNTS_TEST_CONNECTIVITY: "accounts:testConnectivity",
   ACCOUNTS_UPDATE_META: "accounts:updateMeta",
 
@@ -204,6 +213,7 @@ export type IpcInvokeMap = {
     args: [accountIds: string[]];
     result: string;
   };
+  [IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS]: { args: [accountId: string]; result: AccountCredits };
   [IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY]: {
     args: [accountId: string];
     result: ConnectivityCheck[];
