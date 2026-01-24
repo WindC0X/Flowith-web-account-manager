@@ -37,8 +37,17 @@ function supabaseHostFromConfig(): string {
 }
 
 async function waitForFlowithReady(webContents: WebContents, timeoutMs: number) {
-  const readyNow = isFlowithUrl(webContents.getURL()) && !webContents.isLoading();
-  if (readyNow) return;
+  const isDocumentOnFlowith = async (): Promise<boolean> => {
+    try {
+      const href = (await webContents.executeJavaScript("location.href", true)) as unknown;
+      if (typeof href !== "string") return false;
+      return isFlowithUrl(href);
+    } catch {
+      return false;
+    }
+  };
+
+  if (await isDocumentOnFlowith()) return;
 
   await new Promise<void>((resolve, reject) => {
     const timeout = setTimeout(() => {
@@ -47,9 +56,11 @@ async function waitForFlowithReady(webContents: WebContents, timeoutMs: number) 
     }, timeoutMs);
 
     const onFinish = () => {
-      if (!isFlowithUrl(webContents.getURL())) return;
-      cleanup();
-      resolve();
+      void (async () => {
+        if (!(await isDocumentOnFlowith())) return;
+        cleanup();
+        resolve();
+      })();
     };
 
     const cleanup = () => {
@@ -66,16 +77,24 @@ async function injectSupabaseSession(webContents: WebContents, session: Session)
   const value = JSON.stringify(session);
 
   const script = `
-    (() => {
-      const keys = ${JSON.stringify(keys)};
-      const payload = ${JSON.stringify(value)};
-      const report = { local: {}, session: {} };
-      try {
-        for (const k of keys) {
-          try {
-            localStorage.setItem(k, payload);
-            report.local[k] = localStorage.getItem(k) === payload;
-          } catch {
+	    (() => {
+	      const keys = ${JSON.stringify(keys)};
+	      const payload = ${JSON.stringify(value)};
+	      const report = { local: {}, session: {}, meta: {} };
+	      try {
+	        report.meta = {
+	          href: location && typeof location.href === "string" ? location.href.split("?")[0] : "",
+	          readyState: document && typeof document.readyState === "string" ? document.readyState : "",
+	        };
+	      } catch {
+	        report.meta = {};
+	      }
+	      try {
+	        for (const k of keys) {
+	          try {
+	            localStorage.setItem(k, payload);
+	            report.local[k] = localStorage.getItem(k) === payload;
+	          } catch {
             report.local[k] = false;
           }
           try {
@@ -85,17 +104,24 @@ async function injectSupabaseSession(webContents: WebContents, session: Session)
             report.session[k] = false;
           }
         }
-        try { localStorage.removeItem("userHasLoggedOut"); } catch {}
-        try { sessionStorage.removeItem("userHasLoggedOut"); } catch {}
-        return { ok: true, report };
-      } catch (e) {
-        return { ok: false, error: e && e.message ? String(e.message) : String(e) };
+	        try { localStorage.removeItem("userHasLoggedOut"); } catch {}
+	        try { sessionStorage.removeItem("userHasLoggedOut"); } catch {}
+	        return { ok: true, report };
+	      } catch (e) {
+	        return { ok: false, error: e && e.message ? String(e.message) : String(e) };
       }
     })();
   `;
 
   const result = (await webContents.executeJavaScript(script, true)) as
-    | { ok: true; report?: { local: Record<string, boolean>; session: Record<string, boolean> } }
+    | {
+        ok: true;
+        report?: {
+          local: Record<string, boolean>;
+          session: Record<string, boolean>;
+          meta?: { href?: string; readyState?: string };
+        };
+      }
     | { ok: false; error?: string }
     | undefined;
 
@@ -108,7 +134,10 @@ async function injectSupabaseSession(webContents: WebContents, session: Session)
     !!report &&
     (Object.values(report.local ?? {}).some(Boolean) || Object.values(report.session ?? {}).some(Boolean));
   if (!anyOk) {
-    throw new Error("Failed to inject session: storage write failed.");
+    const meta = report?.meta;
+    const hint =
+      meta?.href || meta?.readyState ? ` (href=${meta?.href ?? ""} readyState=${meta?.readyState ?? ""})` : "";
+    throw new Error(`Failed to inject session: storage write failed.${hint}`);
   }
 }
 
