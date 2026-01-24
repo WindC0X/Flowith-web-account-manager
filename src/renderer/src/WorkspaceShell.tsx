@@ -148,14 +148,16 @@ const UI_STRINGS = {
     openDetails: "打开详情",
     focusedChip: "当前",
 
-    proxyMode: "代理模式",
-    proxySystem: "系统",
-    proxyCustom: "自定义",
-    proxyDirect: "直连",
-    proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
-    proxyDisabledHint: "请选择一个账号后再配置代理/连通性。",
-    networkSectionTitle: "网络",
-    proxyRulesLabel: "代理地址",
+	    proxyMode: "代理模式",
+	    proxySystem: "系统",
+	    proxyCustom: "自定义",
+	    proxyDirect: "直连",
+	    proxyPresetLabel: "代理预设",
+	    proxyPresetManual: "（手动输入）",
+	    proxyPlaceholder: "http://127.0.0.1:7890 或 socks5://127.0.0.1:7891",
+	    proxyDisabledHint: "请选择一个账号后再配置代理/连通性。",
+	    networkSectionTitle: "网络",
+	    proxyRulesLabel: "代理地址",
     proxyHint: "代理设置按账号生效。修改后通常需要刷新当前 Tab 生效。",
     saveProxy: "保存代理",
     toastProxySaved: "代理已保存",
@@ -317,14 +319,16 @@ const UI_STRINGS = {
     openDetails: "Open details",
     focusedChip: "Focused",
 
-    proxyMode: "Proxy mode",
-    proxySystem: "System",
-    proxyCustom: "Custom",
-    proxyDirect: "Direct",
-    proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
-    proxyDisabledHint: "Select an account to configure proxy/connectivity.",
-    networkSectionTitle: "Network",
-    proxyRulesLabel: "Proxy",
+	    proxyMode: "Proxy mode",
+	    proxySystem: "System",
+	    proxyCustom: "Custom",
+	    proxyDirect: "Direct",
+	    proxyPresetLabel: "Proxy preset",
+	    proxyPresetManual: "(Manual input)",
+	    proxyPlaceholder: "http://127.0.0.1:7890 or socks5://127.0.0.1:7891",
+	    proxyDisabledHint: "Select an account to configure proxy/connectivity.",
+	    networkSectionTitle: "Network",
+	    proxyRulesLabel: "Proxy",
     proxyHint: "Proxy settings apply per-account. Reload the active tab to apply.",
     saveProxy: "Save proxy",
     toastProxySaved: "Proxy saved",
@@ -777,6 +781,25 @@ export default function WorkspaceShell() {
   const downloadFilenameByIdRef = useRef<Map<string, string>>(new Map());
 
   const selected = useMemo(() => [...selectedIds], [selectedIds]);
+  const proxyPresets = useMemo(() => {
+    const presets = new Set<string>();
+    for (const a of accounts) {
+      if (a.net.proxy.mode !== "custom") continue;
+      const rules = typeof a.net.proxy.rules === "string" ? a.net.proxy.rules.trim() : "";
+      if (!rules) continue;
+      if (validateProxyDraft("custom", rules)) continue;
+      presets.add(rules);
+    }
+    return [...presets].slice(0, 16);
+  }, [accounts]);
+  const proxyPresetValue = useMemo(() => {
+    const trimmed = proxyRules.trim();
+    return trimmed && proxyPresets.includes(trimmed) ? trimmed : "";
+  }, [proxyPresets, proxyRules]);
+  const importProxyPresetValue = useMemo(() => {
+    const trimmed = importProxyRules.trim();
+    return trimmed && proxyPresets.includes(trimmed) ? trimmed : "";
+  }, [importProxyRules, proxyPresets]);
 
   const focusedAccount = useMemo(() => {
     if (!focusedAccountId) return null;
@@ -2010,11 +2033,11 @@ export default function WorkspaceShell() {
     <div className="app">
       <header className="topbar">
         <div className="brand">
-          <img
-            className="brand-logo"
-            src={uiPrefs.theme === "dark" ? logoOnLight : logoOnDark}
-            alt="Flowith"
-          />
+	          <img
+	            className="brand-logo"
+	            src={uiPrefs.theme === "dark" ? logoOnDark : logoOnLight}
+	            alt="Flowith"
+	          />
           <div>
             <div className="brand-title">Flowith Web Account Manager</div>
             <div className="brand-subtitle">{t("subtitle")}</div>
@@ -2988,24 +3011,54 @@ export default function WorkspaceShell() {
                       </select>
                     </div>
 
-                    {proxyMode === "custom" ? (
-                      <div className="setting-row">
-                        <div className="muted">{t("proxyRulesLabel")}</div>
-                        <input
-                          className="input mono"
-                          type="text"
-                          placeholder={t("proxyPlaceholder")}
-                          value={proxyRules}
-                          onChange={(e) => {
-                            setProxyInlineError(null);
-                            setProxyRules(e.target.value);
-                          }}
-                          disabled={busy}
-                        />
-                        {proxyInlineError ? <div className="inline-error">{proxyInlineError}</div> : null}
-                      </div>
-                    ) : null}
-                  </div>
+	                    {proxyMode === "custom" ? (
+	                      <>
+	                        {proxyPresets.length > 0 ? (
+	                          <div className="setting-row">
+	                            <div className="muted">{t("proxyPresetLabel")}</div>
+	                            <select
+	                              value={proxyPresetValue}
+	                              onPointerDown={openSelectOverlay}
+	                              onBlur={closeSelectOverlay}
+	                              onKeyDown={(e) => {
+	                                if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+	                              }}
+	                              onChange={(e) => {
+	                                closeSelectOverlay();
+	                                setProxyInlineError(null);
+	                                const next = e.target.value;
+	                                if (next) setProxyRules(next);
+	                              }}
+	                              disabled={busy}
+	                              aria-label={t("proxyPresetLabel")}
+	                            >
+	                              <option value="">{t("proxyPresetManual")}</option>
+	                              {proxyPresets.map((preset) => (
+	                                <option key={preset} value={preset}>
+	                                  {preset}
+	                                </option>
+	                              ))}
+	                            </select>
+	                          </div>
+	                        ) : null}
+	                        <div className="setting-row">
+	                          <div className="muted">{t("proxyRulesLabel")}</div>
+	                          <input
+	                            className="input mono"
+	                            type="text"
+	                            placeholder={t("proxyPlaceholder")}
+	                            value={proxyRules}
+	                            onChange={(e) => {
+	                              setProxyInlineError(null);
+	                              setProxyRules(e.target.value);
+	                            }}
+	                            disabled={busy}
+	                          />
+	                          {proxyInlineError ? <div className="inline-error">{proxyInlineError}</div> : null}
+	                        </div>
+	                      </>
+	                    ) : null}
+	                  </div>
 
                   <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                     <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
@@ -3228,23 +3281,53 @@ export default function WorkspaceShell() {
                 </select>
               </div>
 
-              {importProxyMode === "custom" ? (
-                <div className="setting-row">
-                  <div className="muted">{t("proxyRulesLabel")}</div>
-                  <input
-                    className="input mono"
-                    type="text"
-                    placeholder={t("proxyPlaceholder")}
-                    value={importProxyRules}
-                    onChange={(e) => {
-                      setImportProxyInlineError(null);
-                      setImportProxyRules(e.target.value);
-                    }}
-                    disabled={busy}
-                  />
-                  {importProxyInlineError ? <div className="inline-error">{importProxyInlineError}</div> : null}
-                </div>
-              ) : null}
+	              {importProxyMode === "custom" ? (
+	                <>
+	                  {proxyPresets.length > 0 ? (
+	                    <div className="setting-row">
+	                      <div className="muted">{t("proxyPresetLabel")}</div>
+	                      <select
+	                        value={importProxyPresetValue}
+	                        onPointerDown={openSelectOverlay}
+	                        onBlur={closeSelectOverlay}
+	                        onKeyDown={(e) => {
+	                          if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+	                        }}
+	                        onChange={(e) => {
+	                          closeSelectOverlay();
+	                          setImportProxyInlineError(null);
+	                          const next = e.target.value;
+	                          if (next) setImportProxyRules(next);
+	                        }}
+	                        disabled={busy}
+	                        aria-label={t("proxyPresetLabel")}
+	                      >
+	                        <option value="">{t("proxyPresetManual")}</option>
+	                        {proxyPresets.map((preset) => (
+	                          <option key={preset} value={preset}>
+	                            {preset}
+	                          </option>
+	                        ))}
+	                      </select>
+	                    </div>
+	                  ) : null}
+	                  <div className="setting-row">
+	                    <div className="muted">{t("proxyRulesLabel")}</div>
+	                    <input
+	                      className="input mono"
+	                      type="text"
+	                      placeholder={t("proxyPlaceholder")}
+	                      value={importProxyRules}
+	                      onChange={(e) => {
+	                        setImportProxyInlineError(null);
+	                        setImportProxyRules(e.target.value);
+	                      }}
+	                      disabled={busy}
+	                    />
+	                    {importProxyInlineError ? <div className="inline-error">{importProxyInlineError}</div> : null}
+	                  </div>
+	                </>
+	              ) : null}
 
               <div className="setting-row">
                 <div className="muted">{t("uaModeLabel")}</div>

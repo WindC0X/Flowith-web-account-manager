@@ -2,11 +2,16 @@ import { app } from "electron";
 import type { BrowserWindow } from "electron";
 import { autoUpdater } from "electron-updater";
 import type { ProgressInfo, UpdateInfo } from "electron-updater";
-import { IPC_EVENTS, type UpdaterEvent, type UpdaterProgress, type UpdaterStatus } from "../../shared/ipc";
+import { getNetSession } from "electron-updater/out/electronHttpExecutor";
+import { IPC_EVENTS, type ProxyConfig, type UpdaterEvent, type UpdaterProgress, type UpdaterStatus } from "../../shared/ipc";
+import { listAccounts } from "../accounts/vault";
+import { applyProxy, validateProxyConfig } from "../network/proxy";
 import { redactSensitive } from "../security/redact";
 
 let getWindow: (() => BrowserWindow | null) | null = null;
 let initialized = false;
+
+const updaterSession = getNetSession();
 
 let status: UpdaterStatus = {
   supported: false,
@@ -61,6 +66,51 @@ function publish(patch: Partial<UpdaterStatus>) {
 
 function isSupported(): boolean {
   return app.isPackaged;
+}
+
+function collectSavedCustomProxies(): ProxyConfig[] {
+  const seen = new Set<string>();
+  const result: ProxyConfig[] = [];
+
+  for (const account of listAccounts()) {
+    const proxy = account.net.proxy;
+    if (proxy.mode !== "custom") continue;
+    const rules = typeof proxy.rules === "string" ? proxy.rules.trim() : "";
+    if (!rules) continue;
+
+    const normalized: ProxyConfig = { mode: "custom", rules };
+    try {
+      validateProxyConfig(normalized);
+    } catch {
+      continue;
+    }
+
+    if (seen.has(rules)) continue;
+    seen.add(rules);
+    result.push(normalized);
+  }
+
+  return result;
+}
+
+function buildUpdaterProxyFallbackList(): ProxyConfig[] {
+  return [{ mode: "system" }, ...collectSavedCustomProxies(), { mode: "direct" }];
+}
+
+async function withUpdaterProxyFallback<T>(fn: () => Promise<T>): Promise<T> {
+  const candidates = buildUpdaterProxyFallbackList();
+  let lastError: unknown = null;
+
+  for (const proxy of candidates) {
+    try {
+      await applyProxy(updaterSession, proxy);
+      return await fn();
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  throw lastError ?? new Error("Update request failed.");
 }
 
 export function initUpdater(getWindowFn: () => BrowserWindow | null) {
@@ -136,7 +186,7 @@ export async function checkForUpdates(): Promise<UpdaterStatus> {
 
   try {
     publish({ state: "checking", error: null, progress: null });
-    await autoUpdater.checkForUpdates();
+    await withUpdaterProxyFallback(() => autoUpdater.checkForUpdates());
   } catch (e) {
     publish({ state: "error", error: safeErrorMessage(e), progress: null });
   }
@@ -149,7 +199,7 @@ export async function downloadUpdate(): Promise<UpdaterStatus> {
   if (!isSupported()) return status;
 
   try {
-    await autoUpdater.downloadUpdate();
+    await withUpdaterProxyFallback(() => autoUpdater.downloadUpdate());
   } catch (e) {
     publish({ state: "error", error: safeErrorMessage(e), progress: null });
   }
