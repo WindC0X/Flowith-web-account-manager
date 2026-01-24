@@ -30,6 +30,12 @@ type DownloadRecord = {
 const attachedSessions = new WeakSet<Session>();
 const downloadsById = new Map<string, DownloadRecord>();
 const downloadIdByItem = new WeakMap<DownloadItem, string>();
+const saveAsInFlightByKey = new Map<string, number>();
+let saveAsDialogQueue: Promise<void> = Promise.resolve();
+
+function enqueueSaveAsDialog(task: () => Promise<void>): void {
+  saveAsDialogQueue = saveAsDialogQueue.then(task, task).catch(() => void 0);
+}
 
 function sendEvent(getWindow: () => BrowserWindow | null, event: DownloadEvent) {
   const win = getWindow();
@@ -120,6 +126,23 @@ export function attachDownloadsToSession(
     const existingId = downloadIdByItem.get(item);
     if (existingId) return;
 
+    const prefs = getDownloadsPreferencesInternal();
+    const autoDir = resolveAutoDirectory(prefs.mode, prefs.customDir);
+    const filename = item.getFilename() || "download";
+    const saveAsKey = `${accountId}:${filename}`;
+
+    if (!autoDir) {
+      const inFlight = saveAsInFlightByKey.get(saveAsKey);
+      if (typeof inFlight === "number") {
+        item.cancel();
+        return;
+      }
+      saveAsInFlightByKey.set(saveAsKey, Date.now());
+      item.once("done", () => {
+        saveAsInFlightByKey.delete(saveAsKey);
+      });
+    }
+
     const downloadId = randomUUID();
     downloadIdByItem.set(item, downloadId);
     const record = trackDownload(downloadId, item, getWindow);
@@ -129,38 +152,38 @@ export function attachDownloadsToSession(
       type: "start",
       id: downloadId,
       accountId,
-      filename: record.filename,
+      filename,
       totalBytes: record.totalBytes,
     });
 
-    const prefs = getDownloadsPreferencesInternal();
-    const autoDir = resolveAutoDirectory(prefs.mode, prefs.customDir);
-
     if (!autoDir) {
       item.pause();
-      const win = getWindow();
-      const defaultPath = nextAvailablePath(app.getPath("downloads"), record.filename);
-      const saveDialog = win
-        ? dialog.showSaveDialog(win, { defaultPath })
-        : dialog.showSaveDialog({ defaultPath });
+      enqueueSaveAsDialog(async () => {
+        const win = getWindow();
+        const defaultPath = nextAvailablePath(app.getPath("downloads"), filename);
+        try {
+          const { canceled, filePath } = win
+            ? await dialog.showSaveDialog(win, { defaultPath })
+            : await dialog.showSaveDialog({ defaultPath });
 
-      void saveDialog
-        .then(({ canceled, filePath }) => {
           if (canceled || !filePath) {
             item.cancel();
             return;
           }
+
           record.savePath = filePath;
           item.setSavePath(filePath);
           item.resume();
-        })
-        .catch(() => {
+        } catch {
           item.cancel();
-        });
+        } finally {
+          saveAsInFlightByKey.delete(saveAsKey);
+        }
+      });
       return;
     }
 
-    const savePath = nextAvailablePath(autoDir, record.filename);
+    const savePath = nextAvailablePath(autoDir, filename);
     record.savePath = savePath;
     item.setSavePath(savePath);
   });
