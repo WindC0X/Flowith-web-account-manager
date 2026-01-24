@@ -660,6 +660,11 @@ export default function WorkspaceShell() {
   }, []);
 
   const pushViewportBounds = useCallback(async () => {
+    if (importDialogOpen || exportDialog.open) {
+      await window.desktop.workspace.setViewportBounds({ x: 0, y: 0, width: 0, height: 0 });
+      return;
+    }
+
     const el = viewportRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
@@ -669,7 +674,7 @@ export default function WorkspaceShell() {
       width: Math.floor(rect.width),
       height: Math.floor(rect.height),
     });
-  }, []);
+  }, [exportDialog.open, importDialogOpen]);
 
   useEffect(() => {
     void pushViewportBounds();
