@@ -78,23 +78,36 @@ function syncSavePath(record: DownloadRecord, item: DownloadItem): void {
 }
 
 function saveAsDedupKey(accountId: string, item: DownloadItem, filename: string): string {
-  let url = "";
-  try {
-    const chain = item.getURLChain();
-    url = chain[chain.length - 1] ?? "";
-  } catch {
-    url = "";
-  }
+  const normalizedFilename = filename.trim() || "download";
 
-  if (!url) {
+  const isStableUrl = (value: string): boolean => {
+    const trimmed = value.trim();
+    if (!trimmed) return false;
+    return !(trimmed.startsWith("blob:") || trimmed.startsWith("data:") || trimmed.startsWith("about:"));
+  };
+
+  const bestUrl = (): string => {
     try {
-      url = item.getURL();
+      const chain = item.getURLChain();
+      for (let i = chain.length - 1; i >= 0; i--) {
+        const candidate = chain[i];
+        if (typeof candidate === "string" && isStableUrl(candidate)) return candidate.trim();
+      }
     } catch {
-      url = "";
+      // ignore
     }
-  }
 
-  return `${accountId}:${url || filename}`;
+    try {
+      const candidate = item.getURL();
+      if (typeof candidate === "string" && isStableUrl(candidate)) return candidate.trim();
+    } catch {
+      // ignore
+    }
+
+    return "";
+  };
+
+  return `${accountId}:${bestUrl() || normalizedFilename}`;
 }
 
 function trackDownload(
@@ -172,8 +185,13 @@ export function attachDownloadsToSession(
         return;
       }
       saveAsInFlightByKey.set(saveAsKey, Date.now());
+      const maybeReleaseKey = () => {
+        if (readItemSavePath(item)) saveAsInFlightByKey.delete(saveAsKey);
+      };
+      item.on("updated", maybeReleaseKey);
       item.once("done", () => {
         saveAsInFlightByKey.delete(saveAsKey);
+        item.off("updated", maybeReleaseKey);
       });
     }
 
