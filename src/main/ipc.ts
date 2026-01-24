@@ -3,9 +3,12 @@ import {
   IPC_CHANNELS,
   type AccountMetaPatch,
   type DownloadSaveMode,
+  type ImportRefreshTokensOptions,
   type Preferences,
   type PreferencesPatch,
+  type ProxyConfig,
   type Rect,
+  type UaConfig,
 } from "../shared/ipc";
 import { importRefreshTokens } from "./accounts/import";
 import { normalizeAccountMetaPatch } from "./accounts/normalize";
@@ -212,20 +215,65 @@ export function registerIpcHandlers(deps: IpcDeps) {
     return listAccounts();
   });
 
-  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS, async (_event, text: unknown) => {
-    try {
-      assertString(text, "text");
-      const trimmed = text.trim();
-      if (!trimmed) return { imported: 0, failed: 0, warnings: [], errors: [] };
+  ipcMain.handle(
+    IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS,
+    async (_event, text: unknown, options?: unknown) => {
+      try {
+        assertString(text, "text");
+        const trimmed = text.trim();
+        if (!trimmed) return { imported: 0, failed: 0, warnings: [], errors: [] };
 
-      const lines = trimmed.split(/\\r?\\n/).map((l) => l.trim()).filter(Boolean);
-      if (lines.length === 0) return { imported: 0, failed: 0, warnings: [], errors: [] };
+        const lines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        if (lines.length === 0) return { imported: 0, failed: 0, warnings: [], errors: [] };
 
-      return await importRefreshTokens(lines);
-    } catch (e) {
-      throw new Error(safeErrorMessage(e));
+        let importOptions: ImportRefreshTokensOptions | undefined;
+        if (options !== undefined) {
+          assertObject(options, "options");
+          const raw = options as Partial<ImportRefreshTokensOptions>;
+          const normalized: ImportRefreshTokensOptions = {};
+
+          if (raw.net !== undefined) {
+            assertObject(raw.net, "options.net");
+            const net = raw.net as Partial<{ proxy: unknown }>;
+            if (net.proxy !== undefined) {
+              assertObject(net.proxy, "options.net.proxy");
+              const proxy = net.proxy as Partial<{ mode: unknown; rules?: unknown }>;
+              if (typeof proxy.mode !== "string") throw new Error("Invalid options.net.proxy.mode: expected string");
+              if (proxy.rules !== undefined && typeof proxy.rules !== "string") {
+                throw new Error("Invalid options.net.proxy.rules: expected string");
+              }
+
+              const proxyConfig: ProxyConfig = {
+                mode: proxy.mode as ProxyConfig["mode"],
+                ...(proxy.rules !== undefined ? { rules: proxy.rules } : {}),
+              };
+              normalized.net = { proxy: proxyConfig };
+            }
+          }
+
+          if (raw.ua !== undefined) {
+            assertObject(raw.ua, "options.ua");
+            const ua = raw.ua as Partial<{ mode: unknown; value?: unknown }>;
+            if (typeof ua.mode !== "string") throw new Error("Invalid options.ua.mode: expected string");
+            if (ua.value !== undefined && typeof ua.value !== "string") {
+              throw new Error("Invalid options.ua.value: expected string");
+            }
+            const uaConfig: UaConfig = {
+              mode: ua.mode as UaConfig["mode"],
+              ...(ua.value !== undefined ? { value: ua.value } : {}),
+            };
+            normalized.ua = uaConfig;
+          }
+
+          importOptions = normalized;
+        }
+
+        return await importRefreshTokens(lines, importOptions);
+      } catch (e) {
+        throw new Error(safeErrorMessage(e));
+      }
     }
-  });
+  );
 
   ipcMain.handle(
     IPC_CHANNELS.ACCOUNTS_EXPORT_REFRESH_TOKENS,

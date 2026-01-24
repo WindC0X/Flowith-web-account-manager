@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
-import type { ImportRefreshTokensResult } from "../../shared/ipc";
+import type { ImportRefreshTokensOptions, ImportRefreshTokensResult } from "../../shared/ipc";
 import { USER_AGENT_PRESETS } from "../../shared/userAgentPresets";
 import { getFlowithSupabaseClient } from "../flowith/supabase";
+import { normalizeProxyConfig } from "../network/proxy";
+import { normalizeUaConfig } from "../network/userAgent";
 import { redactSensitive } from "../security/redact";
 import {
   findAccountIdByFingerprint,
@@ -30,13 +32,19 @@ function pickRandomUaPresetId(): string | null {
   return USER_AGENT_PRESETS[idx]?.id ?? null;
 }
 
-export async function importRefreshTokens(tokens: string[]): Promise<ImportRefreshTokensResult> {
+export async function importRefreshTokens(
+  tokens: string[],
+  options?: ImportRefreshTokensOptions
+): Promise<ImportRefreshTokensResult> {
   const warnings: string[] = [];
   if (!isTokenEncryptionAvailable()) {
     warnings.push(
       "Token encryption is unavailable on this host. Tokens will not be persisted and must be re-imported after restart."
     );
   }
+
+  const importProxy = options?.net?.proxy ? normalizeProxyConfig(options.net.proxy) : null;
+  const importUa = options?.ua ? normalizeUaConfig(options.ua) : null;
 
   let imported = 0;
   let failed = 0;
@@ -68,12 +76,13 @@ export async function importRefreshTokens(tokens: string[]): Promise<ImportRefre
       const accountId = existingAccountId ?? createAccountId();
       if (!existingAccountId) {
         upsertAccountFingerprint(accountId, fingerprint);
-        const uaPresetId = pickRandomUaPresetId();
+        const uaPresetId = importUa ? null : pickRandomUaPresetId();
         const email = data.session.user?.email;
         upsertAccountMeta(accountId, {
           displayName: email ? String(email) : `Account ${maskedFingerprint}`,
           tags: [],
-          ua: uaPresetId ? { mode: "preset", value: uaPresetId } : { mode: "default" },
+          ...(importProxy ? { net: { proxy: importProxy } } : {}),
+          ua: importUa ?? (uaPresetId ? { mode: "preset", value: uaPresetId } : { mode: "default" }),
         });
       }
       setRefreshToken(accountId, refreshToken);

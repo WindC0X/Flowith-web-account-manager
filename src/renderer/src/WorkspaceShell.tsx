@@ -6,6 +6,7 @@ import type {
   DownloadEvent,
   DownloadPreferencesPublic,
   DownloadSaveMode,
+  ImportRefreshTokensOptions,
   ImportRefreshTokensResult,
   ProxyMode,
   UaMode,
@@ -34,6 +35,7 @@ type BatchDeleteDialogState =
 type Theme = "dark" | "light";
 type Locale = "zh-CN" | "en";
 type AccountListViewMode = "cards" | "table";
+type ImportUaMode = "auto" | UaMode;
 
 type AccountInfoStatus = "idle" | "loading" | "ready" | "unavailable";
 type AccountInfoEntry = {
@@ -188,6 +190,7 @@ const UI_STRINGS = {
     accountInfoUnavailable: "账号信息接口暂未接入（占位）",
     uaSectionTitle: "User-Agent",
     uaModeLabel: "模式",
+    uaAuto: "随机预设",
     uaDefault: "默认",
     uaPreset: "预设",
     uaCustom: "自定义",
@@ -211,6 +214,7 @@ const UI_STRINGS = {
       "每行一个 refresh_token。导入时会尝试刷新 Supabase Session 以校验 token；导入结果会在弹窗内显示。",
     importPlaceholder: "每行一个 refresh_token",
     importHint: "UI 中只显示 token 指纹/掩码；导出才会输出明文。",
+    importOptionsTitle: "导入设置",
     cancel: "取消",
     confirmImport: "导入",
 
@@ -338,6 +342,7 @@ const UI_STRINGS = {
     accountInfoUnavailable: "Account info API not integrated yet (placeholder).",
     uaSectionTitle: "User-Agent",
     uaModeLabel: "Mode",
+    uaAuto: "Random preset",
     uaDefault: "Default",
     uaPreset: "Preset",
     uaCustom: "Custom",
@@ -362,6 +367,7 @@ const UI_STRINGS = {
       "One refresh_token per line. Import validates each token by refreshing a Supabase session; results are shown in the dialog.",
     importPlaceholder: "One refresh_token per line",
     importHint: "UI never displays tokens. Export is the only plaintext flow.",
+    importOptionsTitle: "Import settings",
     cancel: "Cancel",
     confirmImport: "Import",
 
@@ -614,6 +620,12 @@ export default function WorkspaceShell() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importResult, setImportResult] = useState<ImportRefreshTokensResult | null>(null);
+  const [importProxyMode, setImportProxyMode] = useState<ProxyMode>("system");
+  const [importProxyRules, setImportProxyRules] = useState("");
+  const [importProxyInlineError, setImportProxyInlineError] = useState<string | null>(null);
+  const [importUaMode, setImportUaMode] = useState<ImportUaMode>("auto");
+  const [importUaValue, setImportUaValue] = useState("");
+  const [importUaInlineError, setImportUaInlineError] = useState<string | null>(null);
 
   const [exportDialog, setExportDialog] = useState<ExportDialogState>({ open: false });
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
@@ -1159,10 +1171,54 @@ export default function WorkspaceShell() {
   }, []);
 
   const runImport = useCallback(async () => {
+    setImportProxyInlineError(null);
+    setImportUaInlineError(null);
+
+    const proxyError = validateProxyDraft(importProxyMode, importProxyRules);
+    if (proxyError) {
+      setImportProxyInlineError(proxyError);
+      return;
+    }
+
+    let importUa: ImportRefreshTokensOptions["ua"] | undefined;
+    if (importUaMode === "auto") {
+      importUa = undefined;
+    } else if (importUaMode === "default") {
+      importUa = { mode: "default" };
+    } else {
+      const trimmed = importUaValue.trim();
+      if (!trimmed) {
+        setImportUaInlineError(t("uaErrorRequired"));
+        return;
+      }
+      if (trimmed.length > 512) {
+        setImportUaInlineError(t("uaErrorTooLong"));
+        return;
+      }
+      if (/[\r\n]/.test(trimmed)) {
+        setImportUaInlineError(t("uaErrorSingleLine"));
+        return;
+      }
+      if (importUaMode === "preset" && !findUserAgentPreset(trimmed)) {
+        setImportUaInlineError(t("uaErrorPresetUnknown"));
+        return;
+      }
+      importUa = { mode: importUaMode, value: trimmed };
+    }
+
     setError(null);
     setBusy(true);
     try {
-      const result = await window.desktop.accounts.importRefreshTokens(importText);
+      const proxy =
+        importProxyMode === "custom"
+          ? { mode: "custom" as const, rules: importProxyRules }
+          : { mode: importProxyMode };
+      const options: ImportRefreshTokensOptions = {
+        net: { proxy },
+        ...(importUa ? { ua: importUa } : {}),
+      };
+
+      const result = await window.desktop.accounts.importRefreshTokens(importText, options);
       setImportResult(result);
       setImportText("");
       await refreshAccounts();
@@ -1175,7 +1231,16 @@ export default function WorkspaceShell() {
     } finally {
       setBusy(false);
     }
-  }, [importText, pushUiToast, refreshAccounts, t]);
+  }, [
+    importProxyMode,
+    importProxyRules,
+    importText,
+    importUaMode,
+    importUaValue,
+    pushUiToast,
+    refreshAccounts,
+    t,
+  ]);
 
   const runExport = useCallback(async () => {
     setError(null);
@@ -1618,6 +1683,12 @@ export default function WorkspaceShell() {
     } catch {
       // ignore dialog show/close failures in non-standard runtimes
     }
+  }, [importDialogOpen]);
+
+  useEffect(() => {
+    if (!importDialogOpen) return;
+    setImportProxyInlineError(null);
+    setImportUaInlineError(null);
   }, [importDialogOpen]);
 
   useEffect(() => {
@@ -2748,6 +2819,130 @@ export default function WorkspaceShell() {
             />
             <div className="muted" style={{ fontSize: 12 }}>
               {t("importHint")}
+            </div>
+
+            <div className="section-title">{t("importOptionsTitle")}</div>
+            <div className="setting-grid">
+              <div className="setting-row">
+                <div className="muted">{t("proxyMode")}</div>
+                <select
+                  value={importProxyMode}
+                  onPointerDown={openSelectOverlay}
+                  onBlur={closeSelectOverlay}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                  }}
+                  onChange={(e) => {
+                    closeSelectOverlay();
+                    setImportProxyInlineError(null);
+                    setImportProxyMode(e.target.value as ProxyMode);
+                  }}
+                  disabled={busy}
+                  aria-label={t("proxyMode")}
+                >
+                  <option value="system">{t("proxySystem")}</option>
+                  <option value="custom">{t("proxyCustom")}</option>
+                  <option value="direct">{t("proxyDirect")}</option>
+                </select>
+              </div>
+
+              {importProxyMode === "custom" ? (
+                <div className="setting-row">
+                  <div className="muted">{t("proxyRulesLabel")}</div>
+                  <input
+                    className="input mono"
+                    type="text"
+                    placeholder={t("proxyPlaceholder")}
+                    value={importProxyRules}
+                    onChange={(e) => {
+                      setImportProxyInlineError(null);
+                      setImportProxyRules(e.target.value);
+                    }}
+                    disabled={busy}
+                  />
+                  {importProxyInlineError ? <div className="inline-error">{importProxyInlineError}</div> : null}
+                </div>
+              ) : null}
+
+              <div className="setting-row">
+                <div className="muted">{t("uaModeLabel")}</div>
+                <select
+                  value={importUaMode}
+                  onPointerDown={openSelectOverlay}
+                  onBlur={closeSelectOverlay}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                  }}
+                  onChange={(e) => {
+                    closeSelectOverlay();
+                    setImportUaInlineError(null);
+                    const nextMode = e.target.value as ImportUaMode;
+                    if (nextMode === "preset") {
+                      const current = importUaValue.trim();
+                      const preset = current ? findUserAgentPreset(current) : null;
+                      setImportUaValue(preset?.id ?? USER_AGENT_PRESETS[0]?.id ?? "");
+                    } else if (nextMode === "default" || nextMode === "auto") {
+                      setImportUaValue("");
+                    } else if (importUaMode === "preset") {
+                      const preset = findUserAgentPreset(importUaValue);
+                      if (preset) setImportUaValue(preset.value);
+                    }
+                    setImportUaMode(nextMode);
+                  }}
+                  disabled={busy}
+                  aria-label="Import User-Agent mode"
+                >
+                  <option value="auto">{t("uaAuto")}</option>
+                  <option value="default">{t("uaDefault")}</option>
+                  <option value="preset">{t("uaPreset")}</option>
+                  <option value="custom">{t("uaCustom")}</option>
+                </select>
+              </div>
+
+              {importUaMode === "preset" ? (
+                <div className="setting-row">
+                  <div className="muted">{t("uaPreset")}</div>
+                  <select
+                    value={importUaValue}
+                    onPointerDown={openSelectOverlay}
+                    onBlur={closeSelectOverlay}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+                    }}
+                    onChange={(e) => {
+                      closeSelectOverlay();
+                      setImportUaInlineError(null);
+                      setImportUaValue(e.target.value);
+                    }}
+                    disabled={busy}
+                    aria-label={t("uaPreset")}
+                  >
+                    {USER_AGENT_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {preset.label}
+                      </option>
+                    ))}
+                  </select>
+                  {importUaInlineError ? <div className="inline-error">{importUaInlineError}</div> : null}
+                </div>
+              ) : importUaMode === "custom" ? (
+                <div className="setting-row">
+                  <div className="muted">{t("uaValueLabel")}</div>
+                  <input
+                    className="input"
+                    type="text"
+                    placeholder={"Mozilla/5.0 ..."}
+                    value={importUaValue}
+                    onChange={(e) => {
+                      setImportUaInlineError(null);
+                      setImportUaValue(e.target.value);
+                    }}
+                    disabled={busy}
+                    aria-label={t("uaValueLabel")}
+                  />
+                  {importUaInlineError ? <div className="inline-error">{importUaInlineError}</div> : null}
+                </div>
+              ) : null}
             </div>
 
             {importResult ? (

@@ -46,6 +46,13 @@ export type ImportRefreshTokensResult = {
   errors: string[];
 };
 
+export type ImportRefreshTokensOptions = {
+  net?: {
+    proxy: ProxyConfig;
+  };
+  ua?: UaConfig;
+};
+
 export type AccountCredits = {
   subscriptionType: string | null;
   remainingCredits: number;
@@ -125,7 +132,7 @@ export type DesktopApi = {
   };
   accounts: {
     list(): Promise<AccountSummary[]>;
-    importRefreshTokens(text: string): Promise<ImportRefreshTokensResult>;
+    importRefreshTokens(text: string, options?: ImportRefreshTokensOptions): Promise<ImportRefreshTokensResult>;
     exportRefreshTokens(accountIds: string[]): Promise<string>;
     refreshCredits(accountId: string): Promise<AccountCredits>;
     delete(accountId: string): Promise<void>;
@@ -208,7 +215,7 @@ export type IpcInvokeMap = {
 
   [IPC_CHANNELS.ACCOUNTS_LIST]: { args: []; result: AccountSummary[] };
   [IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS]: {
-    args: [text: string];
+    args: [text: string, options?: ImportRefreshTokensOptions];
     result: ImportRefreshTokensResult;
   };
   [IPC_CHANNELS.ACCOUNTS_EXPORT_REFRESH_TOKENS]: {
