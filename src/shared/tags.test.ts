@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeTags } from "./tags";
+import { normalizeTags, parseTagsInput } from "./tags";
 
 describe("normalizeTags", () => {
   it("trims and drops empty tags", () => {
@@ -15,3 +15,8 @@ describe("normalizeTags", () => {
   });
 });
 
+describe("parseTagsInput", () => {
+  it("splits by comma and whitespace and normalizes", () => {
+    expect(parseTagsInput(" a, b  c\nD,  a ")).toEqual(["a", "b", "c", "D"]);
+  });
+});

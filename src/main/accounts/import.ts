@@ -69,8 +69,9 @@ export async function importRefreshTokens(tokens: string[]): Promise<ImportRefre
       if (!existingAccountId) {
         upsertAccountFingerprint(accountId, fingerprint);
         const uaPresetId = pickRandomUaPresetId();
+        const email = data.session.user?.email;
         upsertAccountMeta(accountId, {
-          displayName: `Account ${maskedFingerprint}`,
+          displayName: email ? String(email) : `Account ${maskedFingerprint}`,
           tags: [],
           ua: uaPresetId ? { mode: "preset", value: uaPresetId } : { mode: "default" },
         });

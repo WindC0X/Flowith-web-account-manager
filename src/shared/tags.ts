@@ -14,3 +14,6 @@ export function normalizeTags(tags: string[]): string[] {
   return normalized;
 }
 
+export function parseTagsInput(input: string): string[] {
+  return normalizeTags(input.split(/[,\s]+/));
+}

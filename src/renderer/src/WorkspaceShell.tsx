@@ -9,6 +9,7 @@ import type {
   ProxyMode,
   UaMode,
 } from "../../shared/ipc";
+import { parseTagsInput } from "../../shared/tags";
 import { USER_AGENT_PRESETS, findUserAgentPreset } from "../../shared/userAgentPresets";
 import logoOnDark from "./assets/logo-on-dark.png";
 import logoOnLight from "./assets/logo-on-light.png";
@@ -148,6 +149,8 @@ const UI_STRINGS = {
     accountIdLabel: "账号 ID",
     fingerprintLabel: "指纹",
     tagsLabel: "标签",
+    tagsPlaceholder: "tag1, tag2",
+    saveTags: "保存标签",
     accountInfoTitle: "账号信息",
     subscriptionLabel: "订阅",
     creditsLabel: "积分",
@@ -274,6 +277,8 @@ const UI_STRINGS = {
     accountIdLabel: "Account id",
     fingerprintLabel: "Fingerprint",
     tagsLabel: "Tags",
+    tagsPlaceholder: "tag1, tag2",
+    saveTags: "Save tags",
     accountInfoTitle: "Account info",
     subscriptionLabel: "Subscription",
     creditsLabel: "Credits",
@@ -490,6 +495,7 @@ export default function WorkspaceShell() {
   const [exportDialog, setExportDialog] = useState<ExportDialogState>({ open: false });
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
 
+  const [tagsDraft, setTagsDraft] = useState("");
   const [proxyMode, setProxyMode] = useState<ProxyMode>("system");
   const [proxyRules, setProxyRules] = useState("");
   const [uaMode, setUaMode] = useState<UaMode>("default");
@@ -531,6 +537,7 @@ export default function WorkspaceShell() {
 
   useEffect(() => {
     if (!focusedAccount) return;
+    setTagsDraft(focusedAccount.tags.join(", "));
     setProxyMode(focusedAccount.net.proxy.mode);
     setProxyRules(focusedAccount.net.proxy.rules ?? "");
     const uaMode = focusedAccount.ua.mode;
@@ -1028,6 +1035,21 @@ export default function WorkspaceShell() {
       setBusy(false);
     }
   }, [focusedAccountId, proxyMode, proxyRules, refreshAccounts]);
+
+  const saveTags = useCallback(async () => {
+    if (!focusedAccountId) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const tags = parseTagsInput(tagsDraft);
+      await window.desktop.accounts.updateAccountMeta(focusedAccountId, { tags });
+      await refreshAccounts();
+    } catch (e) {
+      setError(toErrorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  }, [focusedAccountId, refreshAccounts, tagsDraft]);
 
   const saveUserAgent = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -1582,14 +1604,25 @@ export default function WorkspaceShell() {
 	                      <span className="chip mono" title={`${t("creditsLabel")}: ${credits}`}>
 	                        {credits}
 	                      </span>
-	                      {updatedAt ? (
-	                        <span className="muted" style={{ fontSize: 11 }} title={`${t("updatedAtLabel")}: ${updatedAt}`}>
-	                          {updatedAt}
-	                        </span>
-	                      ) : null}
-	                      <button
-	                        className="btn btn-ghost btn-icon"
-	                        title={t("refreshCredits")}
+		                      {updatedAt ? (
+		                        <span className="muted" style={{ fontSize: 11 }} title={`${t("updatedAtLabel")}: ${updatedAt}`}>
+		                          {updatedAt}
+		                        </span>
+		                      ) : null}
+		                      <button
+		                        className="btn btn-ghost btn-icon"
+		                        title={t("openTab")}
+		                        onClick={(e) => {
+		                          e.stopPropagation();
+		                          void openTab(a.id);
+		                        }}
+		                        disabled={busy}
+		                      >
+		                        ↗
+		                      </button>
+		                      <button
+		                        className="btn btn-ghost btn-icon"
+		                        title={t("refreshCredits")}
 	                        onClick={(e) => {
 	                          e.stopPropagation();
 	                          void refreshCreditsForAccount(a.id);
@@ -1811,8 +1844,20 @@ export default function WorkspaceShell() {
                   </div>
                   <div className="field">
                     <div className="field-label">{t("tagsLabel")}</div>
-                    <div className="field-value">
-                      {focusedAccount.tags.length ? focusedAccount.tags.join(", ") : <span className="muted">-</span>}
+                    <div className="field-value" style={{ display: "grid", gap: 6 }}>
+                      <input
+                        className="input"
+                        type="text"
+                        value={tagsDraft}
+                        onChange={(e) => setTagsDraft(e.target.value)}
+                        placeholder={t("tagsPlaceholder")}
+                        disabled={busy}
+                      />
+                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                        <button className="btn" onClick={saveTags} disabled={busy || !focusedAccountId}>
+                          {t("saveTags")}
+                        </button>
+                      </div>
                     </div>
                   </div>
 
