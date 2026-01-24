@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { createPortal } from "react-dom";
 import type {
   AccountSummary,
   ConnectivityCheck,
@@ -615,7 +616,7 @@ export default function WorkspaceShell() {
 
   const [connectivity, setConnectivity] = useState<ConnectivityCheck[] | null>(null);
   const [connectivityPopoverOpen, setConnectivityPopoverOpen] = useState(false);
-  const [connectivityPopoverFlipUp, setConnectivityPopoverFlipUp] = useState(false);
+  const [connectivityPopoverStyle, setConnectivityPopoverStyle] = useState<CSSProperties | null>(null);
 
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
   const [selectOverlayOpen, setSelectOverlayOpen] = useState(false);
@@ -902,6 +903,7 @@ export default function WorkspaceShell() {
       const target = e.target;
       if (!(target instanceof Node)) return;
       if (connectivityPopoverRef.current?.contains(target)) return;
+      if (connectivityPopoverAnchorRef.current?.contains(target)) return;
       setConnectivityPopoverOpen(false);
     };
     document.addEventListener("mousedown", onDown, true);
@@ -912,7 +914,7 @@ export default function WorkspaceShell() {
 
   useEffect(() => {
     if (!connectivityPopoverOpen) {
-      setConnectivityPopoverFlipUp(false);
+      setConnectivityPopoverStyle(null);
       return;
     }
 
@@ -925,11 +927,21 @@ export default function WorkspaceShell() {
       const anchorRect = anchor.getBoundingClientRect();
 
       const margin = 12;
+      const desiredLeft = anchorRect.right - popoverRect.width;
+      const left = Math.max(margin, Math.min(desiredLeft, window.innerWidth - margin - popoverRect.width));
+
       const spaceBelow = window.innerHeight - anchorRect.bottom - margin;
       const spaceAbove = anchorRect.top - margin;
+      const placeBelow = spaceBelow >= popoverRect.height + 8 || spaceBelow >= spaceAbove;
+      const desiredTop = placeBelow ? anchorRect.bottom + 8 : anchorRect.top - popoverRect.height - 8;
+      const top = Math.max(margin, Math.min(desiredTop, window.innerHeight - margin - popoverRect.height));
 
-      const shouldFlipUp = spaceBelow < popoverRect.height + 8 && spaceAbove > spaceBelow;
-      setConnectivityPopoverFlipUp(shouldFlipUp);
+      setConnectivityPopoverStyle({
+        position: "fixed",
+        top: Math.round(top),
+        left: Math.round(left),
+        zIndex: 80,
+      });
     };
 
     const raf = window.requestAnimationFrame(measure);
@@ -1877,6 +1889,54 @@ export default function WorkspaceShell() {
         </div>
       ) : null}
 
+      {connectivityPopoverOpen && connectivity
+        ? createPortal(
+            <div
+              className="popover"
+              ref={connectivityPopoverRef}
+              style={
+                connectivityPopoverStyle ?? {
+                  position: "fixed",
+                  top: -9999,
+                  left: -9999,
+                  zIndex: 80,
+                  visibility: "hidden",
+                }
+              }
+            >
+              <div className="popover-title">{t("connectivityTitle")}</div>
+              <div style={{ display: "grid", gap: 8 }}>
+                {connectivity.map((c) => (
+                  <div key={c.name} className="popover-row">
+                    <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span className={clsx("dot", c.ok ? "dot-ok" : "dot-bad")} />
+                        <span style={{ fontWeight: 650 }}>{c.name}</span>
+                      </div>
+                      <div className="muted" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {c.url}
+                      </div>
+                      {c.error ? (
+                        <div className="muted" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
+                          {c.error}
+                        </div>
+                      ) : null}
+                    </div>
+                    <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
+                      <div style={{ fontWeight: 750 }}>{c.ok ? t("statusOk") : t("statusFail")}</div>
+                      <div className="muted" style={{ fontSize: 11 }}>
+                        {c.latencyMs} ms
+                        {typeof c.status === "number" ? ` · HTTP ${c.status}` : ""}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
+
       <div
         className={clsx(
           "layout",
@@ -2391,53 +2451,10 @@ export default function WorkspaceShell() {
                     <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
                       {t("saveProxy")}
                     </button>
-                    <div style={{ position: "relative" }} ref={connectivityPopoverAnchorRef}>
+                    <div ref={connectivityPopoverAnchorRef}>
                       <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
                         {t("connectivity")}
                       </button>
-                      {connectivityPopoverOpen && connectivity ? (
-                        <div
-                          className="popover popover-end"
-                          ref={connectivityPopoverRef}
-                          style={
-                            connectivityPopoverFlipUp
-                              ? { top: "auto", bottom: "calc(100% + 8px)" }
-                              : undefined
-                          }
-                        >
-                          <div className="popover-title">{t("connectivityTitle")}</div>
-                          <div style={{ display: "grid", gap: 8 }}>
-                            {connectivity.map((c) => (
-                              <div key={c.name} className="popover-row">
-                                <div style={{ display: "grid", gap: 2, minWidth: 0 }}>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                    <span className={clsx("dot", c.ok ? "dot-ok" : "dot-bad")} />
-                                    <span style={{ fontWeight: 650 }}>{c.name}</span>
-                                  </div>
-                                  <div
-                                    className="muted"
-                                    style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}
-                                  >
-                                    {c.url}
-                                  </div>
-                                  {c.error ? (
-                                    <div className="muted" style={{ fontSize: 11, whiteSpace: "pre-wrap" }}>
-                                      {c.error}
-                                    </div>
-                                  ) : null}
-                                </div>
-                                <div style={{ textAlign: "right", whiteSpace: "nowrap" }}>
-                                  <div style={{ fontWeight: 750 }}>{c.ok ? t("statusOk") : t("statusFail")}</div>
-                                  <div className="muted" style={{ fontSize: 11 }}>
-                                    {c.latencyMs} ms
-                                    {typeof c.status === "number" ? ` · HTTP ${c.status}` : ""}
-                                  </div>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ) : null}
                     </div>
                   </div>
 
