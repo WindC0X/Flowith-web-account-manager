@@ -21,6 +21,7 @@ const api: DesktopApi = {
     setActiveTab: (accountId) => invoke(IPC_CHANNELS.WORKSPACE_SET_ACTIVE_TAB, accountId),
     setViewportBounds: (bounds) => invoke(IPC_CHANNELS.WORKSPACE_SET_VIEWPORT_BOUNDS, bounds),
     setOverlayActive: (active) => invoke(IPC_CHANNELS.WORKSPACE_SET_OVERLAY_ACTIVE, active),
+    captureTabSnapshot: (accountId) => invoke(IPC_CHANNELS.WORKSPACE_CAPTURE_TAB_SNAPSHOT, accountId),
     reloadActive: () => invoke(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE),
   },
   downloads: {

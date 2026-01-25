@@ -795,6 +795,9 @@ export default function WorkspaceShell() {
 
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [activeTabSnapshot, setActiveTabSnapshot] = useState<string | null>(null);
+  const tabSnapshotCacheRef = useRef<Map<string, { snapshot: string; capturedAt: number }>>(new Map());
+  const tabSnapshotInFlightRef = useRef<Map<string, Promise<string | null>>>(new Map());
 
   const selectAllRef = useRef<HTMLInputElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -1044,6 +1047,10 @@ export default function WorkspaceShell() {
   }, [overlayActive]);
 
   const computeViewportBounds = useCallback((): Rect | null => {
+    if (overlayActive) {
+      return { x: 0, y: 0, width: 0, height: 0 };
+    }
+
     const el = viewportRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
@@ -1053,7 +1060,7 @@ export default function WorkspaceShell() {
       width: Math.floor(rect.width),
       height: Math.floor(rect.height),
     };
-  }, []);
+  }, [overlayActive]);
 
   const pushViewportBounds = useCallback(() => {
     const desired = computeViewportBounds();
@@ -1112,6 +1119,82 @@ export default function WorkspaceShell() {
       if (frame) window.cancelAnimationFrame(frame);
     };
   }, [pushViewportBounds]);
+
+  const cacheTabSnapshot = useCallback((tabId: string, snapshot: string) => {
+    const normalized = snapshot.trim();
+    if (!normalized) return;
+
+    const cache = tabSnapshotCacheRef.current;
+    cache.delete(tabId);
+    cache.set(tabId, { snapshot: normalized, capturedAt: Date.now() });
+    while (cache.size > 3) {
+      const key = cache.keys().next().value as string | undefined;
+      if (!key) break;
+      cache.delete(key);
+    }
+  }, []);
+
+  const requestTabSnapshot = useCallback(
+    async (tabId: string): Promise<string | null> => {
+      const normalizedId = tabId.trim();
+      if (!normalizedId) return null;
+
+      const inFlight = tabSnapshotInFlightRef.current.get(normalizedId);
+      if (inFlight) return inFlight;
+
+      const task = (async () => {
+        try {
+          const snapshot = await window.desktop.workspace.captureTabSnapshot(normalizedId);
+          if (typeof snapshot === "string" && snapshot.trim()) {
+            cacheTabSnapshot(normalizedId, snapshot);
+            return snapshot;
+          }
+          return null;
+        } catch {
+          return null;
+        } finally {
+          tabSnapshotInFlightRef.current.delete(normalizedId);
+        }
+      })();
+
+      tabSnapshotInFlightRef.current.set(normalizedId, task);
+      return task;
+    },
+    [cacheTabSnapshot]
+  );
+
+  useEffect(() => {
+    if (!activeTabId) {
+      setActiveTabSnapshot(null);
+      return;
+    }
+    const cached = tabSnapshotCacheRef.current.get(activeTabId)?.snapshot ?? null;
+    setActiveTabSnapshot(cached);
+  }, [activeTabId]);
+
+  useEffect(() => {
+    if (!activeTabId) return;
+    if (!overlayActive) return;
+
+    const cached = tabSnapshotCacheRef.current.get(activeTabId);
+    if (cached && Date.now() - cached.capturedAt < 1500) return;
+
+    void requestTabSnapshot(activeTabId).then((snapshot) => {
+      if (snapshot) setActiveTabSnapshot(snapshot);
+    });
+  }, [activeTabId, overlayActive, requestTabSnapshot]);
+
+  useEffect(() => {
+    if (!activeTabId) return;
+    const cached = tabSnapshotCacheRef.current.get(activeTabId);
+    if (cached) return;
+    const timer = window.setTimeout(() => {
+      void requestTabSnapshot(activeTabId);
+    }, 800);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [activeTabId, requestTabSnapshot]);
 
   useEffect(() => {
     if (!connectivityPopoverOpen) return;
@@ -2947,44 +3030,50 @@ export default function WorkspaceShell() {
 
           <div className="tab-content">
             <div className="workspace-viewport glass" ref={viewportRef}>
-              <div className="workspace-viewport-placeholder">
-                <div className="content-title">{t("workspaceTitle")}</div>
-                <div className="content-subtitle">{t("workspaceSubtitle")}</div>
-                <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {focusedAccountId ? (
-                    <>
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => openTab(focusedAccountId)}
-                        disabled={busy}
-                      >
-                        {t("openFocused")}
-                      </button>
-                      <button className="btn" onClick={() => closeTab(focusedAccountId)} disabled={busy}>
-                        {t("closeFocused")}
-                      </button>
-                    </>
-                  ) : (
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      {t("openCloseHint")}
-                    </div>
-                  )}
-                  <button className="btn" onClick={reloadWorkspace} disabled={busy}>
-                    {t("reloadActive")}
-                  </button>
-                </div>
+              {activeTabSnapshot ? (
+                <img
+                  className={clsx("workspace-snapshot", overlayActive && "is-visible")}
+                  alt=""
+                  src={activeTabSnapshot}
+                />
+              ) : null}
 
-                {importResult ? (
-                  <div style={{ marginTop: 12 }}>
-                    <div className="chip">
-                      {format(t("importResultChip"), {
-                        ok: importResult.imported,
-                        fail: importResult.failed,
-                      })}
-                    </div>
+              {openTabIds.length === 0 ? (
+                <div className="workspace-viewport-placeholder">
+                  <div className="content-title">{t("workspaceTitle")}</div>
+                  <div className="content-subtitle">{t("workspaceSubtitle")}</div>
+                  <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {focusedAccountId ? (
+                      <>
+                        <button className="btn btn-primary" onClick={() => openTab(focusedAccountId)} disabled={busy}>
+                          {t("openFocused")}
+                        </button>
+                        <button className="btn" onClick={() => closeTab(focusedAccountId)} disabled={busy}>
+                          {t("closeFocused")}
+                        </button>
+                      </>
+                    ) : (
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {t("openCloseHint")}
+                      </div>
+                    )}
+                    <button className="btn" onClick={reloadWorkspace} disabled={busy}>
+                      {t("reloadActive")}
+                    </button>
                   </div>
-                ) : null}
-              </div>
+
+                  {importResult ? (
+                    <div style={{ marginTop: 12 }}>
+                      <div className="chip">
+                        {format(t("importResultChip"), {
+                          ok: importResult.imported,
+                          fail: importResult.failed,
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           </div>
         </main>

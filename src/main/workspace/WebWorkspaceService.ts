@@ -101,6 +101,26 @@ export class WebWorkspaceService {
     return this.views.get(accountId)?.webContents ?? null;
   }
 
+  async captureTabSnapshot(accountId: string): Promise<string | null> {
+    const view = this.views.get(accountId);
+    if (!view) return null;
+
+    try {
+      const image = await view.webContents.capturePage();
+      if (image.isEmpty()) return null;
+
+      const size = image.getSize();
+      const maxWidth = 960;
+      const normalized =
+        Number.isFinite(size.width) && size.width > maxWidth ? image.resize({ width: maxWidth, quality: "good" }) : image;
+
+      const dataUrl = normalized.toDataURL();
+      return dataUrl.trim() ? dataUrl : null;
+    } catch {
+      return null;
+    }
+  }
+
   private ensureView(accountId: string) {
     if (this.views.has(accountId)) return;
 

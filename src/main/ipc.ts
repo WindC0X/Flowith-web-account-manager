@@ -143,6 +143,15 @@ export function registerIpcHandlers(deps: IpcDeps) {
     }
   });
 
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_CAPTURE_TAB_SNAPSHOT, async (_event, accountId: unknown) => {
+    try {
+      assertString(accountId, "accountId");
+      return await deps.workspace.captureTabSnapshot(accountId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE, async () => {
     deps.workspace.reloadActive();
   });
