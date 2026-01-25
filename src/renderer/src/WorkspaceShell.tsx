@@ -9,6 +9,7 @@ import type {
   ImportRefreshTokensOptions,
   ImportRefreshTokensResult,
   ProxyMode,
+  Rect,
   UpdaterEvent,
   UpdaterStatus,
   UaMode,
@@ -797,6 +798,9 @@ export default function WorkspaceShell() {
 
   const selectAllRef = useRef<HTMLInputElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const viewportBoundsDesiredRef = useRef<Rect | null>(null);
+  const viewportBoundsFlushInFlightRef = useRef<Promise<void> | null>(null);
+  const viewportBoundsFlushNeededRef = useRef(false);
   const importDialogRef = useRef<HTMLDialogElement | null>(null);
   const exportDialogRef = useRef<HTMLDialogElement | null>(null);
   const deleteDialogRef = useRef<HTMLDialogElement | null>(null);
@@ -1024,7 +1028,7 @@ export default function WorkspaceShell() {
   const openSelectOverlay = useCallback(() => setSelectOverlayOpen(true), []);
   const closeSelectOverlay = useCallback(() => setSelectOverlayOpen(false), []);
 
-  const pushViewportBounds = useCallback(async () => {
+  const computeViewportBounds = useCallback((): Rect | null => {
     if (
       importDialogOpen ||
       exportDialog.open ||
@@ -1036,19 +1040,18 @@ export default function WorkspaceShell() {
       connectivityPopoverOpen ||
       selectOverlayOpen
     ) {
-      await window.desktop.workspace.setViewportBounds({ x: 0, y: 0, width: 0, height: 0 });
-      return;
+      return { x: 0, y: 0, width: 0, height: 0 };
     }
 
     const el = viewportRef.current;
-    if (!el) return;
+    if (!el) return null;
     const rect = el.getBoundingClientRect();
-    await window.desktop.workspace.setViewportBounds({
+    return {
       x: Math.floor(rect.left),
       y: Math.floor(rect.top),
       width: Math.floor(rect.width),
       height: Math.floor(rect.height),
-    });
+    };
   }, [
     connectivityPopoverOpen,
     deleteDialog.open,
@@ -1061,8 +1064,35 @@ export default function WorkspaceShell() {
     settingsPopoverOpen,
   ]);
 
+  const pushViewportBounds = useCallback(() => {
+    const desired = computeViewportBounds();
+    if (!desired) return Promise.resolve();
+
+    viewportBoundsDesiredRef.current = desired;
+    viewportBoundsFlushNeededRef.current = true;
+
+    const existing = viewportBoundsFlushInFlightRef.current;
+    if (existing) return existing;
+
+    const task = (async () => {
+      try {
+        while (viewportBoundsFlushNeededRef.current) {
+          viewportBoundsFlushNeededRef.current = false;
+          const nextBounds = viewportBoundsDesiredRef.current;
+          if (!nextBounds) continue;
+          await window.desktop.workspace.setViewportBounds(nextBounds);
+        }
+      } finally {
+        viewportBoundsFlushInFlightRef.current = null;
+      }
+    })();
+
+    viewportBoundsFlushInFlightRef.current = task;
+    return task;
+  }, [computeViewportBounds]);
+
   useEffect(() => {
-    void pushViewportBounds();
+    void pushViewportBounds().catch(() => void 0);
   }, [pushViewportBounds, sidebarCollapsed, inspectorOpen, uiPrefs.locale, error]);
 
   useEffect(() => {
@@ -1074,7 +1104,7 @@ export default function WorkspaceShell() {
       if (frame) return;
       frame = window.requestAnimationFrame(() => {
         frame = 0;
-        void pushViewportBounds();
+        void pushViewportBounds().catch(() => void 0);
       });
     };
 

@@ -29,6 +29,9 @@ export class WebWorkspaceService {
   private views = new Map<string, BrowserView>();
   private activeAccountId: string | null = null;
   private viewportBounds: Rect | null = null;
+  private lastAppliedAccountId: string | null = null;
+  private lastAppliedBounds: Rect | null = null;
+  private boundsRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(window: BrowserWindow) {
     this.window = window;
@@ -142,6 +145,12 @@ export class WebWorkspaceService {
 
   private detachActive() {
     this.window.setBrowserView(null);
+    if (this.boundsRetryTimer) {
+      clearTimeout(this.boundsRetryTimer);
+      this.boundsRetryTimer = null;
+    }
+    this.lastAppliedAccountId = null;
+    this.lastAppliedBounds = null;
   }
 
   private attach(accountId: string) {
@@ -156,18 +165,40 @@ export class WebWorkspaceService {
     const view = this.views.get(accountId);
     if (!view) return;
 
-	    const bounds = this.viewportBounds ?? {
-	      x: 0,
-	      y: 0,
-	      width: 0,
-	      height: 0,
-	    };
+    const bounds = this.viewportBounds ?? {
+      x: 0,
+      y: 0,
+      width: 0,
+      height: 0,
+    };
 
-    view.setBounds({
+    const nextBounds = {
       x: Math.round(bounds.x),
       y: Math.round(bounds.y),
       width: Math.round(bounds.width),
       height: Math.round(bounds.height),
-    });
+    };
+
+    view.setBounds(nextBounds);
+
+    const viewChanged = this.lastAppliedAccountId !== accountId;
+    const prevBounds = this.lastAppliedBounds;
+    this.lastAppliedAccountId = accountId;
+    this.lastAppliedBounds = nextBounds;
+
+    const becameVisible =
+      nextBounds.width > 0 &&
+      nextBounds.height > 0 &&
+      (viewChanged || !prevBounds || prevBounds.width === 0 || prevBounds.height === 0);
+
+    if (!becameVisible) return;
+
+    if (this.boundsRetryTimer) clearTimeout(this.boundsRetryTimer);
+    this.boundsRetryTimer = setTimeout(() => {
+      if (this.activeAccountId !== accountId) return;
+      const current = this.views.get(accountId);
+      if (!current) return;
+      current.setBounds(nextBounds);
+    }, 30);
   }
 }
