@@ -1028,21 +1028,22 @@ export default function WorkspaceShell() {
   const openSelectOverlay = useCallback(() => setSelectOverlayOpen(true), []);
   const closeSelectOverlay = useCallback(() => setSelectOverlayOpen(false), []);
 
-  const computeViewportBounds = useCallback((): Rect | null => {
-    if (
-      importDialogOpen ||
-      exportDialog.open ||
-      deleteDialog.open ||
-      batchTagsDialog.open ||
-      batchDeleteDialog.open ||
-      settingsPopoverOpen ||
-      downloadsPopoverOpen ||
-      connectivityPopoverOpen ||
-      selectOverlayOpen
-    ) {
-      return { x: 0, y: 0, width: 0, height: 0 };
-    }
+  const overlayActive =
+    importDialogOpen ||
+    exportDialog.open ||
+    deleteDialog.open ||
+    batchTagsDialog.open ||
+    batchDeleteDialog.open ||
+    settingsPopoverOpen ||
+    downloadsPopoverOpen ||
+    connectivityPopoverOpen ||
+    selectOverlayOpen;
 
+  useEffect(() => {
+    void window.desktop.workspace.setOverlayActive(overlayActive).catch(() => void 0);
+  }, [overlayActive]);
+
+  const computeViewportBounds = useCallback((): Rect | null => {
     const el = viewportRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
@@ -1052,17 +1053,7 @@ export default function WorkspaceShell() {
       width: Math.floor(rect.width),
       height: Math.floor(rect.height),
     };
-  }, [
-    connectivityPopoverOpen,
-    deleteDialog.open,
-    batchDeleteDialog.open,
-    batchTagsDialog.open,
-    exportDialog.open,
-    importDialogOpen,
-    downloadsPopoverOpen,
-    selectOverlayOpen,
-    settingsPopoverOpen,
-  ]);
+  }, []);
 
   const pushViewportBounds = useCallback(() => {
     const desired = computeViewportBounds();

@@ -1,4 +1,4 @@
-import { BrowserView, BrowserWindow, Menu, shell } from "electron";
+import { BrowserWindow, Menu, shell, WebContentsView } from "electron";
 import type { Rect } from "../../shared/ipc";
 import { getAccount, isTokenEncryptionAvailable } from "../accounts/vault";
 import { attachDownloadsToSession } from "../downloads/service";
@@ -26,9 +26,10 @@ export function partitionForAccount(accountId: string): string {
 
 export class WebWorkspaceService {
   private window: BrowserWindow;
-  private views = new Map<string, BrowserView>();
+  private views = new Map<string, WebContentsView>();
   private activeAccountId: string | null = null;
   private viewportBounds: Rect | null = null;
+  private overlayActive = false;
   private lastAppliedAccountId: string | null = null;
   private lastAppliedBounds: Rect | null = null;
   private boundsRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,6 +65,14 @@ export class WebWorkspaceService {
 
   setActiveTab(accountId: string) {
     this.ensureView(accountId);
+    if (this.activeAccountId === accountId) {
+      this.applyBounds(accountId);
+      this.applyZOrder(accountId);
+      return;
+    }
+    if (this.activeAccountId) {
+      this.detachActive();
+    }
     this.activeAccountId = accountId;
     this.attach(accountId);
   }
@@ -71,6 +80,11 @@ export class WebWorkspaceService {
   setViewportBounds(bounds: Rect) {
     this.viewportBounds = bounds;
     if (this.activeAccountId) this.applyBounds(this.activeAccountId);
+  }
+
+  setOverlayActive(active: boolean) {
+    this.overlayActive = active;
+    if (this.activeAccountId) this.applyZOrder(this.activeAccountId);
   }
 
   reloadActive() {
@@ -90,7 +104,7 @@ export class WebWorkspaceService {
   private ensureView(accountId: string) {
     if (this.views.has(accountId)) return;
 
-    const view = new BrowserView({
+    const view = new WebContentsView({
       webPreferences: {
         partition: partitionForAccount(accountId),
         contextIsolation: true,
@@ -116,7 +130,7 @@ export class WebWorkspaceService {
     this.views.set(accountId, view);
   }
 
-  private hardenWebContents(view: BrowserView) {
+  private hardenWebContents(view: WebContentsView) {
     view.webContents.setWindowOpenHandler(({ url }) => {
       if (isTrustedUrl(url)) return { action: "allow" };
       void shell.openExternal(url);
@@ -129,22 +143,31 @@ export class WebWorkspaceService {
       void shell.openExternal(url);
     });
 
-	    view.webContents.on("context-menu", () => {
-	      const menu = Menu.buildFromTemplate([
-	        {
-	          label: "页面刷新",
-	          accelerator: "CmdOrCtrl+R",
-	          click: () => {
-	            view.webContents.reload();
-	          },
-	        },
-	      ]);
-	      menu.popup({ window: this.window });
-	    });
-	  }
+    view.webContents.on("context-menu", () => {
+      const menu = Menu.buildFromTemplate([
+        {
+          label: "页面刷新",
+          accelerator: "CmdOrCtrl+R",
+          click: () => {
+            view.webContents.reload();
+          },
+        },
+      ]);
+      menu.popup({ window: this.window });
+    });
+  }
 
   private detachActive() {
-    this.window.setBrowserView(null);
+    if (this.activeAccountId) {
+      const view = this.views.get(this.activeAccountId);
+      if (view) {
+        try {
+          this.window.contentView.removeChildView(view);
+        } catch {
+          // ignore
+        }
+      }
+    }
     if (this.boundsRetryTimer) {
       clearTimeout(this.boundsRetryTimer);
       this.boundsRetryTimer = null;
@@ -157,20 +180,20 @@ export class WebWorkspaceService {
     const view = this.views.get(accountId);
     if (!view) return;
 
-    this.window.setBrowserView(view);
+    try {
+      this.window.contentView.addChildView(view);
+    } catch {
+      return;
+    }
     this.applyBounds(accountId);
+    this.applyZOrder(accountId);
   }
 
   private applyBounds(accountId: string) {
     const view = this.views.get(accountId);
     if (!view) return;
 
-    const bounds = this.viewportBounds ?? {
-      x: 0,
-      y: 0,
-      width: 0,
-      height: 0,
-    };
+    const bounds = this.viewportBounds ?? { x: 0, y: 0, width: 0, height: 0 };
 
     const nextBounds = {
       x: Math.round(bounds.x),
@@ -200,5 +223,20 @@ export class WebWorkspaceService {
       if (!current) return;
       current.setBounds(nextBounds);
     }, 30);
+  }
+
+  private applyZOrder(accountId: string) {
+    const view = this.views.get(accountId);
+    if (!view) return;
+    try {
+      this.window.contentView.removeChildView(view);
+      if (this.overlayActive) {
+        this.window.contentView.addChildView(view, 0);
+      } else {
+        this.window.contentView.addChildView(view);
+      }
+    } catch {
+      // ignore
+    }
   }
 }

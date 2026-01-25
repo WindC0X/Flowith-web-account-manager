@@ -70,6 +70,10 @@ function assertRect(value: unknown): asserts value is Rect {
   }
 }
 
+function assertBoolean(value: unknown, name: string): asserts value is boolean {
+  if (typeof value !== "boolean") throw new Error(`Invalid ${name}: expected boolean`);
+}
+
 function assertObject(value: unknown, name: string): asserts value is Record<string, unknown> {
   if (!value || typeof value !== "object") throw new Error(`Invalid ${name}: expected object`);
 }
@@ -129,6 +133,15 @@ export function registerIpcHandlers(deps: IpcDeps) {
       }
     }
   );
+
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_SET_OVERLAY_ACTIVE, async (_event, active: unknown) => {
+    try {
+      assertBoolean(active, "active");
+      deps.workspace.setOverlayActive(active);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE, async () => {
     deps.workspace.reloadActive();

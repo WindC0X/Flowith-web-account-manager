@@ -141,6 +141,7 @@ export type DesktopApi = {
     closeTab(accountId: string): Promise<void>;
     setActiveTab(accountId: string): Promise<void>;
     setViewportBounds(bounds: Rect): Promise<void>;
+    setOverlayActive(active: boolean): Promise<void>;
     reloadActive(): Promise<void>;
   };
   downloads: {
@@ -190,6 +191,7 @@ export const IPC_CHANNELS = {
   WORKSPACE_CLOSE_TAB: "workspace:closeTab",
   WORKSPACE_SET_ACTIVE_TAB: "workspace:setActiveTab",
   WORKSPACE_SET_VIEWPORT_BOUNDS: "workspace:setViewportBounds",
+  WORKSPACE_SET_OVERLAY_ACTIVE: "workspace:setOverlayActive",
   WORKSPACE_RELOAD_ACTIVE: "workspace:reloadActive",
 
   DOWNLOADS_GET_PREFERENCES: "downloads:getPreferences",
@@ -242,6 +244,7 @@ export type IpcInvokeMap = {
     args: [bounds: Rect];
     result: void;
   };
+  [IPC_CHANNELS.WORKSPACE_SET_OVERLAY_ACTIVE]: { args: [active: boolean]; result: void };
   [IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE]: { args: []; result: void };
 
   [IPC_CHANNELS.DOWNLOADS_GET_PREFERENCES]: { args: []; result: DownloadPreferencesPublic };
