@@ -406,7 +406,7 @@ export function registerIpcHandlers(deps: IpcDeps) {
 
       const flowithSession = await refreshFlowithSessionForAccount(accountId, {
         onAlreadyUsed: async () => {
-          await deps.loginBootstrap.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
+          await deps.loginBootstrap.waitForNewRefreshTokenFromOpenTab(accountId, { totalTimeoutMs: 15_000 });
         },
       });
 

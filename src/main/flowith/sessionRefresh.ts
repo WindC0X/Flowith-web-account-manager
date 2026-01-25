@@ -6,8 +6,14 @@ const inFlightByAccountId = new Map<string, Promise<SupabaseSession>>();
 const usedRefreshTokensByAccountId = new Map<string, string[]>();
 
 function isAlreadyUsedError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /already used/i.test(error.message);
+  if (!error) return false;
+  if (typeof error === "string") return /already used/i.test(error);
+  if (error instanceof Error) return /already used/i.test(error.message);
+  if (typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return /already used/i.test(message);
+  }
+  return false;
 }
 
 function markRefreshTokenUsed(accountId: string, refreshToken: string) {

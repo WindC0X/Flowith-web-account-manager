@@ -149,8 +149,14 @@ async function injectSupabaseSession(webContents: WebContents, session: Session)
 }
 
 function isAlreadyUsedError(error: unknown): boolean {
-  if (!(error instanceof Error)) return false;
-  return /already used/i.test(error.message);
+  if (!error) return false;
+  if (typeof error === "string") return /already used/i.test(error);
+  if (error instanceof Error) return /already used/i.test(error.message);
+  if (typeof error === "object") {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === "string") return /already used/i.test(message);
+  }
+  return false;
 }
 
 export class FlowithLoginBootstrapService {
@@ -466,6 +472,28 @@ export class FlowithLoginBootstrapService {
     }
   }
 
+  async waitForNewRefreshTokenFromOpenTab(
+    accountId: string,
+    options?: { totalTimeoutMs?: number; perSyncTimeoutMs?: number }
+  ): Promise<boolean> {
+    const webContents = this.workspace.getWebContents(accountId);
+    if (!webContents || webContents.isDestroyed()) return false;
+
+    const totalTimeoutMs = options?.totalTimeoutMs ?? 8000;
+    const perSyncTimeoutMs = options?.perSyncTimeoutMs ?? 1000;
+
+    const before = getRefreshToken(accountId);
+    const deadline = Date.now() + totalTimeoutMs;
+    while (Date.now() < deadline) {
+      await this.syncFromOpenTab(accountId, { timeoutMs: perSyncTimeoutMs, forceRefreshTokenWrite: true });
+      const current = getRefreshToken(accountId);
+      if (current && current !== before && !isKnownUsedRefreshToken(accountId, current)) return true;
+      await new Promise<void>((resolve) => setTimeout(resolve, 600));
+    }
+
+    return false;
+  }
+
   private ensureAuthHeaderInjection(accountId: string, webContents: WebContents, accessToken: string) {
     const existing = this.headerInjection.get(accountId);
     if (existing) {
@@ -539,25 +567,16 @@ export class FlowithLoginBootstrapService {
     this.ensureTokenSync(accountId, webContents);
     await this.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
 
-    const tryRecoverTokenFromTab = async () => {
-      const before = getRefreshToken(accountId);
-      const deadline = Date.now() + 8000;
-      while (Date.now() < deadline) {
-        await this.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
-        const current = getRefreshToken(accountId);
-        if (current && current !== before && !isKnownUsedRefreshToken(accountId, current)) return;
-        await new Promise<void>((resolve) => setTimeout(resolve, 600));
-      }
-    };
-
     let flowithSession: Session;
     try {
       flowithSession = await refreshFlowithSessionForAccount(accountId, {
-        onAlreadyUsed: tryRecoverTokenFromTab,
+        onAlreadyUsed: async () => {
+          await this.waitForNewRefreshTokenFromOpenTab(accountId);
+        },
       });
     } catch (e) {
       if (!isAlreadyUsedError(e)) throw e;
-      await tryRecoverTokenFromTab();
+      await this.waitForNewRefreshTokenFromOpenTab(accountId);
       return;
     }
 

@@ -1004,6 +1004,7 @@ dialog::backdrop {
 
 .workspace-snapshot.is-visible {
   opacity: 1;
+  transition: none;
 }
 
 .workspace-viewport-placeholder {

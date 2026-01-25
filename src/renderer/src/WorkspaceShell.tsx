@@ -615,11 +615,6 @@ function persistUiPreferences(prefs: UiPreferencesV1): void {
 const ACCOUNT_INFO_CACHE_KEY_V1 = "fwd_account_info_cache_v1";
 const ACCOUNT_INFO_CACHE_KEY_V2 = "fwd_account_info_cache_v2";
 
-type AccountInfoCacheV1 = {
-  version: 1;
-  byId: Record<string, { subscription: string | null; credits: string | null; updatedAt: number }>;
-};
-
 type AccountInfoCacheV2 = {
   version: 2;
   byId: Record<
@@ -798,6 +793,9 @@ export default function WorkspaceShell() {
   const [activeTabSnapshot, setActiveTabSnapshot] = useState<string | null>(null);
   const tabSnapshotCacheRef = useRef<Map<string, { snapshot: string; capturedAt: number }>>(new Map());
   const tabSnapshotInFlightRef = useRef<Map<string, Promise<string | null>>>(new Map());
+  const lastTabSnapshotRef = useRef<string | null>(null);
+  const snapshotVisibleTimerRef = useRef<number | null>(null);
+  const [snapshotHold, setSnapshotHold] = useState(false);
 
   const selectAllRef = useRef<HTMLInputElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
@@ -1042,23 +1040,44 @@ export default function WorkspaceShell() {
     connectivityPopoverOpen ||
     selectOverlayOpen;
 
+  const snapshotVisible = overlayActive || snapshotHold;
+
   useEffect(() => {
-    void window.desktop.workspace.setOverlayActive(overlayActive).catch(() => void 0);
+    if (snapshotVisibleTimerRef.current) {
+      window.clearTimeout(snapshotVisibleTimerRef.current);
+      snapshotVisibleTimerRef.current = null;
+    }
+
+    if (overlayActive) {
+      setSnapshotHold(true);
+      return;
+    }
+
+    snapshotVisibleTimerRef.current = window.setTimeout(() => {
+      snapshotVisibleTimerRef.current = null;
+      setSnapshotHold(false);
+    }, 220);
+
+    return () => {
+      if (snapshotVisibleTimerRef.current) {
+        window.clearTimeout(snapshotVisibleTimerRef.current);
+        snapshotVisibleTimerRef.current = null;
+      }
+    };
   }, [overlayActive]);
 
   const computeViewportBounds = useCallback((): Rect | null => {
     if (overlayActive) {
       return { x: 0, y: 0, width: 0, height: 0 };
     }
-
     const el = viewportRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
     return {
-      x: Math.floor(rect.left),
-      y: Math.floor(rect.top),
-      width: Math.floor(rect.width),
-      height: Math.floor(rect.height),
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
     };
   }, [overlayActive]);
 
@@ -1127,6 +1146,7 @@ export default function WorkspaceShell() {
     const cache = tabSnapshotCacheRef.current;
     cache.delete(tabId);
     cache.set(tabId, { snapshot: normalized, capturedAt: Date.now() });
+    lastTabSnapshotRef.current = normalized;
     while (cache.size > 3) {
       const key = cache.keys().next().value as string | undefined;
       if (!key) break;
@@ -1139,6 +1159,10 @@ export default function WorkspaceShell() {
       const normalizedId = tabId.trim();
       if (!normalizedId) return null;
 
+      if (overlayActive) {
+        return tabSnapshotCacheRef.current.get(normalizedId)?.snapshot ?? null;
+      }
+
       const inFlight = tabSnapshotInFlightRef.current.get(normalizedId);
       if (inFlight) return inFlight;
 
@@ -1147,6 +1171,7 @@ export default function WorkspaceShell() {
           const snapshot = await window.desktop.workspace.captureTabSnapshot(normalizedId);
           if (typeof snapshot === "string" && snapshot.trim()) {
             cacheTabSnapshot(normalizedId, snapshot);
+            if (normalizedId === activeTabId) setActiveTabSnapshot(snapshot);
             return snapshot;
           }
           return null;
@@ -1160,7 +1185,7 @@ export default function WorkspaceShell() {
       tabSnapshotInFlightRef.current.set(normalizedId, task);
       return task;
     },
-    [cacheTabSnapshot]
+    [activeTabId, cacheTabSnapshot, overlayActive]
   );
 
   useEffect(() => {
@@ -1168,33 +1193,31 @@ export default function WorkspaceShell() {
       setActiveTabSnapshot(null);
       return;
     }
-    const cached = tabSnapshotCacheRef.current.get(activeTabId)?.snapshot ?? null;
+    const cached = tabSnapshotCacheRef.current.get(activeTabId)?.snapshot ?? lastTabSnapshotRef.current ?? null;
     setActiveTabSnapshot(cached);
   }, [activeTabId]);
 
   useEffect(() => {
     if (!activeTabId) return;
-    if (!overlayActive) return;
+    if (overlayActive) return;
 
     const cached = tabSnapshotCacheRef.current.get(activeTabId);
-    if (cached && Date.now() - cached.capturedAt < 1500) return;
+    const shouldCaptureSoon = !cached || Date.now() - cached.capturedAt > 4000;
+    const delayMs = !cached ? 800 : shouldCaptureSoon ? 300 : 1500;
 
-    void requestTabSnapshot(activeTabId).then((snapshot) => {
-      if (snapshot) setActiveTabSnapshot(snapshot);
-    });
-  }, [activeTabId, overlayActive, requestTabSnapshot]);
-
-  useEffect(() => {
-    if (!activeTabId) return;
-    const cached = tabSnapshotCacheRef.current.get(activeTabId);
-    if (cached) return;
     const timer = window.setTimeout(() => {
       void requestTabSnapshot(activeTabId);
-    }, 800);
+    }, delayMs);
+
+    const interval = window.setInterval(() => {
+      void requestTabSnapshot(activeTabId);
+    }, 20_000);
+
     return () => {
       window.clearTimeout(timer);
+      window.clearInterval(interval);
     };
-  }, [activeTabId, requestTabSnapshot]);
+  }, [activeTabId, overlayActive, requestTabSnapshot]);
 
   useEffect(() => {
     if (!connectivityPopoverOpen) return;
@@ -3032,7 +3055,7 @@ export default function WorkspaceShell() {
             <div className="workspace-viewport glass" ref={viewportRef}>
               {activeTabSnapshot ? (
                 <img
-                  className={clsx("workspace-snapshot", overlayActive && "is-visible")}
+                  className={clsx("workspace-snapshot", snapshotVisible && "is-visible")}
                   alt=""
                   src={activeTabSnapshot}
                 />
