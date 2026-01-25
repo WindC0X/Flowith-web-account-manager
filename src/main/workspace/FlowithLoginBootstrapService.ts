@@ -7,7 +7,7 @@ import type {
 import type { Session } from "@supabase/supabase-js";
 import { resolveFlowithSupabaseConfig } from "../flowith/supabase";
 import { getRefreshToken, setRefreshToken } from "../accounts/vault";
-import { refreshFlowithSessionForAccount } from "../flowith/sessionRefresh";
+import { isKnownUsedRefreshToken, refreshFlowithSessionForAccount } from "../flowith/sessionRefresh";
 import { redactSensitive } from "../security/redact";
 import type { WebWorkspaceService } from "./WebWorkspaceService";
 import { extractSupabaseSessionTokensFromStorageValue } from "./supabaseAuthStorage";
@@ -152,21 +152,24 @@ export class FlowithLoginBootstrapService {
   private workspace: WebWorkspaceService;
   private headerInjection = new Map<string, { setAccessToken: (token: string) => void }>();
   private tokenSync = new Map<string, { stop: () => void }>();
+  private refreshTokenWriteDeadlines = new Map<string, number>();
 
   constructor(workspace: WebWorkspaceService) {
     this.workspace = workspace;
   }
 
-  private async syncTokensFromWebContents(accountId: string, webContents: WebContents): Promise<void> {
-    if (webContents.isDestroyed()) return;
+  private async readSupabaseAuthStorageValues(
+    webContents: WebContents
+  ): Promise<Array<{ storage: "local" | "session"; key: string; value: string }> | null> {
+    if (webContents.isDestroyed()) return null;
 
     let href: unknown;
     try {
       href = await webContents.executeJavaScript("location.href", true);
     } catch {
-      return;
+      return null;
     }
-    if (typeof href !== "string" || !isFlowithUrl(href)) return;
+    if (typeof href !== "string" || !isFlowithUrl(href)) return null;
 
     const keys = storageKeysFromSupabaseUrl();
     const script = `
@@ -194,16 +197,116 @@ export class FlowithLoginBootstrapService {
       | { ok: false; error?: string }
       | undefined;
 
-    if (!result || result.ok !== true || !Array.isArray(result.values)) return;
+    if (!result || result.ok !== true || !Array.isArray(result.values)) return null;
+    return result.values;
+  }
+
+  private async readAccessTokenFromWebContents(webContents: WebContents): Promise<string | null> {
+    const values = await this.readSupabaseAuthStorageValues(webContents);
+    if (!values) return null;
+    for (const entry of values) {
+      const extracted = extractSupabaseSessionTokensFromStorageValue(entry.value);
+      if (!extracted?.accessToken) continue;
+      return extracted.accessToken;
+    }
+
+    return null;
+  }
+
+  async peekAccessTokenFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<string | null> {
+    const webContents = this.workspace.getWebContents(accountId);
+    if (!webContents) return null;
+
+    const timeoutMs = options?.timeoutMs ?? 0;
+    const task = (async () => {
+      try {
+        return await this.readAccessTokenFromWebContents(webContents);
+      } catch {
+        return null;
+      }
+    })();
+
+    if (timeoutMs <= 0) return await task;
+
+    return await Promise.race([
+      task,
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+  }
+
+  async reconcileSessionForOpenTab(
+    accountId: string,
+    session: Session,
+    options?: { timeoutMs?: number; reload?: boolean }
+  ): Promise<boolean> {
+    const webContents = this.workspace.getWebContents(accountId);
+    if (!webContents || webContents.isDestroyed()) return false;
+
+    const timeoutMs = options?.timeoutMs ?? 0;
+    if (timeoutMs > 0) {
+      try {
+        await waitForFlowithReady(webContents, timeoutMs);
+      } catch {
+        return false;
+      }
+    } else {
+      let href: unknown;
+      try {
+        href = await webContents.executeJavaScript("location.href", true);
+      } catch {
+        return false;
+      }
+      if (typeof href !== "string" || !isFlowithUrl(href)) return false;
+    }
+
+    try {
+      await injectSupabaseSession(webContents, session);
+    } catch {
+      return false;
+    }
+
+    this.ensureAuthHeaderInjection(accountId, webContents, session.access_token ?? "");
+    if (options?.reload ?? true) {
+      try {
+        webContents.reload();
+      } catch {
+        // ignore
+      }
+    }
+    this.ensureTokenSync(accountId, webContents);
+    return true;
+  }
+
+  private async syncTokensFromWebContents(
+    accountId: string,
+    webContents: WebContents,
+    options?: { forceRefreshTokenWrite?: boolean }
+  ): Promise<void> {
+    if (webContents.isDestroyed()) return;
+
+    const allowRefreshTokenWrite =
+      options?.forceRefreshTokenWrite || (this.refreshTokenWriteDeadlines.get(accountId) ?? 0) > Date.now();
+
+    const values = await this.readSupabaseAuthStorageValues(webContents);
+    if (!values) return;
 
     let nextRefreshToken: string | null = null;
     let nextAccessToken: string | null = null;
 
-    for (const entry of result.values) {
+    for (const entry of values) {
       const extracted = extractSupabaseSessionTokensFromStorageValue(entry.value);
       if (!extracted) continue;
       if (!nextAccessToken && extracted.accessToken) nextAccessToken = extracted.accessToken;
-      if (!nextRefreshToken && extracted.refreshToken) nextRefreshToken = extracted.refreshToken;
+      if (
+        !nextRefreshToken &&
+        allowRefreshTokenWrite &&
+        extracted.refreshToken &&
+        !isKnownUsedRefreshToken(accountId, extracted.refreshToken)
+      ) {
+        nextRefreshToken = extracted.refreshToken;
+      }
       if (nextAccessToken && nextRefreshToken) break;
     }
 
@@ -231,6 +334,7 @@ export class FlowithLoginBootstrapService {
       stopped = true;
       if (handle) clearTimeout(handle);
       if (refreshSyncDebounce) clearTimeout(refreshSyncDebounce);
+      this.refreshTokenWriteDeadlines.delete(accountId);
       try {
         webContents.session.webRequest.onCompleted(null);
       } catch {
@@ -294,6 +398,7 @@ export class FlowithLoginBootstrapService {
           return;
         }
 
+        this.refreshTokenWriteDeadlines.set(accountId, Date.now() + 30_000);
         scheduleSyncSoon();
       };
 
@@ -306,13 +411,20 @@ export class FlowithLoginBootstrapService {
     this.tokenSync.set(accountId, { stop });
   }
 
-  async syncFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<void> {
+  async syncFromOpenTab(
+    accountId: string,
+    options?: { timeoutMs?: number; forceRefreshTokenWrite?: boolean }
+  ): Promise<void> {
     const webContents = this.workspace.getWebContents(accountId);
     if (!webContents) return;
     const timeoutMs = options?.timeoutMs ?? 0;
     const task = (async () => {
       try {
-        await this.syncTokensFromWebContents(accountId, webContents);
+        await this.syncTokensFromWebContents(
+          accountId,
+          webContents,
+          options?.forceRefreshTokenWrite ? { forceRefreshTokenWrite: true } : undefined
+        );
       } catch {
         // best-effort
       }
@@ -414,11 +526,11 @@ export class FlowithLoginBootstrapService {
     if (!webContents) throw new Error("Workspace webContents not found for account.");
 
     await waitForFlowithReady(webContents, 30_000);
-    await this.syncFromOpenTab(accountId, { timeoutMs: 1000 });
+    await this.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
 
     const flowithSession = await refreshFlowithSessionForAccount(accountId, {
       onAlreadyUsed: async () => {
-        await this.syncFromOpenTab(accountId, { timeoutMs: 1000 });
+        await this.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
       },
     });
     await injectSupabaseSession(webContents, flowithSession);

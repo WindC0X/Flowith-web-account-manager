@@ -55,6 +55,7 @@ export type ImportRefreshTokensOptions = {
 
 export type AccountCredits = {
   subscriptionType: string | null;
+  subscriptionExpiresAt: number | null;
   remainingCredits: number;
   totalCredits: number;
   fetchedAt: number;
@@ -170,6 +171,7 @@ export type DesktopApi = {
     importRefreshTokens(text: string, options?: ImportRefreshTokensOptions): Promise<ImportRefreshTokensResult>;
     exportRefreshTokens(accountIds: string[]): Promise<string>;
     refreshCredits(accountId: string): Promise<AccountCredits>;
+    syncCreditsFromOpenTab(accountId: string): Promise<AccountCredits | null>;
     delete(accountId: string): Promise<void>;
     testConnectivity(accountId: string): Promise<ConnectivityCheck[]>;
     updateAccountMeta(
@@ -212,6 +214,7 @@ export const IPC_CHANNELS = {
   ACCOUNTS_IMPORT_REFRESH_TOKENS: "accounts:importRefreshTokens",
   ACCOUNTS_EXPORT_REFRESH_TOKENS: "accounts:exportRefreshTokens",
   ACCOUNTS_REFRESH_CREDITS: "accounts:refreshCredits",
+  ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB: "accounts:syncCreditsFromOpenTab",
   ACCOUNTS_DELETE: "accounts:delete",
   ACCOUNTS_TEST_CONNECTIVITY: "accounts:testConnectivity",
   ACCOUNTS_UPDATE_META: "accounts:updateMeta",
@@ -269,6 +272,7 @@ export type IpcInvokeMap = {
     result: string;
   };
   [IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS]: { args: [accountId: string]; result: AccountCredits };
+  [IPC_CHANNELS.ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB]: { args: [accountId: string]; result: AccountCredits | null };
   [IPC_CHANNELS.ACCOUNTS_DELETE]: { args: [accountId: string]; result: void };
   [IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY]: {
     args: [accountId: string];

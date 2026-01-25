@@ -22,7 +22,8 @@ import {
   setDownloadsSaveMode,
   showDownloadInFolder,
 } from "./downloads/service";
-import { refreshAccountCredits } from "./flowith/credits";
+import { CreditsUnauthorizedError, fetchAccountCreditsWithAccessToken } from "./flowith/credits";
+import { refreshFlowithSessionForAccount } from "./flowith/sessionRefresh";
 import { testConnectivity } from "./network/connectivity";
 import { validateProxyConfig } from "./network/proxy";
 import { validateUaConfig } from "./network/userAgent";
@@ -371,8 +372,43 @@ export function registerIpcHandlers(deps: IpcDeps) {
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
-      await deps.loginBootstrap.syncFromOpenTab(accountId);
-      return await refreshAccountCredits(accountId);
+
+      const tabAccessToken = await deps.loginBootstrap.peekAccessTokenFromOpenTab(accountId, { timeoutMs: 800 });
+      if (tabAccessToken) {
+        try {
+          return await fetchAccountCreditsWithAccessToken(accountId, tabAccessToken);
+        } catch (e) {
+          if (!(e instanceof CreditsUnauthorizedError)) throw e;
+        }
+      }
+
+      const flowithSession = await refreshFlowithSessionForAccount(accountId, {
+        onAlreadyUsed: async () => {
+          await deps.loginBootstrap.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
+        },
+      });
+
+      const credits = await fetchAccountCreditsWithAccessToken(accountId, flowithSession.access_token ?? "");
+      void deps.loginBootstrap.reconcileSessionForOpenTab(accountId, flowithSession, { timeoutMs: 2000, reload: true });
+      return credits;
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB, async (_event, accountId: unknown) => {
+    try {
+      assertString(accountId, "accountId");
+
+      const tabAccessToken = await deps.loginBootstrap.peekAccessTokenFromOpenTab(accountId, { timeoutMs: 800 });
+      if (!tabAccessToken) return null;
+
+      try {
+        return await fetchAccountCreditsWithAccessToken(accountId, tabAccessToken);
+      } catch (e) {
+        if (e instanceof CreditsUnauthorizedError) return null;
+        throw e;
+      }
     } catch (e) {
       throw new Error(safeErrorMessage(e));
     }

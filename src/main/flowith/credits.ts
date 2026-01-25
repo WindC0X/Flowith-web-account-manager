@@ -8,6 +8,13 @@ import { refreshFlowithSessionForAccount } from "./sessionRefresh";
 
 const FLOWITH_EDGE_CREDITS_URL = "https://edge.flowith.net/user/credits";
 
+export class CreditsUnauthorizedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CreditsUnauthorizedError";
+  }
+}
+
 function toAuthorizationHeader(accessToken: string): string {
   const token = accessToken.trim();
   if (!token) return "";
@@ -15,10 +22,8 @@ function toAuthorizationHeader(accessToken: string): string {
   return `Bearer ${token}`;
 }
 
-export async function refreshAccountCredits(accountId: string): Promise<AccountCredits> {
-  const flowithSession = await refreshFlowithSessionForAccount(accountId);
-  const auth = toAuthorizationHeader(flowithSession.access_token ?? "");
-  if (!auth) throw new Error("Supabase session returned no access_token.");
+async function fetchAccountCreditsWithAuthHeader(accountId: string, authHeader: string): Promise<AccountCredits> {
+  if (!authHeader.trim()) throw new Error("Missing Authorization header.");
 
   const account = getAccount(accountId);
   if (!account) throw new Error("Account not found.");
@@ -33,13 +38,13 @@ export async function refreshAccountCredits(accountId: string): Promise<AccountC
       method: "GET",
       headers: {
         Accept: "application/json",
-        Authorization: auth,
+        Authorization: authHeader,
       },
       signal: controller.signal,
     });
 
     if (res.status === 401 || res.status === 403) {
-      throw new Error("Unauthorized (401/403). Refresh token may be invalid or expired.");
+      throw new CreditsUnauthorizedError("Unauthorized (401/403). Access token may be invalid or expired.");
     }
     if (!res.ok) {
       throw new Error(`Credits request failed: HTTP ${res.status}.`);
@@ -60,4 +65,21 @@ export async function refreshAccountCredits(accountId: string): Promise<AccountC
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function fetchAccountCreditsWithAccessToken(accountId: string, accessToken: string): Promise<AccountCredits> {
+  const auth = toAuthorizationHeader(accessToken);
+  if (!auth) throw new Error("Supabase session returned no access_token.");
+  return await fetchAccountCreditsWithAuthHeader(accountId, auth);
+}
+
+export async function refreshAccountCredits(
+  accountId: string,
+  options?: { onAlreadyUsed?: () => Promise<void> }
+): Promise<AccountCredits> {
+  const flowithSession = await refreshFlowithSessionForAccount(
+    accountId,
+    options?.onAlreadyUsed ? { onAlreadyUsed: options.onAlreadyUsed } : undefined
+  );
+  return await fetchAccountCreditsWithAccessToken(accountId, flowithSession.access_token ?? "");
 }

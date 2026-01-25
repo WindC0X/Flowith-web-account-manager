@@ -66,6 +66,7 @@ const api: DesktopApi = {
     importRefreshTokens: (text, options) => invoke(IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS, text, options),
     exportRefreshTokens: (accountIds) => invoke(IPC_CHANNELS.ACCOUNTS_EXPORT_REFRESH_TOKENS, accountIds),
     refreshCredits: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS, accountId),
+    syncCreditsFromOpenTab: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB, accountId),
     delete: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_DELETE, accountId),
     testConnectivity: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY, accountId),
     updateAccountMeta: (accountId, patch) => invoke(IPC_CHANNELS.ACCOUNTS_UPDATE_META, accountId, patch),

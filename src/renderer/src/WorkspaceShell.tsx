@@ -43,6 +43,7 @@ type AccountInfoStatus = "idle" | "loading" | "ready" | "unavailable";
 type AccountInfoEntry = {
   status: AccountInfoStatus;
   subscription: string | null;
+  subscriptionExpiresAt: number | null;
   credits: string | null;
   updatedAt: number | null;
   error: string | null;
@@ -81,6 +82,7 @@ const LEGACY_SIDEBAR_COLLAPSED_KEY = "fwd_sidebar_collapsed";
 const DEFAULT_ACCOUNT_INFO: AccountInfoEntry = {
   status: "idle",
   subscription: null,
+  subscriptionExpiresAt: null,
   credits: null,
   updatedAt: null,
   error: null,
@@ -205,6 +207,8 @@ const UI_STRINGS = {
     toastTagsSaved: "标签已保存",
     accountInfoTitle: "账号信息",
     subscriptionLabel: "订阅",
+    subscriptionExpiresAtLabel: "订阅到期",
+    subscriptionExpiresAtChip: "到期 {date}",
     creditsLabel: "积分",
     refreshCredits: "刷新积分",
     updatedAtLabel: "更新时间",
@@ -377,6 +381,8 @@ const UI_STRINGS = {
     toastTagsSaved: "Tags saved",
     accountInfoTitle: "Account info",
     subscriptionLabel: "Subscription",
+    subscriptionExpiresAtLabel: "Subscription expires",
+    subscriptionExpiresAtChip: "Exp {date}",
     creditsLabel: "Credits",
     refreshCredits: "Refresh credits",
     updatedAtLabel: "Updated",
@@ -455,6 +461,14 @@ function formatUpdatedAt(value: number, locale: Locale): string {
     return new Date(value).toLocaleString(locale);
   } catch {
     return new Date(value).toISOString();
+  }
+}
+
+function formatDate(value: number, locale: Locale): string {
+  try {
+    return new Date(value).toLocaleDateString(locale);
+  } catch {
+    return new Date(value).toISOString().slice(0, 10);
   }
 }
 
@@ -597,20 +611,31 @@ function persistUiPreferences(prefs: UiPreferencesV1): void {
   }
 }
 
-const ACCOUNT_INFO_CACHE_KEY = "fwd_account_info_cache_v1";
+const ACCOUNT_INFO_CACHE_KEY_V1 = "fwd_account_info_cache_v1";
+const ACCOUNT_INFO_CACHE_KEY_V2 = "fwd_account_info_cache_v2";
 
 type AccountInfoCacheV1 = {
   version: 1;
   byId: Record<string, { subscription: string | null; credits: string | null; updatedAt: number }>;
 };
 
+type AccountInfoCacheV2 = {
+  version: 2;
+  byId: Record<
+    string,
+    { subscription: string | null; subscriptionExpiresAt: number | null; credits: string | null; updatedAt: number }
+  >;
+};
+
 function loadAccountInfoCache(): Record<string, AccountInfoEntry> {
   try {
-    const raw = window.localStorage.getItem(ACCOUNT_INFO_CACHE_KEY);
+    const raw =
+      window.localStorage.getItem(ACCOUNT_INFO_CACHE_KEY_V2) ??
+      window.localStorage.getItem(ACCOUNT_INFO_CACHE_KEY_V1);
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (!isRecord(parsed)) return {};
-    if (parsed.version !== 1) return {};
+    if (parsed.version !== 1 && parsed.version !== 2) return {};
     if (!isRecord(parsed.byId)) return {};
 
     const next: Record<string, AccountInfoEntry> = {};
@@ -619,8 +644,14 @@ function loadAccountInfoCache(): Record<string, AccountInfoEntry> {
       const updatedAt = entry.updatedAt;
       if (typeof updatedAt !== "number" || !Number.isFinite(updatedAt) || updatedAt <= 0) continue;
       const subscription = typeof entry.subscription === "string" ? entry.subscription : null;
+      const subscriptionExpiresAt =
+        typeof entry.subscriptionExpiresAt === "number" &&
+        Number.isFinite(entry.subscriptionExpiresAt) &&
+        entry.subscriptionExpiresAt > 0
+          ? entry.subscriptionExpiresAt
+          : null;
       const credits = typeof entry.credits === "string" ? entry.credits : null;
-      next[accountId] = { status: "ready", subscription, credits, updatedAt, error: null };
+      next[accountId] = { status: "ready", subscription, subscriptionExpiresAt, credits, updatedAt, error: null };
     }
 
     return next;
@@ -630,20 +661,21 @@ function loadAccountInfoCache(): Record<string, AccountInfoEntry> {
 }
 
 function persistAccountInfoCache(entries: Record<string, AccountInfoEntry>): void {
-  const byId: AccountInfoCacheV1["byId"] = {};
+  const byId: AccountInfoCacheV2["byId"] = {};
   for (const [accountId, entry] of Object.entries(entries)) {
     if (!entry.updatedAt) continue;
     if (entry.status === "idle") continue;
     byId[accountId] = {
       subscription: entry.subscription ?? null,
+      subscriptionExpiresAt: entry.subscriptionExpiresAt ?? null,
       credits: entry.credits ?? null,
       updatedAt: entry.updatedAt,
     };
   }
 
   try {
-    const payload: AccountInfoCacheV1 = { version: 1, byId };
-    window.localStorage.setItem(ACCOUNT_INFO_CACHE_KEY, JSON.stringify(payload));
+    const payload: AccountInfoCacheV2 = { version: 2, byId };
+    window.localStorage.setItem(ACCOUNT_INFO_CACHE_KEY_V2, JSON.stringify(payload));
   } catch {
     // ignore
   }
@@ -1649,6 +1681,7 @@ export default function WorkspaceShell() {
             ...current,
             status: "ready",
             subscription: info.subscriptionType,
+            subscriptionExpiresAt: info.subscriptionExpiresAt,
             credits: `${remaining}/${total}`,
             updatedAt: info.fetchedAt,
             error: null,
@@ -1680,10 +1713,56 @@ export default function WorkspaceShell() {
     }
   }, [pushUiToast, t]);
 
+  const syncCreditsFromOpenTabForAccount = useCallback(async (accountId: string) => {
+    try {
+      const info = await window.desktop.accounts.syncCreditsFromOpenTab(accountId);
+      if (!info) return false;
+
+      const remaining = Math.round(info.remainingCredits);
+      const total = Math.round(info.totalCredits);
+
+      setAccountInfoById((prev) => {
+        const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
+        if (current.status === "loading") return prev;
+        return {
+          ...prev,
+          [accountId]: {
+            ...current,
+            status: "ready",
+            subscription: info.subscriptionType,
+            subscriptionExpiresAt: info.subscriptionExpiresAt,
+            credits: `${remaining}/${total}`,
+            updatedAt: info.fetchedAt,
+            error: null,
+          },
+        };
+      });
+
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
+
   const refreshAccountInfo = useCallback(() => {
     if (!focusedAccountId) return;
     void refreshCreditsForAccount(focusedAccountId, { announce: true });
   }, [focusedAccountId, refreshCreditsForAccount]);
+
+  useEffect(() => {
+    if (!activeTabId) return;
+
+    const sync = () => {
+      void syncCreditsFromOpenTabForAccount(activeTabId);
+    };
+
+    const first = window.setTimeout(sync, 1500);
+    const interval = window.setInterval(sync, 30_000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(interval);
+    };
+  }, [activeTabId, syncCreditsFromOpenTabForAccount]);
 
   useEffect(() => {
     if (!focusedAccountId || !inspectorOpen) return;
@@ -2595,6 +2674,7 @@ export default function WorkspaceShell() {
 	                const focused = a.id === focusedAccountId;
 	                const info = accountInfoById[a.id] ?? DEFAULT_ACCOUNT_INFO;
 	                const subscription = info.subscription ?? "-";
+	                const expiresAt = info.subscriptionExpiresAt ? formatDate(info.subscriptionExpiresAt, uiPrefs.locale) : "-";
 	                const credits = info.credits ?? "-";
 	                const updatedAt = info.updatedAt ? formatUpdatedAt(info.updatedAt, uiPrefs.locale) : null;
 	                return (
@@ -2640,6 +2720,11 @@ export default function WorkspaceShell() {
 	                      <span className="chip" title={`${t("subscriptionLabel")}: ${subscription}`}>
 	                        {subscription}
 	                      </span>
+	                      {info.subscription ? (
+	                        <span className="chip" title={`${t("subscriptionExpiresAtLabel")}: ${expiresAt}`}>
+	                          {format(t("subscriptionExpiresAtChip"), { date: expiresAt })}
+	                        </span>
+	                      ) : null}
 	                      <span className="chip mono" title={`${t("creditsLabel")}: ${credits}`}>
 	                        {credits}
 	                      </span>
@@ -2942,6 +3027,18 @@ export default function WorkspaceShell() {
                     <div className="field-value">
                       {focusedAccountInfo.subscription ? (
                         <span className="mono">{focusedAccountInfo.subscription}</span>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">{t("subscriptionExpiresAtLabel")}</div>
+                    <div className="field-value">
+                      {focusedAccountInfo.subscriptionExpiresAt ? (
+                        <span className="mono">
+                          {formatDate(focusedAccountInfo.subscriptionExpiresAt, uiPrefs.locale)}
+                        </span>
                       ) : (
                         <span className="muted">-</span>
                       )}
