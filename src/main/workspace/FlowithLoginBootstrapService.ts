@@ -286,8 +286,14 @@ export class FlowithLoginBootstrapService {
   ): Promise<void> {
     if (webContents.isDestroyed()) return;
 
+    const currentVaultRefreshToken = getRefreshToken(accountId);
+    const canOverwriteVaultRefreshToken =
+      !currentVaultRefreshToken || isKnownUsedRefreshToken(accountId, currentVaultRefreshToken);
+
     const allowRefreshTokenWrite =
-      options?.forceRefreshTokenWrite || (this.refreshTokenWriteDeadlines.get(accountId) ?? 0) > Date.now();
+      (this.refreshTokenWriteDeadlines.get(accountId) ?? 0) > Date.now() ||
+      (options?.forceRefreshTokenWrite && canOverwriteVaultRefreshToken) ||
+      canOverwriteVaultRefreshToken;
 
     const values = await this.readSupabaseAuthStorageValues(webContents);
     if (!values) return;
@@ -311,8 +317,7 @@ export class FlowithLoginBootstrapService {
     }
 
     if (nextRefreshToken) {
-      const current = getRefreshToken(accountId);
-      if (current !== nextRefreshToken) {
+      if (currentVaultRefreshToken !== nextRefreshToken) {
         setRefreshToken(accountId, nextRefreshToken);
       }
     }
