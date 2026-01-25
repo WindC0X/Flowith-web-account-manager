@@ -148,6 +148,11 @@ async function injectSupabaseSession(webContents: WebContents, session: Session)
   }
 }
 
+function isAlreadyUsedError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /already used/i.test(error.message);
+}
+
 export class FlowithLoginBootstrapService {
   private workspace: WebWorkspaceService;
   private headerInjection = new Map<string, { setAccessToken: (token: string) => void }>();
@@ -531,13 +536,31 @@ export class FlowithLoginBootstrapService {
     if (!webContents) throw new Error("Workspace webContents not found for account.");
 
     await waitForFlowithReady(webContents, 30_000);
+    this.ensureTokenSync(accountId, webContents);
     await this.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
 
-    const flowithSession = await refreshFlowithSessionForAccount(accountId, {
-      onAlreadyUsed: async () => {
+    const tryRecoverTokenFromTab = async () => {
+      const before = getRefreshToken(accountId);
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline) {
         await this.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
-      },
-    });
+        const current = getRefreshToken(accountId);
+        if (current && current !== before && !isKnownUsedRefreshToken(accountId, current)) return;
+        await new Promise<void>((resolve) => setTimeout(resolve, 600));
+      }
+    };
+
+    let flowithSession: Session;
+    try {
+      flowithSession = await refreshFlowithSessionForAccount(accountId, {
+        onAlreadyUsed: tryRecoverTokenFromTab,
+      });
+    } catch (e) {
+      if (!isAlreadyUsedError(e)) throw e;
+      await tryRecoverTokenFromTab();
+      return;
+    }
+
     await injectSupabaseSession(webContents, flowithSession);
     this.ensureAuthHeaderInjection(accountId, webContents, flowithSession.access_token ?? "");
     webContents.reload();
