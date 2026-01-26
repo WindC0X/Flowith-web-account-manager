@@ -88,7 +88,7 @@ function pickPrimarySubscription(
     const remainQuota = normalizeNumber(s.remain_quota) ?? 0;
     const toDateMs = normalizeExpiryForActiveCheck(normalizeEpochMs(s.to_date) ?? 0);
     const key = normalizeTypeKey(s.sub_type);
-    const active = toDateMs > 0 ? toDateMs > now : remainDays > 0 || remainQuota > 0;
+    const active = remainDays > 0 || remainQuota > 0 || (toDateMs > 0 && toDateMs > now);
     return { key, active, tier: tierScore(key), remainDays, remainQuota, toDateMs };
   };
 

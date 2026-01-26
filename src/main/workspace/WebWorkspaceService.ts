@@ -110,12 +110,13 @@ export class WebWorkspaceService {
       if (image.isEmpty()) return null;
 
       const size = image.getSize();
-      const maxWidth = 960;
+      const maxWidth = 840;
       const normalized =
         Number.isFinite(size.width) && size.width > maxWidth ? image.resize({ width: maxWidth, quality: "good" }) : image;
 
-      const dataUrl = normalized.toDataURL();
-      return dataUrl.trim() ? dataUrl : null;
+      const jpeg = normalized.toJPEG(70);
+      if (!jpeg || jpeg.length === 0) return null;
+      return `data:image/jpeg;base64,${jpeg.toString("base64")}`;
     } catch {
       return null;
     }

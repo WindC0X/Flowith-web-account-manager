@@ -73,6 +73,11 @@ const api: DesktopApi = {
     testConnectivity: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY, accountId),
     updateAccountMeta: (accountId, patch) => invoke(IPC_CHANNELS.ACCOUNTS_UPDATE_META, accountId, patch),
   },
+  flowithos: {
+    getStatus: () => invoke(IPC_CHANNELS.FLOWITHOS_GET_STATUS),
+    writeSessionFromAccount: (accountId) => invoke(IPC_CHANNELS.FLOWITHOS_WRITE_SESSION_FROM_ACCOUNT, accountId),
+    syncFromFlowithOs: () => invoke(IPC_CHANNELS.FLOWITHOS_SYNC_FROM_FLOWITHOS),
+  },
   preferences: {
     get: () => invoke(IPC_CHANNELS.PREFERENCES_GET),
     update: (patch) => invoke(IPC_CHANNELS.PREFERENCES_UPDATE, patch),

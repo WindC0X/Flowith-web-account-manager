@@ -61,6 +61,36 @@ export type AccountCredits = {
   fetchedAt: number;
 };
 
+export type FlowithOsStatus = {
+  userDataPath: string;
+  sessionFilePath: string;
+  sessionDirExists: boolean;
+  sessionFileExists: boolean;
+  sessionFileWritable: boolean;
+  running: boolean;
+  reason?: string;
+  linkedAccountId: string | null;
+  linkedUserId: string | null;
+  lastSyncedAt: number | null;
+  lastSeenAt: number | null;
+  lastSeenUserId: string | null;
+};
+
+export type FlowithOsWriteSessionResult =
+  | { success: true; backupPath: string | null; targetPath: string; userId: string | null; email: string | null }
+  | { success: false; message: string };
+
+export type FlowithOsSyncResult =
+  | {
+      success: true;
+      updated: boolean;
+      accountId: string | null;
+      reason?: string;
+      userId?: string | null;
+      email?: string | null;
+    }
+  | { success: false; message: string };
+
 export type ConnectivityCheck = {
   name: string;
   url: string;
@@ -181,6 +211,11 @@ export type DesktopApi = {
       patch: AccountMetaPatch
     ): Promise<AccountSummary>;
   };
+  flowithos: {
+    getStatus(): Promise<FlowithOsStatus>;
+    writeSessionFromAccount(accountId: string): Promise<FlowithOsWriteSessionResult>;
+    syncFromFlowithOs(): Promise<FlowithOsSyncResult>;
+  };
   preferences: {
     get(): Promise<Preferences>;
     update(patch: PreferencesPatch): Promise<Preferences>;
@@ -222,6 +257,10 @@ export const IPC_CHANNELS = {
   ACCOUNTS_DELETE: "accounts:delete",
   ACCOUNTS_TEST_CONNECTIVITY: "accounts:testConnectivity",
   ACCOUNTS_UPDATE_META: "accounts:updateMeta",
+
+  FLOWITHOS_GET_STATUS: "flowithos:getStatus",
+  FLOWITHOS_WRITE_SESSION_FROM_ACCOUNT: "flowithos:writeSessionFromAccount",
+  FLOWITHOS_SYNC_FROM_FLOWITHOS: "flowithos:syncFromFlowithOs",
 
   PREFERENCES_GET: "preferences:get",
   PREFERENCES_UPDATE: "preferences:update",
@@ -288,6 +327,13 @@ export type IpcInvokeMap = {
     args: [accountId: string, patch: AccountMetaPatch];
     result: AccountSummary;
   };
+
+  [IPC_CHANNELS.FLOWITHOS_GET_STATUS]: { args: []; result: FlowithOsStatus };
+  [IPC_CHANNELS.FLOWITHOS_WRITE_SESSION_FROM_ACCOUNT]: {
+    args: [accountId: string];
+    result: FlowithOsWriteSessionResult;
+  };
+  [IPC_CHANNELS.FLOWITHOS_SYNC_FROM_FLOWITHOS]: { args: []; result: FlowithOsSyncResult };
 
   [IPC_CHANNELS.PREFERENCES_GET]: { args: []; result: Preferences };
   [IPC_CHANNELS.PREFERENCES_UPDATE]: {

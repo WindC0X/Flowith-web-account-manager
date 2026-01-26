@@ -31,6 +31,7 @@ import { redactSensitive } from "./security/redact";
 import { checkForUpdates, downloadUpdate, getUpdaterStatus, quitAndInstall } from "./updater/service";
 import { partitionForAccount, type WebWorkspaceService } from "./workspace/WebWorkspaceService";
 import type { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
+import type { FlowithOsIntegrationService } from "./flowithos/flowithOsIntegrationService";
 
 const preferences: Preferences = {
   locale: "zh-CN",
@@ -41,6 +42,7 @@ const preferences: Preferences = {
 type IpcDeps = {
   workspace: WebWorkspaceService;
   loginBootstrap: FlowithLoginBootstrapService;
+  flowithos: FlowithOsIntegrationService;
 };
 
 function safeErrorMessage(error: unknown): string {
@@ -93,6 +95,11 @@ export function registerIpcHandlers(deps: IpcDeps) {
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_OPEN_TAB, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
+      try {
+        await deps.flowithos.syncFromFlowithOs({ silent: true });
+      } catch {
+        // best-effort
+      }
       deps.workspace.openTab(accountId);
       await deps.loginBootstrap.bootstrap(accountId);
     } catch (e) {
@@ -404,9 +411,29 @@ export function registerIpcHandlers(deps: IpcDeps) {
         }
       }
 
+      try {
+        await deps.flowithos.syncFromFlowithOs({ silent: true });
+      } catch {
+        // best-effort
+      }
+
       const flowithSession = await refreshFlowithSessionForAccount(accountId, {
         onAlreadyUsed: async () => {
+          const before = getRefreshToken(accountId);
+          try {
+            await deps.flowithos.syncFromFlowithOs({ silent: true });
+          } catch {
+            // best-effort
+          }
+          const afterFlowithOs = getRefreshToken(accountId);
+          if (afterFlowithOs && afterFlowithOs !== before) return;
+
           await deps.loginBootstrap.waitForNewRefreshTokenFromOpenTab(accountId, { totalTimeoutMs: 15_000 });
+          try {
+            await deps.flowithos.syncFromFlowithOs({ silent: true });
+          } catch {
+            // best-effort
+          }
         },
       });
 
@@ -456,6 +483,54 @@ export function registerIpcHandlers(deps: IpcDeps) {
     try {
       assertString(accountId, "accountId");
       return await testConnectivity(accountId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FLOWITHOS_GET_STATUS, async () => {
+    try {
+      return await deps.flowithos.getStatus();
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FLOWITHOS_WRITE_SESSION_FROM_ACCOUNT, async (_event, accountId: unknown) => {
+    try {
+      assertString(accountId, "accountId");
+      try {
+        await deps.flowithos.syncFromFlowithOs({ silent: true });
+      } catch {
+        // best-effort
+      }
+      return await deps.flowithos.writeSessionFromAccount(accountId, {
+        onAlreadyUsed: async () => {
+          const before = getRefreshToken(accountId);
+          try {
+            await deps.flowithos.syncFromFlowithOs({ silent: true });
+          } catch {
+            // best-effort
+          }
+          const afterFlowithOs = getRefreshToken(accountId);
+          if (afterFlowithOs && afterFlowithOs !== before) return;
+
+          await deps.loginBootstrap.waitForNewRefreshTokenFromOpenTab(accountId, { totalTimeoutMs: 8000 });
+          try {
+            await deps.flowithos.syncFromFlowithOs({ silent: true });
+          } catch {
+            // best-effort
+          }
+        },
+      });
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
+  ipcMain.handle(IPC_CHANNELS.FLOWITHOS_SYNC_FROM_FLOWITHOS, async () => {
+    try {
+      return await deps.flowithos.syncFromFlowithOs();
     } catch (e) {
       throw new Error(safeErrorMessage(e));
     }

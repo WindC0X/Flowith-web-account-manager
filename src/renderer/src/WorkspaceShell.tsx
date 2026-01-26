@@ -6,6 +6,7 @@ import type {
   DownloadEvent,
   DownloadPreferencesPublic,
   DownloadSaveMode,
+  FlowithOsStatus,
   ImportRefreshTokensOptions,
   ImportRefreshTokensResult,
   ProxyMode,
@@ -214,6 +215,20 @@ const UI_STRINGS = {
     refreshCredits: "刷新积分",
     updatedAtLabel: "更新时间",
     accountInfoUnavailable: "账号信息接口暂未接入（占位）",
+    flowithosSectionTitle: "FlowithOS",
+    flowithosStatusLabel: "状态",
+    flowithosPathLabel: "userData 目录",
+    flowithosLinkedLabel: "已关联账号",
+    flowithosLastSyncLabel: "上次同步",
+    flowithosWriteButton: "写入到 FlowithOS",
+    flowithosSyncButton: "从 FlowithOS 同步 token",
+    flowithosReady: "就绪",
+    flowithosHint: "写入后会自动关联该账号；FlowithOS 内部旋转 refresh_token 后会自动同步回本程序。",
+    toastFlowithOsWrote: "已写入 FlowithOS 会话",
+    toastFlowithOsSynced: "已从 FlowithOS 同步 token",
+    toastFlowithOsUpToDate: "FlowithOS token 已是最新",
+    toastFlowithOsNoMatch: "未找到可匹配账号，请先写入到 FlowithOS 或导入最新 token",
+    toastFlowithOsUserMismatch: "FlowithOS 当前账号与已关联账号不一致，已跳过同步",
     uaSectionTitle: "User-Agent",
     uaModeLabel: "模式",
     uaAuto: "随机预设",
@@ -388,6 +403,21 @@ const UI_STRINGS = {
     refreshCredits: "Refresh credits",
     updatedAtLabel: "Updated",
     accountInfoUnavailable: "Account info API not integrated yet (placeholder).",
+    flowithosSectionTitle: "FlowithOS",
+    flowithosStatusLabel: "Status",
+    flowithosPathLabel: "userData path",
+    flowithosLinkedLabel: "Linked account",
+    flowithosLastSyncLabel: "Last sync",
+    flowithosWriteButton: "Write to FlowithOS",
+    flowithosSyncButton: "Sync token from FlowithOS",
+    flowithosReady: "Ready",
+    flowithosHint:
+      "After writing, this account is linked. When FlowithOS rotates refresh_token, it syncs back to this app.",
+    toastFlowithOsWrote: "FlowithOS session written",
+    toastFlowithOsSynced: "Token synced from FlowithOS",
+    toastFlowithOsUpToDate: "FlowithOS token is up to date",
+    toastFlowithOsNoMatch: "No matching account. Write to FlowithOS or import the latest token first.",
+    toastFlowithOsUserMismatch: "FlowithOS user mismatches linked account; sync skipped",
     uaSectionTitle: "User-Agent",
     uaModeLabel: "Mode",
     uaAuto: "Random preset",
@@ -785,6 +815,7 @@ export default function WorkspaceShell() {
   const [downloadToasts, setDownloadToasts] = useState<DownloadToastState[]>([]);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus | null>(null);
   const [updaterRunning, setUpdaterRunning] = useState(false);
+  const [flowithOsStatus, setFlowithOsStatus] = useState<FlowithOsStatus | null>(null);
 
   const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>(() => loadAccountInfoCache());
 
@@ -2133,6 +2164,69 @@ export default function WorkspaceShell() {
     }
   }, [batchDeleteDialog, pushUiToast, refreshAccounts, t]);
 
+  const refreshFlowithOsStatus = useCallback(async () => {
+    try {
+      const status = await window.desktop.flowithos.getStatus();
+      setFlowithOsStatus(status);
+      return status;
+    } catch {
+      setFlowithOsStatus(null);
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!inspectorOpen) return;
+    void refreshFlowithOsStatus();
+  }, [inspectorOpen, refreshFlowithOsStatus]);
+
+  const writeFlowithOsFromFocused = useCallback(async () => {
+    if (!focusedAccountId) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await window.desktop.flowithos.writeSessionFromAccount(focusedAccountId);
+      if (!res.success) throw new Error(res.message);
+      pushUiToast("success", t("toastFlowithOsWrote"));
+      void refreshFlowithOsStatus();
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [focusedAccountId, pushUiToast, refreshFlowithOsStatus, t]);
+
+  const syncFromFlowithOsAction = useCallback(async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const res = await window.desktop.flowithos.syncFromFlowithOs();
+      if (!res.success) throw new Error(res.message);
+
+      if (res.updated) {
+        pushUiToast("success", t("toastFlowithOsSynced"));
+      } else if (res.reason === "up_to_date") {
+        pushUiToast("info", t("toastFlowithOsUpToDate"));
+      } else if (res.reason === "user_mismatch") {
+        pushUiToast("error", t("toastFlowithOsUserMismatch"));
+      } else if (res.reason === "no_match") {
+        pushUiToast("error", t("toastFlowithOsNoMatch"));
+      } else {
+        pushUiToast("info", t("toastFlowithOsUpToDate"));
+      }
+
+      void refreshFlowithOsStatus();
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [pushUiToast, refreshFlowithOsStatus, t]);
+
   useEffect(() => {
     const dlg = importDialogRef.current;
     if (!dlg) return;
@@ -3214,6 +3308,71 @@ export default function WorkspaceShell() {
                       {focusedAccountInfo.error}
                     </div>
                   ) : null}
+
+                  <div className="section-divider" />
+                  <div className="section-title">{t("flowithosSectionTitle")}</div>
+                  <div className="field">
+                    <div className="field-label">{t("flowithosStatusLabel")}</div>
+                    <div className="field-value">
+                      {flowithOsStatus ? (
+                        flowithOsStatus.reason ? (
+                          <span className="muted">{flowithOsStatus.reason}</span>
+                        ) : (
+                          <span className="mono">{t("flowithosReady")}</span>
+                        )
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">{t("flowithosPathLabel")}</div>
+                    <div className="field-value mono" title={flowithOsStatus?.userDataPath ?? undefined}>
+                      {flowithOsStatus ? flowithOsStatus.userDataPath : "-"}
+                    </div>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">{t("flowithosLinkedLabel")}</div>
+                    <div className="field-value mono">{flowithOsStatus?.linkedAccountId ? flowithOsStatus.linkedAccountId : "-"}</div>
+                  </div>
+                  <div className="field">
+                    <div className="field-label">{t("flowithosLastSyncLabel")}</div>
+                    <div className="field-value">
+                      {flowithOsStatus?.lastSyncedAt ? (
+                        <span className="mono">{formatDate(flowithOsStatus.lastSyncedAt, uiPrefs.locale)}</span>
+                      ) : (
+                        <span className="muted">-</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      className="btn"
+                      onClick={writeFlowithOsFromFocused}
+                      disabled={
+                        busy ||
+                        !focusedAccountId ||
+                        !flowithOsStatus ||
+                        flowithOsStatus.running ||
+                        !flowithOsStatus.sessionFileWritable
+                      }
+                    >
+                      {t("flowithosWriteButton")}
+                    </button>
+                    <button
+                      className="btn"
+                      onClick={syncFromFlowithOsAction}
+                      disabled={busy || !flowithOsStatus || !flowithOsStatus.sessionFileExists}
+                    >
+                      {t("flowithosSyncButton")}
+                    </button>
+                    <button className="btn" onClick={() => void refreshFlowithOsStatus()} disabled={busy}>
+                      {t("refresh")}
+                    </button>
+                  </div>
+                  <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+                    {t("flowithosHint")}
+                  </div>
 
                   <div className="section-divider" />
                   <div className="section-title">{t("networkSectionTitle")}</div>

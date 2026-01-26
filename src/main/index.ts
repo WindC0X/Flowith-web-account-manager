@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { registerIpcHandlers } from "./ipc";
 import { initUpdater } from "./updater/service";
+import { FlowithOsIntegrationService } from "./flowithos/flowithOsIntegrationService";
 import { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
 import { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 
@@ -99,7 +100,17 @@ app.whenReady().then(() => {
   initUpdater(() => activeWindow);
   const workspace = new WebWorkspaceService(mainWindow);
   const loginBootstrap = new FlowithLoginBootstrapService(workspace);
-  registerIpcHandlers({ workspace, loginBootstrap });
+  const flowithos = new FlowithOsIntegrationService();
+  registerIpcHandlers({ workspace, loginBootstrap, flowithos });
+
+  void (async () => {
+    try {
+      await flowithos.getStatus();
+      await flowithos.syncFromFlowithOs({ silent: true });
+    } catch {
+      // best-effort
+    }
+  })();
 
   let flushingBeforeQuit = false;
   app.on("before-quit", (event) => {
@@ -111,6 +122,11 @@ app.whenReady().then(() => {
         await loginBootstrap.syncOpenTabsBeforeQuit({ totalTimeoutMs: 2000, perTabTimeoutMs: 800 });
       } catch {
         // best-effort
+      }
+      try {
+        flowithos.dispose();
+      } catch {
+        // ignore
       }
       app.quit();
     })();
