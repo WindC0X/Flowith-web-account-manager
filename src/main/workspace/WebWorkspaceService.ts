@@ -164,16 +164,56 @@ export class WebWorkspaceService {
       void shell.openExternal(url);
     });
 
-    view.webContents.on("context-menu", () => {
-      const menu = Menu.buildFromTemplate([
-        {
-          label: "页面刷新",
-          accelerator: "CmdOrCtrl+R",
+    view.webContents.on("context-menu", (_event, params) => {
+      const template: Electron.MenuItemConstructorOptions[] = [];
+      const srcUrl = typeof params?.srcURL === "string" ? params.srcURL.trim() : "";
+      const linkUrl = typeof params?.linkURL === "string" ? params.linkURL.trim() : "";
+      const mediaType = typeof params?.mediaType === "string" ? params.mediaType : "none";
+
+      const downloadUrl =
+        mediaType !== "none" && srcUrl
+          ? srcUrl
+          : linkUrl && /^https?:/i.test(linkUrl)
+            ? linkUrl
+            : "";
+
+      if (downloadUrl) {
+        template.push({
+          label: "另存为…",
           click: () => {
-            view.webContents.reload();
+            try {
+              view.webContents.downloadURL(downloadUrl);
+            } catch {
+              // ignore
+            }
           },
+        });
+        template.push({ type: "separator" });
+      }
+
+      const editFlags = params?.editFlags;
+      const canCut = Boolean(editFlags?.canCut);
+      const canCopy = Boolean(editFlags?.canCopy);
+      const canPaste = Boolean(editFlags?.canPaste);
+      const canSelectAll = Boolean(editFlags?.canSelectAll);
+
+      template.push(
+        { label: "剪切", role: "cut", enabled: canCut },
+        { label: "复制", role: "copy", enabled: canCopy },
+        { label: "粘贴", role: "paste", enabled: canPaste },
+        { label: "全选", role: "selectAll", enabled: canSelectAll },
+        { type: "separator" }
+      );
+
+      template.push({
+        label: "页面刷新",
+        accelerator: "CmdOrCtrl+R",
+        click: () => {
+          view.webContents.reload();
         },
-      ]);
+      });
+
+      const menu = Menu.buildFromTemplate(template);
       menu.popup({ window: this.window });
     });
   }

@@ -19,6 +19,7 @@ export type UaConfig = {
 
 export type AccountMeta = {
   displayName: string;
+  pinned: boolean;
   tags: string[];
   net: {
     proxy: ProxyConfig;
@@ -30,6 +31,7 @@ export type AccountSummary = {
   id: string;
   fingerprint: string;
   displayName: string;
+  pinned: boolean;
   tags: string[];
   net: {
     proxy: ProxyConfig;
@@ -44,6 +46,8 @@ export type ImportRefreshTokensResult = {
   failed: number;
   warnings: string[];
   errors: string[];
+  creditsByAccountId?: Record<string, AccountCredits>;
+  creditsErrorsByAccountId?: Record<string, string>;
 };
 
 export type ImportRefreshTokensOptions = {
@@ -137,6 +141,16 @@ export type DownloadEvent =
       error?: string;
     };
 
+export type DownloadHistoryItem = {
+  id: string;
+  accountId: string;
+  filename: string;
+  receivedBytes: number;
+  totalBytes: number;
+  state: "progressing" | "completed" | "cancelled" | "interrupted";
+  updatedAt: number;
+};
+
 export type UpdaterState =
   | "idle"
   | "checking"
@@ -165,6 +179,19 @@ export type UpdaterStatus = {
 
 export type UpdaterEvent = { type: "status"; status: UpdaterStatus };
 
+export type AccountsImportProgressEvent =
+  | { type: "start"; total: number }
+  | {
+      type: "progress";
+      done: number;
+      total: number;
+      imported: number;
+      failed: number;
+      creditsFailed: number;
+      current?: { line: number; fingerprint: string; status: "ok" | "fail" };
+    }
+  | { type: "end"; total: number; imported: number; failed: number; creditsFailed: number };
+
 export type DesktopApi = {
   workspace: {
     openTab(accountId: string): Promise<void>;
@@ -177,6 +204,7 @@ export type DesktopApi = {
   };
   downloads: {
     subscribe(listener: (event: DownloadEvent) => void): () => void;
+    getHistory(): Promise<DownloadHistoryItem[]>;
     getPreferences(): Promise<DownloadPreferencesPublic>;
     setMode(mode: DownloadSaveMode): Promise<DownloadPreferencesPublic>;
     pickCustomDirectory(): Promise<DownloadPreferencesPublic>;
@@ -200,21 +228,17 @@ export type DesktopApi = {
   };
   accounts: {
     list(): Promise<AccountSummary[]>;
+    subscribeImportProgress(listener: (event: AccountsImportProgressEvent) => void): () => void;
     importRefreshTokens(text: string, options?: ImportRefreshTokensOptions): Promise<ImportRefreshTokensResult>;
     exportRefreshTokens(accountIds: string[]): Promise<string>;
-    refreshCredits(accountId: string): Promise<AccountCredits>;
     syncCreditsFromOpenTab(accountId: string): Promise<AccountCredits | null>;
+    isTokenEncryptionAvailable(): Promise<boolean>;
     delete(accountId: string): Promise<void>;
     testConnectivity(accountId: string): Promise<ConnectivityCheck[]>;
     updateAccountMeta(
       accountId: string,
       patch: AccountMetaPatch
     ): Promise<AccountSummary>;
-  };
-  flowithos: {
-    getStatus(): Promise<FlowithOsStatus>;
-    writeSessionFromAccount(accountId: string): Promise<FlowithOsWriteSessionResult>;
-    syncFromFlowithOs(): Promise<FlowithOsSyncResult>;
   };
   preferences: {
     get(): Promise<Preferences>;
@@ -231,6 +255,7 @@ export const IPC_CHANNELS = {
   WORKSPACE_CAPTURE_TAB_SNAPSHOT: "workspace:captureTabSnapshot",
   WORKSPACE_RELOAD_ACTIVE: "workspace:reloadActive",
 
+  DOWNLOADS_GET_HISTORY: "downloads:getHistory",
   DOWNLOADS_GET_PREFERENCES: "downloads:getPreferences",
   DOWNLOADS_SET_MODE: "downloads:setMode",
   DOWNLOADS_PICK_CUSTOM_DIRECTORY: "downloads:pickCustomDirectory",
@@ -252,15 +277,11 @@ export const IPC_CHANNELS = {
   ACCOUNTS_LIST: "accounts:list",
   ACCOUNTS_IMPORT_REFRESH_TOKENS: "accounts:importRefreshTokens",
   ACCOUNTS_EXPORT_REFRESH_TOKENS: "accounts:exportRefreshTokens",
-  ACCOUNTS_REFRESH_CREDITS: "accounts:refreshCredits",
   ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB: "accounts:syncCreditsFromOpenTab",
+  ACCOUNTS_IS_TOKEN_ENCRYPTION_AVAILABLE: "accounts:isTokenEncryptionAvailable",
   ACCOUNTS_DELETE: "accounts:delete",
   ACCOUNTS_TEST_CONNECTIVITY: "accounts:testConnectivity",
   ACCOUNTS_UPDATE_META: "accounts:updateMeta",
-
-  FLOWITHOS_GET_STATUS: "flowithos:getStatus",
-  FLOWITHOS_WRITE_SESSION_FROM_ACCOUNT: "flowithos:writeSessionFromAccount",
-  FLOWITHOS_SYNC_FROM_FLOWITHOS: "flowithos:syncFromFlowithOs",
 
   PREFERENCES_GET: "preferences:get",
   PREFERENCES_UPDATE: "preferences:update",
@@ -269,6 +290,7 @@ export const IPC_CHANNELS = {
 export const IPC_EVENTS = {
   DOWNLOAD_EVENT: "downloads:event",
   UPDATER_EVENT: "updater:event",
+  ACCOUNTS_IMPORT_PROGRESS_EVENT: "accounts:importProgress",
 } as const;
 
 export type IpcInvokeMap = {
@@ -289,6 +311,7 @@ export type IpcInvokeMap = {
   [IPC_CHANNELS.WORKSPACE_CAPTURE_TAB_SNAPSHOT]: { args: [accountId: string]; result: string | null };
   [IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE]: { args: []; result: void };
 
+  [IPC_CHANNELS.DOWNLOADS_GET_HISTORY]: { args: []; result: DownloadHistoryItem[] };
   [IPC_CHANNELS.DOWNLOADS_GET_PREFERENCES]: { args: []; result: DownloadPreferencesPublic };
   [IPC_CHANNELS.DOWNLOADS_SET_MODE]: { args: [mode: DownloadSaveMode]; result: DownloadPreferencesPublic };
   [IPC_CHANNELS.DOWNLOADS_PICK_CUSTOM_DIRECTORY]: { args: []; result: DownloadPreferencesPublic };
@@ -316,8 +339,8 @@ export type IpcInvokeMap = {
     args: [accountIds: string[]];
     result: string;
   };
-  [IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS]: { args: [accountId: string]; result: AccountCredits };
   [IPC_CHANNELS.ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB]: { args: [accountId: string]; result: AccountCredits | null };
+  [IPC_CHANNELS.ACCOUNTS_IS_TOKEN_ENCRYPTION_AVAILABLE]: { args: []; result: boolean };
   [IPC_CHANNELS.ACCOUNTS_DELETE]: { args: [accountId: string]; result: void };
   [IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY]: {
     args: [accountId: string];
@@ -327,13 +350,6 @@ export type IpcInvokeMap = {
     args: [accountId: string, patch: AccountMetaPatch];
     result: AccountSummary;
   };
-
-  [IPC_CHANNELS.FLOWITHOS_GET_STATUS]: { args: []; result: FlowithOsStatus };
-  [IPC_CHANNELS.FLOWITHOS_WRITE_SESSION_FROM_ACCOUNT]: {
-    args: [accountId: string];
-    result: FlowithOsWriteSessionResult;
-  };
-  [IPC_CHANNELS.FLOWITHOS_SYNC_FROM_FLOWITHOS]: { args: []; result: FlowithOsSyncResult };
 
   [IPC_CHANNELS.PREFERENCES_GET]: { args: []; result: Preferences };
   [IPC_CHANNELS.PREFERENCES_UPDATE]: {

@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
-import type { ImportRefreshTokensOptions, ImportRefreshTokensResult } from "../../shared/ipc";
+import type { AccountCredits, AccountsImportProgressEvent, ImportRefreshTokensOptions, ImportRefreshTokensResult } from "../../shared/ipc";
 import { USER_AGENT_PRESETS } from "../../shared/userAgentPresets";
+import { fetchAccountCreditsWithAccessToken } from "../flowith/credits";
 import { getFlowithSupabaseClient } from "../flowith/supabase";
 import { normalizeProxyConfig } from "../network/proxy";
 import { normalizeUaConfig } from "../network/userAgent";
@@ -26,14 +27,16 @@ function createAccountId(): string {
 }
 
 function pickRandomUaPresetId(): string | null {
-  if (USER_AGENT_PRESETS.length === 0) return null;
-  const idx = crypto.randomInt(USER_AGENT_PRESETS.length);
-  return USER_AGENT_PRESETS[idx]?.id ?? null;
+  const candidates = USER_AGENT_PRESETS.filter((p) => p.id !== "safari_ios");
+  if (candidates.length === 0) return null;
+  const idx = crypto.randomInt(candidates.length);
+  return candidates[idx]?.id ?? null;
 }
 
 export async function importRefreshTokens(
   tokens: string[],
-  options?: ImportRefreshTokensOptions
+  options?: ImportRefreshTokensOptions,
+  onProgress?: (event: AccountsImportProgressEvent) => void
 ): Promise<ImportRefreshTokensResult> {
   const warnings: string[] = [];
   if (!isTokenEncryptionAvailable()) {
@@ -48,6 +51,9 @@ export async function importRefreshTokens(
   let imported = 0;
   let failed = 0;
   const errors: string[] = [];
+  const creditsByAccountId: Record<string, AccountCredits> = {};
+  const creditsErrorsByAccountId: Record<string, string> = {};
+  let creditsFailed = 0;
 
   let supabase;
   try {
@@ -98,14 +104,61 @@ export async function importRefreshTokens(
         });
       }
       setRefreshToken(accountId, rotatedRefreshToken);
+
+      try {
+        const credits = await fetchAccountCreditsWithAccessToken(accountId, data.session.access_token ?? "");
+        creditsByAccountId[accountId] = credits;
+      } catch (e) {
+        creditsFailed += 1;
+        creditsErrorsByAccountId[accountId] = redactSensitive(e instanceof Error ? e.message : String(e));
+      }
       imported += 1;
+      try {
+        onProgress?.({
+          type: "progress",
+          done: i + 1,
+          total: tokens.length,
+          imported,
+          failed,
+          creditsFailed,
+          current: { line: i + 1, fingerprint: maskedFingerprint, status: "ok" },
+        });
+      } catch {
+        // ignore
+      }
     } catch (e) {
       failed += 1;
       errors.push(
         `line ${i + 1} (${maskedFingerprint}): ${redactSensitive(e instanceof Error ? e.message : String(e))}`
       );
+      try {
+        onProgress?.({
+          type: "progress",
+          done: i + 1,
+          total: tokens.length,
+          imported,
+          failed,
+          creditsFailed,
+          current: { line: i + 1, fingerprint: maskedFingerprint, status: "fail" },
+        });
+      } catch {
+        // ignore
+      }
     }
   }
 
-  return { imported, failed, warnings, errors };
+  if (creditsFailed > 0) {
+    warnings.push(
+      `Credits fetch failed for ${creditsFailed} imported account(s). You can open the tab for those accounts and retry.`
+    );
+  }
+
+  return {
+    imported,
+    failed,
+    warnings,
+    errors,
+    ...(Object.keys(creditsByAccountId).length > 0 ? { creditsByAccountId } : {}),
+    ...(Object.keys(creditsErrorsByAccountId).length > 0 ? { creditsErrorsByAccountId } : {}),
+  };
 }

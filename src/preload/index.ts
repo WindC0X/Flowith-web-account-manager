@@ -3,6 +3,7 @@ import {
   IPC_CHANNELS,
   IPC_EVENTS,
   type DesktopApi,
+  type AccountsImportProgressEvent,
   type DownloadEvent,
   type UpdaterEvent,
   type IpcArgs,
@@ -34,6 +35,7 @@ const api: DesktopApi = {
         ipcRenderer.removeListener(IPC_EVENTS.DOWNLOAD_EVENT, handler);
       };
     },
+    getHistory: () => invoke(IPC_CHANNELS.DOWNLOADS_GET_HISTORY),
     getPreferences: () => invoke(IPC_CHANNELS.DOWNLOADS_GET_PREFERENCES),
     setMode: (mode) => invoke(IPC_CHANNELS.DOWNLOADS_SET_MODE, mode),
     pickCustomDirectory: () => invoke(IPC_CHANNELS.DOWNLOADS_PICK_CUSTOM_DIRECTORY),
@@ -65,18 +67,22 @@ const api: DesktopApi = {
   },
   accounts: {
     list: () => invoke(IPC_CHANNELS.ACCOUNTS_LIST),
+    subscribeImportProgress: (listener) => {
+      const handler = (_event: Electron.IpcRendererEvent, payload: AccountsImportProgressEvent) => {
+        listener(payload);
+      };
+      ipcRenderer.on(IPC_EVENTS.ACCOUNTS_IMPORT_PROGRESS_EVENT, handler);
+      return () => {
+        ipcRenderer.removeListener(IPC_EVENTS.ACCOUNTS_IMPORT_PROGRESS_EVENT, handler);
+      };
+    },
     importRefreshTokens: (text, options) => invoke(IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS, text, options),
     exportRefreshTokens: (accountIds) => invoke(IPC_CHANNELS.ACCOUNTS_EXPORT_REFRESH_TOKENS, accountIds),
-    refreshCredits: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS, accountId),
     syncCreditsFromOpenTab: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB, accountId),
+    isTokenEncryptionAvailable: () => invoke(IPC_CHANNELS.ACCOUNTS_IS_TOKEN_ENCRYPTION_AVAILABLE),
     delete: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_DELETE, accountId),
     testConnectivity: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY, accountId),
     updateAccountMeta: (accountId, patch) => invoke(IPC_CHANNELS.ACCOUNTS_UPDATE_META, accountId, patch),
-  },
-  flowithos: {
-    getStatus: () => invoke(IPC_CHANNELS.FLOWITHOS_GET_STATUS),
-    writeSessionFromAccount: (accountId) => invoke(IPC_CHANNELS.FLOWITHOS_WRITE_SESSION_FROM_ACCOUNT, accountId),
-    syncFromFlowithOs: () => invoke(IPC_CHANNELS.FLOWITHOS_SYNC_FROM_FLOWITHOS),
   },
   preferences: {
     get: () => invoke(IPC_CHANNELS.PREFERENCES_GET),

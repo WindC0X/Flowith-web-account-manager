@@ -8,6 +8,7 @@ type StoredAccountV1 = {
   id: string;
   fingerprint?: string;
   displayName?: string;
+  pinned?: boolean;
   tags?: string[];
   net?: AccountSummary["net"];
   ua?: AccountSummary["ua"];
@@ -167,6 +168,7 @@ function toAccountSummary(account: StoredAccountV1): AccountSummary {
     id: account.id,
     fingerprint: account.fingerprint ?? "",
     displayName: account.displayName ?? "Account",
+    pinned: account.pinned ?? false,
     tags: account.tags ?? [],
     net: account.net ?? { proxy: { mode: "system" } },
     ua: account.ua ?? { mode: "default" },
@@ -175,6 +177,7 @@ function toAccountSummary(account: StoredAccountV1): AccountSummary {
 
 function applyPatch(current: StoredAccountV1, patch: AccountMetaPatch): StoredAccountV1 {
   const displayName = patch.displayName ?? current.displayName;
+  const pinned = patch.pinned ?? current.pinned;
   const tags = patch.tags !== undefined ? normalizeTags(patch.tags) : current.tags;
   const net = patch.net ?? current.net;
   const ua = patch.ua ?? current.ua;
@@ -182,6 +185,7 @@ function applyPatch(current: StoredAccountV1, patch: AccountMetaPatch): StoredAc
   const next: StoredAccountV1 = { id: current.id };
   if (current.fingerprint !== undefined) next.fingerprint = current.fingerprint;
   if (displayName !== undefined) next.displayName = displayName;
+  if (pinned !== undefined) next.pinned = pinned;
   if (tags !== undefined) next.tags = tags;
   if (net !== undefined) next.net = net;
   if (ua !== undefined) next.ua = ua;

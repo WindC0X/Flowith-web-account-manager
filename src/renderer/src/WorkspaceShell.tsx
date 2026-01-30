@@ -2,11 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 import { createPortal } from "react-dom";
 import type {
   AccountSummary,
+  AccountsImportProgressEvent,
   ConnectivityCheck,
   DownloadEvent,
   DownloadPreferencesPublic,
   DownloadSaveMode,
-  FlowithOsStatus,
   ImportRefreshTokensOptions,
   ImportRefreshTokensResult,
   ProxyMode,
@@ -32,13 +32,31 @@ type BatchTagsDialogState =
   | { open: false }
   | { open: true; accountIds: string[] };
 
+type BatchProxyDialogState =
+  | { open: false }
+  | { open: true; accountIds: string[] };
+
+type BatchUserAgentDialogState =
+  | { open: false }
+  | { open: true; accountIds: string[] };
+
 type BatchDeleteDialogState =
   | { open: false }
   | { open: true; accountIds: string[] };
 
-type Theme = "dark" | "light";
+type ImportProgressState = {
+  total: number;
+  done: number;
+  imported: number;
+  failed: number;
+  creditsFailed: number;
+  currentFingerprint: string | null;
+};
+
+type Theme = "dark" | "light" | "system";
 type Locale = "zh-CN" | "en";
 type AccountListViewMode = "cards" | "table";
+type AccountSortMode = "default" | "displayName" | "lastUsed" | "subscriptionExpiresAt" | "creditsUpdatedAt";
 type ImportUaMode = "auto" | UaMode;
 
 type AccountInfoStatus = "idle" | "loading" | "ready" | "unavailable";
@@ -70,13 +88,17 @@ type UiToastState = {
   createdAt: number;
 };
 
-type UiPreferencesV1 = {
-  version: 1;
+type UiPreferencesV2 = {
+  version: 2;
   theme: Theme;
   locale: Locale;
   sidebarCollapsed: boolean;
   accountListView: AccountListViewMode;
+  accountSort: AccountSortMode;
 };
+
+const DOWNLOAD_HISTORY_LIMIT = 1000;
+const DOWNLOAD_POPOVER_LIMIT = 10;
 
 const UI_PREFERENCES_KEY = "fwd_ui_preferences_v1";
 const LEGACY_SIDEBAR_COLLAPSED_KEY = "fwd_sidebar_collapsed";
@@ -90,13 +112,17 @@ const DEFAULT_ACCOUNT_INFO: AccountInfoEntry = {
   error: null,
 };
 
+const USER_AGENT_PRESETS_VISIBLE = USER_AGENT_PRESETS.filter((p) => p.id !== "safari_ios");
+const USER_AGENT_PRESET_VISIBLE_IDS = new Set(USER_AGENT_PRESETS_VISIBLE.map((p) => p.id));
+
 const UI_STRINGS = {
   "zh-CN": {
     subtitle: "桌面端 · 工作区",
     language: "语言",
-    theme: "主题",
-    themeDark: "深色",
-    themeLight: "浅色",
+	    theme: "主题",
+	    themeDark: "深色",
+	    themeLight: "浅色",
+	    themeSystem: "跟随系统",
     langZh: "简体中文",
     langEn: "English",
     settings: "设置",
@@ -109,16 +135,20 @@ const UI_STRINGS = {
     downloadsCustomDir: "自定义目录",
     downloadsPickDirectory: "选择目录",
     downloadsDirectoryNotSet: "未选择",
-    downloadShowInFolder: "在文件夹中显示",
+    downloadsViewAll: "查看全部",
+    downloadsHistoryTitle: "下载历史",
+    downloadsHistoryCount: "共 {count} 条记录",
+    downloadShowInFolder: "打开文件夹",
     downloadOpenFile: "打开",
     downloadCancelDownload: "取消下载",
     downloadCopyPath: "复制路径",
     downloadCopied: "已复制",
-    downloadStateProgress: "下载中",
-    downloadStateCompleted: "已完成",
-    downloadStateCancelled: "已取消",
-    downloadStateInterrupted: "已中断",
-	    toastDownloadStarted: "开始下载：{filename}",
+	    downloadStateProgress: "下载中",
+	    downloadStateCompleted: "已完成",
+	    downloadStateCancelled: "已取消",
+	    downloadStateInterrupted: "已中断",
+	    downloadsEmpty: "暂无下载记录。",
+		    toastDownloadStarted: "开始下载：{filename}",
 	    toastDownloadCompleted: "下载已完成：{filename}",
 	    toastDownloadCancelled: "下载已取消：{filename}",
 	    toastDownloadInterrupted: "下载已中断：{filename}",
@@ -142,11 +172,18 @@ const UI_STRINGS = {
 
     expandSidebar: "展开账号面板",
     collapseSidebar: "折叠账号面板",
-    sidebarTitle: "账号",
-    viewCards: "卡片视图",
-    viewTable: "表格视图",
-    selectAll: "全选",
-    selectedCount: "已选择 {count} 个",
+	    sidebarTitle: "账号",
+	    viewCards: "卡片视图",
+	    viewTable: "表格视图",
+	    sortLabel: "排序",
+	    sortDefault: "默认",
+	    sortDisplayName: "显示名",
+	    sortLastUsed: "最近使用",
+	    sortSubscriptionExpiresAt: "订阅到期",
+	    sortCreditsUpdatedAt: "积分更新时间",
+	    selectAll: "全选",
+	    selectedCount: "已选择 {count} 个",
+	    selectedCountShort: "已选 {count}",
     noAccounts: "暂无账号。请先导入 refresh_token。",
     noMatch: "无匹配结果。",
     openDetails: "打开详情",
@@ -176,17 +213,19 @@ const UI_STRINGS = {
 
     import: "导入",
     export: "导出",
-    batchOpen: "批量打开",
-    batchTags: "批量标签",
-    batchRefresh: "批量刷新",
-    batchDelete: "批量删除",
-    refresh: "刷新",
+	    batchOpen: "批量打开",
+	    batchTags: "批量标签",
+	    batchProxy: "批量代理",
+	    batchUa: "批量 UA",
+	    batchDelete: "批量删除",
+		    refresh: "刷新",
 
-    errorTitle: "错误",
-    toastTabOpened: "已打开 Tab",
-    toastTabClosed: "已关闭 Tab",
-    toastTabReloaded: "已刷新当前 Tab",
-    toastCreditsRefreshed: "积分已更新",
+	    errorTitle: "错误",
+	    tokenEncryptionWarningTitle: "重要提示",
+	    tokenEncryptionWarningBody: "系统加密不可用：refresh_token 不会持久化，重启后需要重新导入。",
+	    toastTabOpened: "已打开 Tab",
+	    toastTabClosed: "已关闭 Tab",
+	    toastTabReloaded: "已刷新当前 Tab",
 
     tabsAria: "账号标签页",
     noTabs: "暂无 Tab",
@@ -194,55 +233,76 @@ const UI_STRINGS = {
     workspaceSubtitle: "BrowserView 将覆盖此区域。折叠侧边栏 / 调整窗口尺寸不应遮挡顶栏与侧边栏控件。",
     openFocused: "打开（Focused）",
     closeFocused: "关闭（Focused）",
-    reloadActive: "刷新当前 Tab",
-    importResultChip: "导入结果：成功 {ok} · 失败 {fail}",
-    openCloseHint: "选择一个账号以打开/关闭 Tab。",
+	    reloadActive: "刷新当前 Tab",
+	    importResultChip: "导入结果：成功 {ok} · 失败 {fail}",
+	    importProgressChip: "导入中：{done}/{total} · 成功 {ok} · 失败 {fail}",
+	    openCloseHint: "选择一个账号以打开/关闭 Tab。",
 
-    inspectorTitle: "账号详情",
-    inspectorSelectHint: "选择一个账号以查看详情。",
-    displayNameLabel: "显示名",
-    accountIdLabel: "账号 ID",
-    fingerprintLabel: "指纹",
-    tagsLabel: "标签",
-    tagsPlaceholder: "tag1, tag2",
-    saveTags: "保存标签",
-    toastTagsSaved: "标签已保存",
+	    inspectorTitle: "账号详情",
+	    inspectorSelectHint: "选择一个账号以查看详情。",
+	    displayNameLabel: "显示名",
+	    saveDisplayName: "保存显示名",
+	    toastDisplayNameSaved: "显示名已保存",
+	    displayNameErrorRequired: "显示名不能为空。",
+	    identitySectionTitle: "基础信息",
+	    accountIdLabel: "账号 ID",
+	    fingerprintLabel: "指纹",
+	    advancedTechnicalIds: "高级 / 技术信息",
+	    tagsLabel: "标签",
+	    tagsPlaceholder: "tag1, tag2",
+	    saveTags: "保存标签",
+	    toastTagsSaved: "标签已保存",
     accountInfoTitle: "账号信息",
     subscriptionLabel: "订阅",
     subscriptionExpiresAtLabel: "订阅到期",
-    subscriptionExpiresAtChip: "到期 {date}",
-    creditsLabel: "积分",
-    refreshCredits: "刷新积分",
-    updatedAtLabel: "更新时间",
-    accountInfoUnavailable: "账号信息接口暂未接入（占位）",
-    flowithosSectionTitle: "FlowithOS",
-    flowithosStatusLabel: "状态",
-    flowithosPathLabel: "userData 目录",
-    flowithosLinkedLabel: "已关联账号",
-    flowithosLastSyncLabel: "上次同步",
-    flowithosWriteButton: "写入到 FlowithOS",
-    flowithosSyncButton: "从 FlowithOS 同步 token",
-    flowithosReady: "就绪",
-    flowithosHint: "写入后会自动关联该账号；FlowithOS 内部旋转 refresh_token 后会自动同步回本程序。",
-    toastFlowithOsWrote: "已写入 FlowithOS 会话",
-    toastFlowithOsSynced: "已从 FlowithOS 同步 token",
-    toastFlowithOsUpToDate: "FlowithOS token 已是最新",
-    toastFlowithOsNoMatch: "未找到可匹配账号，请先写入到 FlowithOS 或导入最新 token",
-    toastFlowithOsUserMismatch: "FlowithOS 当前账号与已关联账号不一致，已跳过同步",
-    uaSectionTitle: "User-Agent",
-    uaModeLabel: "模式",
-    uaAuto: "随机预设",
-    uaDefault: "默认",
+	    subscriptionExpiresAtChip: "到期 {date}",
+	    creditsLabel: "积分",
+	    creditsSyncHintOpenTab: "已打开 Tab：积分将从该 Tab 自动同步。",
+	    creditsSyncHintClosedTab: "未打开 Tab：打开该账号 Tab 后才能同步积分。",
+	    pin: "置顶",
+	    unpin: "取消置顶",
+	    tabChip: "Tab",
+	    tabOpenTitle: "Tab 已打开",
+	    tabClosedTitle: "Tab 未打开",
+	    healthPanel: "健康面板",
+	    healthCheck: "健康检查",
+	    healthCheckHint: "仅已打开 Tab",
+	    toastHealthCheckStarted: "已开始健康检查（仅已打开 Tab）",
+	    toastHealthNoOpenTabs: "暂无已打开 Tab",
+	    healthNeedsAttention: "需要关注",
+	    healthReasonError: "错误",
+	    healthReasonExpiringSoon: "订阅即将到期",
+	    healthReasonCreditsUnknown: "积分未知",
+	    healthReasonCreditsStale: "积分陈旧",
+	    healthTotalAccountsLabel: "总账号",
+	    healthOpenTabsLabel: "已打开 Tab",
+	    healthErrorsLabel: "错误",
+	    healthExpiringSoonLabel: "即将到期",
+	    healthCreditsStaleLabel: "积分陈旧",
+	    healthAllGood: "暂无需要关注的账号。",
+	    logPanel: "日志",
+	    clearLog: "清空日志",
+	    copyLog: "复制日志",
+	    toastCopied: "已复制",
+	    logDangerNote: "注意：日志用于排障回溯，可能包含敏感信息（已脱敏）。请勿外发/截图公开。",
+	    logEmpty: "暂无日志。",
+	    updatedAtLabel: "更新时间",
+	    accountInfoUnavailable: "账号信息接口暂未接入（占位）",
+	    uaSectionTitle: "User-Agent",
+	    uaModeLabel: "模式",
+	    uaAuto: "随机预设",
+	    uaDefault: "默认",
     uaPreset: "预设",
     uaCustom: "自定义",
     uaValueLabel: "值",
     uaHint: "默认：跟随系统；预设：从内置列表选择；自定义：输入 UA 字符串。修改后通常需要刷新当前 Tab 生效。",
     uaErrorRequired: "请填写有效的 User-Agent。",
     uaErrorTooLong: "User-Agent 过长（最多 512 字符）。",
-    uaErrorSingleLine: "User-Agent 不能包含换行。",
-    uaErrorPresetUnknown: "请选择一个有效的 User-Agent 预设。",
-	    openTab: "打开 Tab",
-	    closeTab: "关闭 Tab",
+	    uaErrorSingleLine: "User-Agent 不能包含换行。",
+	    uaErrorPresetUnknown: "请选择一个有效的 User-Agent 预设。",
+		    openTab: "打开 Tab",
+		    activateTab: "切换到 Tab",
+		    closeTab: "关闭 Tab",
 	    saveUa: "保存 UA",
 	    toastUaSaved: "User-Agent 已保存",
 	    reload: "刷新",
@@ -269,21 +329,27 @@ const UI_STRINGS = {
 	    confirmDelete: "确认删除",
     closeTabTitle: "关闭 Tab",
 
-    batchTagsTitle: "批量设置标签",
-    batchTagsNote: "将把标签应用到已选择的 {count} 个账号（逗号/空白分隔）。",
-    batchDeleteTitle: "批量删除账号",
-    batchDeleteNote: "将删除已选择的 {count} 个账号并关闭对应 Tab。此操作不可撤销。",
-    confirmApply: "应用",
-    toastBatchTagsResult: "批量标签：成功 {ok} · 失败 {fail}",
-    toastBatchRefreshResult: "批量刷新：成功 {ok} · 失败 {fail}",
-    toastBatchDeleteResult: "批量删除：成功 {ok} · 失败 {fail}",
-  },
+	    batchTagsTitle: "批量设置标签",
+	    batchTagsNote: "将把标签应用到已选择的 {count} 个账号（逗号/空白分隔）。",
+	    batchProxyTitle: "批量设置代理",
+	    batchProxyNote: "将把代理设置应用到已选择的 {count} 个账号。",
+	    batchUaTitle: "批量设置 User-Agent",
+	    batchUaNote: "将把 User-Agent 设置应用到已选择的 {count} 个账号。",
+	    batchDeleteTitle: "批量删除账号",
+	    batchDeleteNote: "将删除已选择的 {count} 个账号并关闭对应 Tab。此操作不可撤销。",
+		    confirmApply: "应用",
+		    toastBatchTagsResult: "批量标签：成功 {ok} · 失败 {fail}",
+		    toastBatchProxyResult: "批量代理：成功 {ok} · 失败 {fail}",
+		    toastBatchUaResult: "批量 User-Agent：成功 {ok} · 失败 {fail}",
+		    toastBatchDeleteResult: "批量删除：成功 {ok} · 失败 {fail}",
+	  },
   en: {
     subtitle: "Desktop · Workspace UI",
     language: "Language",
-    theme: "Theme",
-    themeDark: "Dark",
-    themeLight: "Light",
+	    theme: "Theme",
+	    themeDark: "Dark",
+	    themeLight: "Light",
+	    themeSystem: "System",
     langZh: "简体中文",
     langEn: "English",
     settings: "Settings",
@@ -296,16 +362,20 @@ const UI_STRINGS = {
     downloadsCustomDir: "Custom directory",
     downloadsPickDirectory: "Pick directory",
     downloadsDirectoryNotSet: "Not set",
+    downloadsViewAll: "View all",
+    downloadsHistoryTitle: "Download history",
+    downloadsHistoryCount: "Total {count} items",
     downloadShowInFolder: "Show in folder",
     downloadOpenFile: "Open",
     downloadCancelDownload: "Cancel",
     downloadCopyPath: "Copy path",
     downloadCopied: "Copied",
-    downloadStateProgress: "Downloading",
-    downloadStateCompleted: "Completed",
-    downloadStateCancelled: "Cancelled",
-    downloadStateInterrupted: "Interrupted",
-	    toastDownloadStarted: "Download started: {filename}",
+	    downloadStateProgress: "Downloading",
+	    downloadStateCompleted: "Completed",
+	    downloadStateCancelled: "Cancelled",
+	    downloadStateInterrupted: "Interrupted",
+	    downloadsEmpty: "No downloads yet.",
+		    toastDownloadStarted: "Download started: {filename}",
 	    toastDownloadCompleted: "Download completed: {filename}",
 	    toastDownloadCancelled: "Download cancelled: {filename}",
 	    toastDownloadInterrupted: "Download interrupted: {filename}",
@@ -329,11 +399,18 @@ const UI_STRINGS = {
 
     expandSidebar: "Expand accounts",
     collapseSidebar: "Collapse accounts",
-    sidebarTitle: "Accounts",
-    viewCards: "Cards view",
-    viewTable: "Table view",
-    selectAll: "Select all",
-    selectedCount: "Selected {count}",
+	    sidebarTitle: "Accounts",
+	    viewCards: "Cards view",
+	    viewTable: "Table view",
+	    sortLabel: "Sort",
+	    sortDefault: "Default",
+	    sortDisplayName: "Display name",
+	    sortLastUsed: "Last used",
+	    sortSubscriptionExpiresAt: "Subscription expires",
+	    sortCreditsUpdatedAt: "Credits updated",
+	    selectAll: "Select all",
+	    selectedCount: "Selected {count}",
+	    selectedCountShort: "{count} selected",
     noAccounts: "No accounts yet. Import refresh_token to create accounts.",
     noMatch: "No results.",
     openDetails: "Open details",
@@ -363,17 +440,19 @@ const UI_STRINGS = {
 
     import: "Import",
     export: "Export",
-    batchOpen: "Open tabs",
-    batchTags: "Batch tags",
-    batchRefresh: "Batch refresh",
+	    batchOpen: "Open tabs",
+	    batchTags: "Batch tags",
+	    batchProxy: "Batch proxy",
+	    batchUa: "Batch UA",
     batchDelete: "Batch delete",
-    refresh: "Refresh",
+		    refresh: "Refresh",
 
-    errorTitle: "Error",
-    toastTabOpened: "Tab opened",
-    toastTabClosed: "Tab closed",
-    toastTabReloaded: "Tab reloaded",
-    toastCreditsRefreshed: "Credits updated",
+	    errorTitle: "Error",
+	    tokenEncryptionWarningTitle: "Important",
+	    tokenEncryptionWarningBody: "Token encryption is unavailable. refresh_token is not persisted and must be re-imported after restart.",
+	    toastTabOpened: "Tab opened",
+	    toastTabClosed: "Tab closed",
+	    toastTabReloaded: "Tab reloaded",
 
     tabsAria: "Account tabs",
     noTabs: "No tabs",
@@ -382,46 +461,65 @@ const UI_STRINGS = {
       "BrowserView overlays this area. Sidebar collapse / window resize should not block controls.",
     openFocused: "Open (Focused)",
     closeFocused: "Close (Focused)",
-    reloadActive: "Reload active",
-    importResultChip: "Import: ok {ok} · failed {fail}",
-    openCloseHint: "Select an account to open/close a tab.",
+	    reloadActive: "Reload active",
+	    importResultChip: "Import: ok {ok} · failed {fail}",
+	    importProgressChip: "Importing: {done}/{total} · ok {ok} · failed {fail}",
+	    openCloseHint: "Select an account to open/close a tab.",
 
-    inspectorTitle: "Account details",
-    inspectorSelectHint: "Select an account to view details.",
-    displayNameLabel: "Display name",
-    accountIdLabel: "Account id",
-    fingerprintLabel: "Fingerprint",
-    tagsLabel: "Tags",
-    tagsPlaceholder: "tag1, tag2",
-    saveTags: "Save tags",
-    toastTagsSaved: "Tags saved",
+	    inspectorTitle: "Account details",
+	    inspectorSelectHint: "Select an account to view details.",
+	    displayNameLabel: "Display name",
+	    saveDisplayName: "Save display name",
+	    toastDisplayNameSaved: "Display name saved",
+	    displayNameErrorRequired: "Display name is required.",
+	    identitySectionTitle: "Identity",
+	    accountIdLabel: "Account id",
+	    fingerprintLabel: "Fingerprint",
+	    advancedTechnicalIds: "Advanced / technical",
+	    tagsLabel: "Tags",
+	    tagsPlaceholder: "tag1, tag2",
+	    saveTags: "Save tags",
+	    toastTagsSaved: "Tags saved",
     accountInfoTitle: "Account info",
     subscriptionLabel: "Subscription",
     subscriptionExpiresAtLabel: "Subscription expires",
-    subscriptionExpiresAtChip: "Exp {date}",
-    creditsLabel: "Credits",
-    refreshCredits: "Refresh credits",
-    updatedAtLabel: "Updated",
-    accountInfoUnavailable: "Account info API not integrated yet (placeholder).",
-    flowithosSectionTitle: "FlowithOS",
-    flowithosStatusLabel: "Status",
-    flowithosPathLabel: "userData path",
-    flowithosLinkedLabel: "Linked account",
-    flowithosLastSyncLabel: "Last sync",
-    flowithosWriteButton: "Write to FlowithOS",
-    flowithosSyncButton: "Sync token from FlowithOS",
-    flowithosReady: "Ready",
-    flowithosHint:
-      "After writing, this account is linked. When FlowithOS rotates refresh_token, it syncs back to this app.",
-    toastFlowithOsWrote: "FlowithOS session written",
-    toastFlowithOsSynced: "Token synced from FlowithOS",
-    toastFlowithOsUpToDate: "FlowithOS token is up to date",
-    toastFlowithOsNoMatch: "No matching account. Write to FlowithOS or import the latest token first.",
-    toastFlowithOsUserMismatch: "FlowithOS user mismatches linked account; sync skipped",
-    uaSectionTitle: "User-Agent",
-    uaModeLabel: "Mode",
-    uaAuto: "Random preset",
-    uaDefault: "Default",
+	    subscriptionExpiresAtChip: "Exp {date}",
+	    creditsLabel: "Credits",
+	    creditsSyncHintOpenTab: "Tab is open. Credits are synced automatically from the tab.",
+	    creditsSyncHintClosedTab: "Open the tab to sync credits.",
+	    pin: "Pin",
+	    unpin: "Unpin",
+	    tabChip: "Tab",
+	    tabOpenTitle: "Tab is open",
+	    tabClosedTitle: "Tab is closed",
+	    healthPanel: "Health",
+	    healthCheck: "Health check",
+	    healthCheckHint: "Open tabs only",
+	    toastHealthCheckStarted: "Health check started (open tabs only)",
+	    toastHealthNoOpenTabs: "No open tabs",
+	    healthNeedsAttention: "Needs attention",
+	    healthReasonError: "Error",
+	    healthReasonExpiringSoon: "Expiring soon",
+	    healthReasonCreditsUnknown: "Credits unknown",
+	    healthReasonCreditsStale: "Credits stale",
+	    healthTotalAccountsLabel: "Accounts",
+	    healthOpenTabsLabel: "Open tabs",
+	    healthErrorsLabel: "Errors",
+	    healthExpiringSoonLabel: "Expiring soon",
+	    healthCreditsStaleLabel: "Credits stale",
+	    healthAllGood: "No issues detected.",
+	    logPanel: "Logs",
+	    clearLog: "Clear logs",
+	    copyLog: "Copy logs",
+	    toastCopied: "Copied",
+	    logDangerNote: "Sensitive: logs are for troubleshooting and may contain redacted secrets. Do not share publicly.",
+	    logEmpty: "No logs yet.",
+	    updatedAtLabel: "Updated",
+	    accountInfoUnavailable: "Account info API not integrated yet (placeholder).",
+	    uaSectionTitle: "User-Agent",
+	    uaModeLabel: "Mode",
+	    uaAuto: "Random preset",
+	    uaDefault: "Default",
     uaPreset: "Preset",
     uaCustom: "Custom",
     uaValueLabel: "Value",
@@ -429,10 +527,11 @@ const UI_STRINGS = {
       "Default: follow system; Preset: choose from built-in list; Custom: enter UA string. Changing User-Agent usually requires reloading the tab.",
     uaErrorRequired: "Please enter a valid User-Agent.",
     uaErrorTooLong: "User-Agent is too long (max 512 chars).",
-    uaErrorSingleLine: "User-Agent must be single-line.",
-    uaErrorPresetUnknown: "Please select a valid User-Agent preset.",
-		    openTab: "Open tab",
-		    closeTab: "Close tab",
+	    uaErrorSingleLine: "User-Agent must be single-line.",
+	    uaErrorPresetUnknown: "Please select a valid User-Agent preset.",
+			    openTab: "Open tab",
+			    activateTab: "Activate tab",
+			    closeTab: "Close tab",
 		    saveUa: "Save UA",
 		    toastUaSaved: "User-Agent saved",
 		    reload: "Reload",
@@ -460,15 +559,20 @@ const UI_STRINGS = {
 	    confirmDelete: "Delete",
     closeTabTitle: "Close tab",
 
-    batchTagsTitle: "Batch tags",
-    batchTagsNote: "Applies tags to {count} selected account(s) (comma/space separated).",
-    batchDeleteTitle: "Batch delete",
-    batchDeleteNote: "Deletes {count} selected account(s) and closes their tabs. This cannot be undone.",
-    confirmApply: "Apply",
-    toastBatchTagsResult: "Batch tags: ok {ok} · failed {fail}",
-    toastBatchRefreshResult: "Batch refresh: ok {ok} · failed {fail}",
-    toastBatchDeleteResult: "Batch delete: ok {ok} · failed {fail}",
-  },
+	    batchTagsTitle: "Batch tags",
+	    batchTagsNote: "Applies tags to {count} selected account(s) (comma/space separated).",
+	    batchProxyTitle: "Batch proxy",
+	    batchProxyNote: "Applies proxy settings to {count} selected account(s).",
+	    batchUaTitle: "Batch User-Agent",
+	    batchUaNote: "Applies User-Agent settings to {count} selected account(s).",
+	    batchDeleteTitle: "Batch delete",
+	    batchDeleteNote: "Deletes {count} selected account(s) and closes their tabs. This cannot be undone.",
+		    confirmApply: "Apply",
+		    toastBatchTagsResult: "Batch tags: ok {ok} · failed {fail}",
+		    toastBatchProxyResult: "Batch proxy: ok {ok} · failed {fail}",
+		    toastBatchUaResult: "Batch UA: ok {ok} · failed {fail}",
+		    toastBatchDeleteResult: "Batch delete: ok {ok} · failed {fail}",
+	  },
 } as const;
 
 type StringKey = keyof (typeof UI_STRINGS)["zh-CN"];
@@ -495,6 +599,19 @@ function formatUpdatedAt(value: number, locale: Locale): string {
   }
 }
 
+function formatUpdatedAgeShort(value: number, locale: Locale): string {
+  if (!Number.isFinite(value) || value <= 0) return "-";
+  const deltaMs = Date.now() - value;
+  if (!Number.isFinite(deltaMs) || deltaMs < 0) return "-";
+  if (deltaMs < 60_000) return locale === "zh-CN" ? "刚刚" : "now";
+  const minutes = Math.floor(deltaMs / 60_000);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.floor(hours / 24);
+  return `${days}d`;
+}
+
 function formatDate(value: number, locale: Locale): string {
   try {
     return new Date(value).toLocaleDateString(locale);
@@ -516,10 +633,24 @@ function formatBytes(bytes: number): string {
   return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
+function formatCreditsValue(raw: string): string {
+  const trimmed = raw.trim();
+  if (!trimmed) return "-";
+  const slashIndex = trimmed.indexOf("/");
+  if (slashIndex === -1) return trimmed;
+  return trimmed.slice(0, slashIndex).trim() || trimmed;
+}
+
 function formatProxyModeLabel(mode: ProxyMode, t: (key: StringKey) => string): string {
   if (mode === "system") return t("proxySystem");
   if (mode === "custom") return t("proxyCustom");
   return t("proxyDirect");
+}
+
+function formatProxyModeShort(mode: ProxyMode): string {
+  if (mode === "system") return "SYS";
+  if (mode === "custom") return "CUS";
+  return "DIR";
 }
 
 function containsProxyCredentials(text: string): boolean {
@@ -542,6 +673,12 @@ function formatUaModeLabel(mode: UaMode, t: (key: StringKey) => string): string 
   return t("uaCustom");
 }
 
+function formatUaModeShort(mode: UaMode): string {
+  if (mode === "default") return "D";
+  if (mode === "preset") return "P";
+  return "C";
+}
+
 function formatDownloadStateLabel(state: DownloadToastState["state"], t: (key: StringKey) => string): string {
   if (state === "progressing") return t("downloadStateProgress");
   if (state === "completed") return t("downloadStateCompleted");
@@ -560,8 +697,12 @@ function formatUpdaterStateLabel(state: UpdaterStatus["state"], t: (key: StringK
 }
 
 function toErrorMessage(error: unknown): string {
-  if (error instanceof Error && typeof error.message === "string") return error.message;
-  return String(error);
+  const raw = error instanceof Error && typeof error.message === "string" ? error.message : String(error);
+
+  // Electron invoke errors are often wrapped like:
+  // "Error invoking remote method 'channel': Error: <message>"
+  const withoutInvokePrefix = raw.replace(/^Error invoking remote method '[^']+':\s*/i, "");
+  return withoutInvokePrefix.replace(/^Error:\s*/i, "").trim() || "Unknown error";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -569,7 +710,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function normalizeTheme(value: unknown): Theme | null {
-  return value === "dark" || value === "light" ? value : null;
+  return value === "dark" || value === "light" || value === "system" ? value : null;
 }
 
 function normalizeLocale(value: unknown): Locale | null {
@@ -580,20 +721,34 @@ function normalizeViewMode(value: unknown): AccountListViewMode | null {
   return value === "cards" || value === "table" ? value : null;
 }
 
+function normalizeAccountSort(value: unknown): AccountSortMode | null {
+  if (
+    value === "default" ||
+    value === "displayName" ||
+    value === "lastUsed" ||
+    value === "subscriptionExpiresAt" ||
+    value === "creditsUpdatedAt"
+  ) {
+    return value;
+  }
+  return null;
+}
+
 function normalizeBoolean(value: unknown): boolean | null {
   return value === true || value === false ? value : null;
 }
 
-function loadUiPreferences(): UiPreferencesV1 {
-  const defaults: UiPreferencesV1 = {
-    version: 1,
+function loadUiPreferences(): UiPreferencesV2 {
+  const defaults: UiPreferencesV2 = {
+    version: 2,
     theme: "dark",
     locale: "zh-CN",
     sidebarCollapsed: false,
     accountListView: "cards",
+    accountSort: "default",
   };
 
-  const next: UiPreferencesV1 = { ...defaults };
+  const next: UiPreferencesV2 = { ...defaults };
 
   try {
     const raw = window.localStorage.getItem(UI_PREFERENCES_KEY);
@@ -611,6 +766,9 @@ function loadUiPreferences(): UiPreferencesV1 {
 
         const view = normalizeViewMode(parsed.accountListView ?? parsed.viewMode);
         if (view) next.accountListView = view;
+
+        const sort = normalizeAccountSort(parsed.accountSort);
+        if (sort) next.accountSort = sort;
       }
     }
   } catch {
@@ -628,7 +786,7 @@ function loadUiPreferences(): UiPreferencesV1 {
   return next;
 }
 
-function persistUiPreferences(prefs: UiPreferencesV1): void {
+function persistUiPreferences(prefs: UiPreferencesV2): void {
   try {
     window.localStorage.setItem(UI_PREFERENCES_KEY, JSON.stringify(prefs));
   } catch {
@@ -707,8 +865,75 @@ function persistAccountInfoCache(entries: Record<string, AccountInfoEntry>): voi
   }
 }
 
+const ACCOUNT_LAST_USED_CACHE_KEY_V1 = "fwd_account_last_used_cache_v1";
+type AccountLastUsedCacheV1 = { version: 1; byId: Record<string, number> };
+
+function loadAccountLastUsedCache(): Record<string, number> {
+  try {
+    const raw = window.localStorage.getItem(ACCOUNT_LAST_USED_CACHE_KEY_V1);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.byId)) return {};
+    const next: Record<string, number> = {};
+    for (const [accountId, value] of Object.entries(parsed.byId)) {
+      if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) continue;
+      next[accountId] = value;
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function persistAccountLastUsedCache(byId: Record<string, number>): void {
+  try {
+    const payload: AccountLastUsedCacheV1 = { version: 1, byId };
+    window.localStorage.setItem(ACCOUNT_LAST_USED_CACHE_KEY_V1, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+}
+
+const UI_LOG_CACHE_KEY_V1 = "fwd_ui_log_cache_v1";
+type UiLogEntry = { kind: UiToastKind; message: string; createdAt: number };
+type UiLogCacheV1 = { version: 1; entries: UiLogEntry[] };
+
+function loadUiLogCache(): UiLogEntry[] {
+  try {
+    const raw = window.localStorage.getItem(UI_LOG_CACHE_KEY_V1);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRecord(parsed) || parsed.version !== 1) return [];
+    if (!Array.isArray(parsed.entries)) return [];
+
+    const next: UiLogEntry[] = [];
+    for (const item of parsed.entries) {
+      if (!isRecord(item)) continue;
+      const kind = item.kind;
+      if (kind !== "success" && kind !== "error" && kind !== "info") continue;
+      const message = typeof item.message === "string" ? item.message : null;
+      const createdAt = item.createdAt;
+      if (!message) continue;
+      if (typeof createdAt !== "number" || !Number.isFinite(createdAt) || createdAt <= 0) continue;
+      next.push({ kind, message, createdAt });
+    }
+    return next.slice(0, 200);
+  } catch {
+    return [];
+  }
+}
+
+function persistUiLogCache(entries: UiLogEntry[]): void {
+  try {
+    const payload: UiLogCacheV1 = { version: 1, entries: entries.slice(0, 200) };
+    window.localStorage.setItem(UI_LOG_CACHE_KEY_V1, JSON.stringify(payload));
+  } catch {
+    // ignore
+  }
+}
+
 export default function WorkspaceShell() {
-  const [uiPrefs, setUiPrefs] = useState<UiPreferencesV1>(() => loadUiPreferences());
+  const [uiPrefs, setUiPrefs] = useState<UiPreferencesV2>(() => loadUiPreferences());
 
   const [accounts, setAccounts] = useState<AccountSummary[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -718,12 +943,22 @@ export default function WorkspaceShell() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uiToasts, setUiToasts] = useState<UiToastState[]>([]);
+  const [uiLog, setUiLog] = useState<UiLogEntry[]>(() => loadUiLogCache());
+  const [tokenEncryptionAvailable, setTokenEncryptionAvailable] = useState<boolean | null>(null);
   const [searchText, setSearchText] = useState("");
 
-  const strings = UI_STRINGS[uiPrefs.locale];
-  const t = useCallback((key: StringKey) => strings[key], [strings]);
-  const isWindows = useMemo(() => /windows/i.test(navigator.userAgent), []);
-  const [windowMaximized, setWindowMaximized] = useState(false);
+	  const strings = UI_STRINGS[uiPrefs.locale];
+	  const t = useCallback((key: StringKey) => strings[key], [strings]);
+	  const isWindows = useMemo(() => /windows/i.test(navigator.userAgent), []);
+	  const [windowMaximized, setWindowMaximized] = useState(false);
+	  const [systemTheme, setSystemTheme] = useState<"dark" | "light">(() => {
+	    try {
+	      return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+	    } catch {
+	      return "dark";
+	    }
+	  });
+	  const resolvedTheme = uiPrefs.theme === "system" ? systemTheme : uiPrefs.theme;
 
   const dismissUiToast = useCallback((toastId: string) => {
     const handle = uiToastTimersRef.current.get(toastId);
@@ -734,54 +969,70 @@ export default function WorkspaceShell() {
     setUiToasts((prev) => prev.filter((t) => t.id !== toastId));
   }, []);
 
-  const pushUiToast = useCallback(
-    (kind: UiToastKind, message: string, opts?: { autoDismissMs?: number }) => {
-      for (const handle of uiToastTimersRef.current.values()) window.clearTimeout(handle);
-      uiToastTimersRef.current.clear();
+	  const pushUiToast = useCallback(
+	    (kind: UiToastKind, message: string, opts?: { autoDismissMs?: number | null }) => {
+	      const id =
+	        typeof crypto !== "undefined" && "randomUUID" in crypto
+	          ? crypto.randomUUID()
+	          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-      const id =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+	      const normalized = message.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+	      const createdAt = Date.now();
 
-      const normalized = message.replace(/[\r\n]+/g, " ").replace(/\s+/g, " ").trim();
+	      setUiToasts((prev) => {
+	        const nextToast = { id, kind, message: normalized, createdAt };
+	        if (kind === "error") return [nextToast, ...prev].slice(0, 4);
+	        return [nextToast, ...prev.filter((t) => t.kind === "error")].slice(0, 4);
+	      });
 
-      setUiToasts([{ id, kind, message: normalized, createdAt: Date.now() }]);
+	      setUiLog((prev) => [{ kind, message: normalized, createdAt }, ...prev].slice(0, 200));
 
-      const autoDismissMs = opts?.autoDismissMs ?? (kind === "error" ? 8000 : 3500);
-      const timeout = window.setTimeout(() => dismissUiToast(id), autoDismissMs);
-      uiToastTimersRef.current.set(id, timeout);
-    },
-    [dismissUiToast]
-  );
+	      const autoDismissMs = opts?.autoDismissMs ?? (kind === "error" ? null : 3500);
+	      if (typeof autoDismissMs === "number" && autoDismissMs > 0) {
+	        const timeout = window.setTimeout(() => dismissUiToast(id), autoDismissMs);
+	        uiToastTimersRef.current.set(id, timeout);
+	      }
+	    },
+	    [dismissUiToast]
+	  );
+
+  useEffect(() => {
+    const timers = uiToastTimersRef.current;
+    const active = new Set(uiToasts.map((t) => t.id));
+    for (const [id, handle] of [...timers.entries()]) {
+      if (active.has(id)) continue;
+      window.clearTimeout(handle);
+      timers.delete(id);
+    }
+  }, [uiToasts]);
 
   useEffect(() => {
     const uiToastTimers = uiToastTimersRef.current;
     const downloadTimers = downloadAutoDismissTimersRef.current;
+    const creditSyncTimers = creditSyncTimersRef.current;
     return () => {
       for (const handle of uiToastTimers.values()) window.clearTimeout(handle);
       uiToastTimers.clear();
       for (const handle of downloadTimers.values()) window.clearTimeout(handle);
       downloadTimers.clear();
+      for (const handles of creditSyncTimers.values()) for (const handle of handles) window.clearTimeout(handle);
+      creditSyncTimers.clear();
     };
   }, []);
-
-  useEffect(() => {
-    if (!error) return;
-    const timeout = window.setTimeout(() => setError(null), 8000);
-    return () => window.clearTimeout(timeout);
-  }, [error]);
 
   const viewMode = uiPrefs.accountListView;
   const sidebarCollapsed = uiPrefs.sidebarCollapsed;
 
-  const updateUiPrefs = useCallback((patch: Partial<Omit<UiPreferencesV1, "version">>) => {
-    setUiPrefs((prev) => ({ ...prev, ...patch, version: 1 }));
+  const updateUiPrefs = useCallback((patch: Partial<Omit<UiPreferencesV2, "version">>) => {
+    setUiPrefs((prev) => ({ ...prev, ...patch, version: 2 }));
   }, []);
 
   const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [healthDialogOpen, setHealthDialogOpen] = useState(false);
+  const [logDialogOpen, setLogDialogOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importResult, setImportResult] = useState<ImportRefreshTokensResult | null>(null);
+  const [importProgress, setImportProgress] = useState<ImportProgressState | null>(null);
   const [importProxyMode, setImportProxyMode] = useState<ProxyMode>("system");
   const [importProxyRules, setImportProxyRules] = useState("");
   const [importProxyInlineError, setImportProxyInlineError] = useState<string | null>(null);
@@ -793,9 +1044,18 @@ export default function WorkspaceShell() {
   const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
   const [batchTagsDialog, setBatchTagsDialog] = useState<BatchTagsDialogState>({ open: false });
   const [batchTagsDraft, setBatchTagsDraft] = useState("");
+  const [batchProxyDialog, setBatchProxyDialog] = useState<BatchProxyDialogState>({ open: false });
+  const [batchProxyMode, setBatchProxyMode] = useState<ProxyMode>("system");
+  const [batchProxyRules, setBatchProxyRules] = useState("");
+  const [batchProxyInlineError, setBatchProxyInlineError] = useState<string | null>(null);
+  const [batchUserAgentDialog, setBatchUserAgentDialog] = useState<BatchUserAgentDialogState>({ open: false });
+  const [batchUaMode, setBatchUaMode] = useState<UaMode>("default");
+  const [batchUaValue, setBatchUaValue] = useState("");
+  const [batchUaInlineError, setBatchUaInlineError] = useState<string | null>(null);
   const [batchDeleteDialog, setBatchDeleteDialog] = useState<BatchDeleteDialogState>({ open: false });
-  const [batchRefreshRunning, setBatchRefreshRunning] = useState(false);
 
+  const [displayNameDraft, setDisplayNameDraft] = useState("");
+  const [displayNameInlineError, setDisplayNameInlineError] = useState<string | null>(null);
   const [tagsDraft, setTagsDraft] = useState("");
   const [proxyMode, setProxyMode] = useState<ProxyMode>("system");
   const [proxyRules, setProxyRules] = useState("");
@@ -810,14 +1070,15 @@ export default function WorkspaceShell() {
 
   const [settingsPopoverOpen, setSettingsPopoverOpen] = useState(false);
   const [downloadsPopoverOpen, setDownloadsPopoverOpen] = useState(false);
+  const [downloadsDialogOpen, setDownloadsDialogOpen] = useState(false);
   const [selectOverlayOpen, setSelectOverlayOpen] = useState(false);
   const [downloadPrefs, setDownloadPrefs] = useState<DownloadPreferencesPublic | null>(null);
   const [downloadToasts, setDownloadToasts] = useState<DownloadToastState[]>([]);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus | null>(null);
   const [updaterRunning, setUpdaterRunning] = useState(false);
-  const [flowithOsStatus, setFlowithOsStatus] = useState<FlowithOsStatus | null>(null);
 
   const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>(() => loadAccountInfoCache());
+  const [lastUsedAtByAccountId, setLastUsedAtByAccountId] = useState<Record<string, number>>(() => loadAccountLastUsedCache());
 
   const [openTabIds, setOpenTabIds] = useState<string[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>(null);
@@ -828,15 +1089,21 @@ export default function WorkspaceShell() {
   const snapshotVisibleTimerRef = useRef<number | null>(null);
   const [snapshotHold, setSnapshotHold] = useState(false);
 
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const selectAllRef = useRef<HTMLInputElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const viewportBoundsDesiredRef = useRef<Rect | null>(null);
   const viewportBoundsFlushInFlightRef = useRef<Promise<void> | null>(null);
   const viewportBoundsFlushNeededRef = useRef(false);
   const importDialogRef = useRef<HTMLDialogElement | null>(null);
+  const healthDialogRef = useRef<HTMLDialogElement | null>(null);
+  const logDialogRef = useRef<HTMLDialogElement | null>(null);
+  const downloadsDialogRef = useRef<HTMLDialogElement | null>(null);
   const exportDialogRef = useRef<HTMLDialogElement | null>(null);
   const deleteDialogRef = useRef<HTMLDialogElement | null>(null);
   const batchTagsDialogRef = useRef<HTMLDialogElement | null>(null);
+  const batchProxyDialogRef = useRef<HTMLDialogElement | null>(null);
+  const batchUserAgentDialogRef = useRef<HTMLDialogElement | null>(null);
   const batchDeleteDialogRef = useRef<HTMLDialogElement | null>(null);
   const connectivityPopoverAnchorRef = useRef<HTMLDivElement | null>(null);
   const connectivityPopoverRef = useRef<HTMLDivElement | null>(null);
@@ -847,6 +1114,7 @@ export default function WorkspaceShell() {
   const uiToastTimersRef = useRef<Map<string, number>>(new Map());
   const downloadAutoDismissTimersRef = useRef<Map<string, number>>(new Map());
   const downloadFilenameByIdRef = useRef<Map<string, string>>(new Map());
+  const creditSyncTimersRef = useRef<Map<string, number[]>>(new Map());
 
   const selected = useMemo(() => [...selectedIds], [selectedIds]);
   const proxyPresets = useMemo(() => {
@@ -881,8 +1149,10 @@ export default function WorkspaceShell() {
 
   useEffect(() => {
     if (!focusedAccount) return;
+    setDisplayNameInlineError(null);
     setUaInlineError(null);
     setProxyInlineError(null);
+    setDisplayNameDraft(focusedAccount.displayName);
     setTagsDraft(focusedAccount.tags.join(", "));
     setProxyMode(focusedAccount.net.proxy.mode);
     setProxyRules(focusedAccount.net.proxy.rules ?? "");
@@ -891,14 +1161,19 @@ export default function WorkspaceShell() {
     if (uaMode === "preset") {
       const preset = uaValue ? findUserAgentPreset(uaValue) : null;
       if (preset) {
-        setUaMode("preset");
-        setUaValue(preset.id);
+        if (USER_AGENT_PRESET_VISIBLE_IDS.has(preset.id)) {
+          setUaMode("preset");
+          setUaValue(preset.id);
+        } else {
+          setUaMode("custom");
+          setUaValue(preset.value);
+        }
       } else if (uaValue.trim()) {
         setUaMode("custom");
         setUaValue(uaValue);
       } else {
         setUaMode("preset");
-        setUaValue(USER_AGENT_PRESETS[0]?.id ?? "");
+        setUaValue(USER_AGENT_PRESETS_VISIBLE[0]?.id ?? "");
       }
     } else {
       setUaMode(uaMode);
@@ -907,14 +1182,42 @@ export default function WorkspaceShell() {
   }, [focusedAccount]);
 
   useEffect(() => {
-    document.documentElement.setAttribute("data-theme", uiPrefs.theme);
+    let mq: MediaQueryList | null = null;
+    try {
+      mq = window.matchMedia("(prefers-color-scheme: light)");
+    } catch {
+      return;
+    }
+
+    const onChange = () => setSystemTheme(mq?.matches ? "light" : "dark");
+    onChange();
+    try {
+      mq.addEventListener("change", onChange);
+      return () => mq?.removeEventListener("change", onChange);
+    } catch {
+      // Safari/WebKit legacy
+      (mq as unknown as { addListener?: (fn: () => void) => void }).addListener?.(onChange);
+      return () => (mq as unknown as { removeListener?: (fn: () => void) => void }).removeListener?.(onChange);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-theme", resolvedTheme);
     document.documentElement.lang = uiPrefs.locale;
     persistUiPreferences(uiPrefs);
-  }, [uiPrefs]);
+  }, [resolvedTheme, uiPrefs]);
 
   useEffect(() => {
     persistAccountInfoCache(accountInfoById);
   }, [accountInfoById]);
+
+  useEffect(() => {
+    persistAccountLastUsedCache(lastUsedAtByAccountId);
+  }, [lastUsedAtByAccountId]);
+
+  useEffect(() => {
+    persistUiLogCache(uiLog);
+  }, [uiLog]);
 
   useEffect(() => {
     if (!isWindows) return;
@@ -952,23 +1255,83 @@ export default function WorkspaceShell() {
 
   const filteredAccounts = useMemo(() => {
     const q = searchText.trim().toLowerCase();
-    if (!q) return accounts;
-    return accounts.filter((a) => {
-      const hay = [
-        a.displayName,
-        a.id,
-        a.fingerprint,
-        a.tags.join(" "),
-        a.net.proxy.mode,
-        a.net.proxy.rules ?? "",
-        a.ua.mode,
-        a.ua.value ?? "",
-      ]
-        .join(" ")
-        .toLowerCase();
-      return hay.includes(q);
+    const base = q
+      ? accounts.filter((a) => {
+          const hay = [
+            a.displayName,
+            a.id,
+            a.fingerprint,
+            a.tags.join(" "),
+            a.net.proxy.mode,
+            a.net.proxy.rules ?? "",
+            a.ua.mode,
+            a.ua.value ?? "",
+          ]
+            .join(" ")
+            .toLowerCase();
+          return hay.includes(q);
+        })
+      : [...accounts];
+
+    const indexById = new Map(accounts.map((a, index) => [a.id, index] as const));
+    const defaultIndexOf = (id: string): number => indexById.get(id) ?? Number.MAX_SAFE_INTEGER;
+
+    const comparePinnedFirst = (a: AccountSummary, b: AccountSummary): number => {
+      if (a.pinned === b.pinned) return 0;
+      return a.pinned ? -1 : 1;
+    };
+
+    const compareDisplayName = (a: AccountSummary, b: AccountSummary): number =>
+      a.displayName.localeCompare(b.displayName, uiPrefs.locale, { sensitivity: "base" });
+
+    const compareLastUsedDesc = (a: AccountSummary, b: AccountSummary): number => {
+      const av = lastUsedAtByAccountId[a.id] ?? 0;
+      const bv = lastUsedAtByAccountId[b.id] ?? 0;
+      return bv - av;
+    };
+
+    const compareSubscriptionExpiresAtAsc = (a: AccountSummary, b: AccountSummary): number => {
+      const av = accountInfoById[a.id]?.subscriptionExpiresAt ?? Number.POSITIVE_INFINITY;
+      const bv = accountInfoById[b.id]?.subscriptionExpiresAt ?? Number.POSITIVE_INFINITY;
+      return av - bv;
+    };
+
+    const compareCreditsUpdatedAtDesc = (a: AccountSummary, b: AccountSummary): number => {
+      const av = accountInfoById[a.id]?.updatedAt ?? 0;
+      const bv = accountInfoById[b.id]?.updatedAt ?? 0;
+      return bv - av;
+    };
+
+    const compareDefault = (a: AccountSummary, b: AccountSummary): number =>
+      defaultIndexOf(a.id) - defaultIndexOf(b.id);
+
+    base.sort((a, b) => {
+      const pinned = comparePinnedFirst(a, b);
+      if (pinned) return pinned;
+
+      const sortMode = uiPrefs.accountSort;
+      if (sortMode === "displayName") {
+        const cmp = compareDisplayName(a, b);
+        return cmp || compareDefault(a, b);
+      }
+      if (sortMode === "lastUsed") {
+        const cmp = compareLastUsedDesc(a, b);
+        return cmp || compareDefault(a, b);
+      }
+      if (sortMode === "subscriptionExpiresAt") {
+        const cmp = compareSubscriptionExpiresAtAsc(a, b);
+        return cmp || compareDefault(a, b);
+      }
+      if (sortMode === "creditsUpdatedAt") {
+        const cmp = compareCreditsUpdatedAtDesc(a, b);
+        return cmp || compareDefault(a, b);
+      }
+
+      return compareDefault(a, b);
     });
-  }, [accounts, searchText]);
+
+    return base;
+  }, [accountInfoById, accounts, lastUsedAtByAccountId, searchText, uiPrefs.accountSort, uiPrefs.locale]);
 
   const allFilteredSelected =
     filteredAccounts.length > 0 && filteredAccounts.every((a) => selectedIds.has(a.id));
@@ -1031,6 +1394,13 @@ export default function WorkspaceShell() {
     void refreshAccounts();
   }, [refreshAccounts]);
 
+  useEffect(() => {
+    void window.desktop.accounts
+      .isTokenEncryptionAvailable()
+      .then((available) => setTokenEncryptionAvailable(Boolean(available)))
+      .catch(() => setTokenEncryptionAvailable(null));
+  }, []);
+
   const toggleSelected = useCallback((accountId: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -1052,24 +1422,44 @@ export default function WorkspaceShell() {
     });
   }, [allFilteredSelected, filteredAccounts]);
 
+  const recordAccountUsed = useCallback((accountId: string) => {
+    const normalized = accountId.trim();
+    if (!normalized) return;
+    const now = Date.now();
+    setLastUsedAtByAccountId((prev) => {
+      if (prev[normalized] === now) return prev;
+      return { ...prev, [normalized]: now };
+    });
+  }, []);
+
   const focusAccount = useCallback((accountId: string) => {
+    recordAccountUsed(accountId);
     setFocusedAccountId(accountId);
     setInspectorOpen(true);
-  }, []);
+  }, [recordAccountUsed]);
 
   const openSelectOverlay = useCallback(() => setSelectOverlayOpen(true), []);
   const closeSelectOverlay = useCallback(() => setSelectOverlayOpen(false), []);
 
   const overlayActive =
     importDialogOpen ||
+    healthDialogOpen ||
+    logDialogOpen ||
+    downloadsDialogOpen ||
     exportDialog.open ||
     deleteDialog.open ||
     batchTagsDialog.open ||
+    batchProxyDialog.open ||
+    batchUserAgentDialog.open ||
     batchDeleteDialog.open ||
     settingsPopoverOpen ||
     downloadsPopoverOpen ||
     connectivityPopoverOpen ||
     selectOverlayOpen;
+
+  useEffect(() => {
+    void window.desktop.workspace.setOverlayActive(overlayActive).catch(() => void 0);
+  }, [overlayActive]);
 
   const snapshotVisible = overlayActive || snapshotHold;
 
@@ -1141,7 +1531,7 @@ export default function WorkspaceShell() {
 
   useEffect(() => {
     void pushViewportBounds().catch(() => void 0);
-  }, [pushViewportBounds, sidebarCollapsed, inspectorOpen, uiPrefs.locale, error]);
+  }, [pushViewportBounds, sidebarCollapsed, inspectorOpen, uiPrefs.locale, error, overlayActive]);
 
   useEffect(() => {
     const el = viewportRef.current;
@@ -1335,16 +1725,40 @@ export default function WorkspaceShell() {
     };
   }, [downloadsPopoverOpen]);
 
-  useEffect(() => {
-    if (!downloadsPopoverOpen) return;
-    if (downloadToasts.length > 0) return;
-    setDownloadsPopoverOpen(false);
-  }, [downloadToasts, downloadsPopoverOpen]);
+  // Keep Downloads popover available even when the list is empty (persistent download history).
 
   useEffect(() => {
     void window.desktop.downloads
       .getPreferences()
       .then((prefs) => setDownloadPrefs(prefs))
+      .catch(() => void 0);
+  }, []);
+
+  useEffect(() => {
+    void window.desktop.downloads
+      .getHistory()
+      .then((history) => {
+        setDownloadToasts((prev) => {
+          const byId = new Map<string, DownloadToastState>();
+          for (const d of prev) byId.set(d.id, d);
+
+          for (const item of history) {
+            if (byId.has(item.id)) continue;
+            byId.set(item.id, {
+              id: item.id,
+              accountId: item.accountId,
+              filename: item.filename,
+              receivedBytes: item.receivedBytes,
+              totalBytes: item.totalBytes,
+              state: item.state,
+              copiedAt: null,
+              updatedAt: item.updatedAt,
+            });
+          }
+
+          return [...byId.values()].sort((a, b) => b.updatedAt - a.updatedAt).slice(0, DOWNLOAD_HISTORY_LIMIT);
+        });
+      })
       .catch(() => void 0);
   }, []);
 
@@ -1394,7 +1808,7 @@ export default function WorkspaceShell() {
               updatedAt: now,
             };
             const rest = prev.filter((d) => d.id !== event.id);
-            return [next, ...rest].slice(0, 6);
+            return [next, ...rest].slice(0, DOWNLOAD_HISTORY_LIMIT);
           }
 
           const index = prev.findIndex((d) => d.id === event.id);
@@ -1403,22 +1817,23 @@ export default function WorkspaceShell() {
           const current = prev[index];
           if (!current) return prev;
 
-          const next = [...prev];
+          const rest = prev.filter((d) => d.id !== event.id);
           if (event.type === "progress") {
-            next[index] = {
+            const updated: DownloadToastState = {
               ...current,
               receivedBytes: Math.max(0, event.receivedBytes),
               totalBytes: Math.max(0, event.totalBytes),
               updatedAt: now,
             };
+            return [updated, ...rest].slice(0, DOWNLOAD_HISTORY_LIMIT);
           } else {
-            next[index] = {
+            const updated: DownloadToastState = {
               ...current,
               state: event.state,
               updatedAt: now,
             };
+            return [updated, ...rest].slice(0, DOWNLOAD_HISTORY_LIMIT);
           }
-          return next;
         });
 
         if (event.type === "start") {
@@ -1455,27 +1870,73 @@ export default function WorkspaceShell() {
     };
   }, [pushUiToast, t]);
 
-  const dismissDownloadToast = useCallback((id: string) => {
-    setDownloadToasts((prev) => prev.filter((d) => d.id !== id));
+  useEffect(() => {
+    let unsubscribe: (() => void) | null = null;
+    try {
+      unsubscribe = window.desktop.accounts.subscribeImportProgress((event: AccountsImportProgressEvent) => {
+        if (event.type === "start") {
+          setImportProgress({
+            total: Math.max(0, event.total),
+            done: 0,
+            imported: 0,
+            failed: 0,
+            creditsFailed: 0,
+            currentFingerprint: null,
+          });
+          return;
+        }
+
+        if (event.type === "progress") {
+          setImportProgress((prev) => {
+            const total = Math.max(0, event.total);
+            if (!prev && total === 0) return null;
+            return {
+              total,
+              done: Math.max(0, event.done),
+              imported: Math.max(0, event.imported),
+              failed: Math.max(0, event.failed),
+              creditsFailed: Math.max(0, event.creditsFailed),
+              currentFingerprint: event.current?.fingerprint ?? prev?.currentFingerprint ?? null,
+            };
+          });
+          return;
+        }
+
+        if (event.type === "end") {
+          setImportProgress((prev) => {
+            const total = Math.max(0, event.total);
+            return {
+              total,
+              done: total,
+              imported: Math.max(0, event.imported),
+              failed: Math.max(0, event.failed),
+              creditsFailed: Math.max(0, event.creditsFailed),
+              currentFingerprint: prev?.currentFingerprint ?? null,
+            };
+          });
+        }
+      });
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      try {
+        unsubscribe?.();
+      } catch {
+        // ignore
+      }
+    };
   }, []);
 
   useEffect(() => {
-    const timers = downloadAutoDismissTimersRef.current;
-    const active = new Set(downloadToasts.map((d) => d.id));
+    if (importDialogOpen) return;
+    setImportProgress(null);
+  }, [importDialogOpen]);
 
-    for (const [id, handle] of [...timers.entries()]) {
-      if (active.has(id)) continue;
-      window.clearTimeout(handle);
-      timers.delete(id);
-    }
-
-    for (const toast of downloadToasts) {
-      if (toast.state === "progressing") continue;
-      if (timers.has(toast.id)) continue;
-      const handle = window.setTimeout(() => dismissDownloadToast(toast.id), 12_000);
-      timers.set(toast.id, handle);
-    }
-  }, [dismissDownloadToast, downloadToasts]);
+  const dismissDownloadToast = useCallback((id: string) => {
+    setDownloadToasts((prev) => prev.filter((d) => d.id !== id));
+  }, []);
 
   const setDownloadMode = useCallback(async (mode: DownloadSaveMode) => {
     setError(null);
@@ -1636,6 +2097,35 @@ export default function WorkspaceShell() {
       setImportResult(result);
       setImportText("");
       await refreshAccounts();
+      if (result.creditsByAccountId || result.creditsErrorsByAccountId) {
+        setAccountInfoById((prev) => {
+          const next = { ...prev };
+          for (const [accountId, info] of Object.entries(result.creditsByAccountId ?? {})) {
+            const current = next[accountId] ?? DEFAULT_ACCOUNT_INFO;
+            const remaining = Math.round(info.remainingCredits);
+            const total = Math.round(info.totalCredits);
+            next[accountId] = {
+              ...current,
+              status: "ready",
+              subscription: info.subscriptionType,
+              subscriptionExpiresAt: info.subscriptionExpiresAt,
+              credits: `${remaining}/${total}`,
+              updatedAt: info.fetchedAt,
+              error: null,
+            };
+          }
+          for (const [accountId, error] of Object.entries(result.creditsErrorsByAccountId ?? {})) {
+            const current = next[accountId] ?? DEFAULT_ACCOUNT_INFO;
+            next[accountId] = {
+              ...current,
+              status: "unavailable",
+              error,
+              updatedAt: Date.now(),
+            };
+          }
+          return next;
+        });
+      }
       const summary = format(t("importResultChip"), { ok: result.imported, fail: result.failed });
       pushUiToast(result.failed > 0 ? "error" : "success", summary);
     } catch (e) {
@@ -1757,6 +2247,31 @@ export default function WorkspaceShell() {
     }
   }, [focusedAccountId, proxyMode, proxyRules, pushUiToast, refreshAccounts, t]);
 
+  const saveDisplayName = useCallback(async () => {
+    if (!focusedAccountId) return;
+    const nextName = displayNameDraft.trim();
+    if (!nextName) {
+      setDisplayNameInlineError(t("displayNameErrorRequired"));
+      return;
+    }
+    setDisplayNameInlineError(null);
+    setError(null);
+    setBusy(true);
+    try {
+      const updated = await window.desktop.accounts.updateAccountMeta(focusedAccountId, {
+        displayName: nextName,
+      });
+      setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      pushUiToast("success", t("toastDisplayNameSaved"));
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setDisplayNameInlineError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [displayNameDraft, focusedAccountId, pushUiToast, t]);
+
   const saveTags = useCallback(async () => {
     if (!focusedAccountId) return;
     setError(null);
@@ -1774,6 +2289,24 @@ export default function WorkspaceShell() {
       setBusy(false);
     }
   }, [focusedAccountId, pushUiToast, refreshAccounts, t, tagsDraft]);
+
+  const togglePinnedForAccount = useCallback(
+    async (accountId: string, nextPinned: boolean) => {
+      setError(null);
+      setBusy(true);
+      try {
+        const updated = await window.desktop.accounts.updateAccountMeta(accountId, { pinned: nextPinned });
+        setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+      } catch (e) {
+        const message = toErrorMessage(e);
+        setError(message);
+        pushUiToast("error", message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [pushUiToast]
+  );
 
   const saveUserAgent = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -1817,60 +2350,6 @@ export default function WorkspaceShell() {
     }
   }, [focusedAccountId, pushUiToast, refreshAccounts, t, uaMode, uaValue]);
 
-  const refreshCreditsForAccount = useCallback(async (accountId: string, opts?: { announce?: boolean }) => {
-    setAccountInfoById((prev) => {
-      const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
-      return {
-        ...prev,
-        [accountId]: { ...current, status: "loading", error: null },
-      };
-    });
-
-    try {
-      const info = await window.desktop.accounts.refreshCredits(accountId);
-      const remaining = Math.round(info.remainingCredits);
-      const total = Math.round(info.totalCredits);
-
-      setAccountInfoById((prev) => {
-        const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
-        return {
-          ...prev,
-          [accountId]: {
-            ...current,
-            status: "ready",
-            subscription: info.subscriptionType,
-            subscriptionExpiresAt: info.subscriptionExpiresAt,
-            credits: `${remaining}/${total}`,
-            updatedAt: info.fetchedAt,
-            error: null,
-          },
-        };
-      });
-      if (opts?.announce) {
-        pushUiToast("success", t("toastCreditsRefreshed"));
-      }
-      return true;
-    } catch (e) {
-      const message = toErrorMessage(e);
-      setAccountInfoById((prev) => {
-        const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
-        return {
-          ...prev,
-          [accountId]: {
-            ...current,
-            status: "unavailable",
-            error: message,
-            updatedAt: Date.now(),
-          },
-        };
-      });
-      if (opts?.announce) {
-        pushUiToast("error", message);
-      }
-      return false;
-    }
-  }, [pushUiToast, t]);
-
   const syncCreditsFromOpenTabForAccount = useCallback(async (accountId: string) => {
     try {
       const info = await window.desktop.accounts.syncCreditsFromOpenTab(accountId);
@@ -1881,7 +2360,6 @@ export default function WorkspaceShell() {
 
       setAccountInfoById((prev) => {
         const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
-        if (current.status === "loading") return prev;
         return {
           ...prev,
           [accountId]: {
@@ -1902,32 +2380,98 @@ export default function WorkspaceShell() {
     }
   }, []);
 
-  const refreshAccountInfo = useCallback(() => {
-    if (!focusedAccountId) return;
-    void refreshCreditsForAccount(focusedAccountId, { announce: true });
-  }, [focusedAccountId, refreshCreditsForAccount]);
+  const clearCreditsSyncTimers = useCallback((accountId: string) => {
+    const handles = creditSyncTimersRef.current.get(accountId);
+    if (!handles) return;
+    for (const handle of handles) window.clearTimeout(handle);
+    creditSyncTimersRef.current.delete(accountId);
+  }, []);
+
+  const scheduleCreditsSyncFromOpenTab = useCallback(
+    (accountId: string) => {
+      const normalized = accountId.trim();
+      if (!normalized) return;
+      clearCreditsSyncTimers(normalized);
+
+      const delaysMs = [0, 1500, 4500, 9000, 30_000];
+      const handles = delaysMs.map((delayMs, index) =>
+        window.setTimeout(() => {
+          void syncCreditsFromOpenTabForAccount(normalized);
+          if (index === delaysMs.length - 1) creditSyncTimersRef.current.delete(normalized);
+        }, delayMs)
+      );
+
+      creditSyncTimersRef.current.set(normalized, handles);
+    },
+    [clearCreditsSyncTimers, syncCreditsFromOpenTabForAccount]
+  );
+
+  const runHealthCheckOpenTabs = useCallback(() => {
+    if (openTabIds.length === 0) {
+      pushUiToast("info", t("toastHealthNoOpenTabs"));
+      return;
+    }
+    pushUiToast("info", t("toastHealthCheckStarted"));
+    for (const [index, accountId] of openTabIds.entries()) {
+      window.setTimeout(() => scheduleCreditsSyncFromOpenTab(accountId), index * 350);
+    }
+  }, [openTabIds, pushUiToast, scheduleCreditsSyncFromOpenTab, t]);
+
+  const clearUiLog = useCallback(() => {
+    setUiLog([]);
+  }, []);
+
+  const copyUiLog = useCallback(async () => {
+    const text = uiLog
+      .slice()
+      .reverse()
+      .map((entry) => {
+        const time = formatUpdatedAt(entry.createdAt, uiPrefs.locale);
+        return `[${time}] ${entry.kind.toUpperCase()} ${entry.message}`;
+      })
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(text);
+      pushUiToast("success", t("toastCopied"));
+    } catch (e) {
+      pushUiToast("error", toErrorMessage(e));
+    }
+  }, [pushUiToast, t, uiLog, uiPrefs.locale]);
 
   useEffect(() => {
     if (!activeTabId) return;
-
-    const sync = () => {
+    scheduleCreditsSyncFromOpenTab(activeTabId);
+    const interval = window.setInterval(() => {
       void syncCreditsFromOpenTabForAccount(activeTabId);
-    };
-
-    const first = window.setTimeout(sync, 1500);
-    const interval = window.setInterval(sync, 30_000);
+    }, 30_000);
     return () => {
-      window.clearTimeout(first);
       window.clearInterval(interval);
     };
-  }, [activeTabId, syncCreditsFromOpenTabForAccount]);
+  }, [activeTabId, scheduleCreditsSyncFromOpenTab, syncCreditsFromOpenTabForAccount]);
+
+  useEffect(() => {
+    if (openTabIds.length === 0) return;
+    let index = 0;
+    const interval = window.setInterval(() => {
+      const ids = openTabIds;
+      if (ids.length === 0) return;
+      const target = ids[index % ids.length];
+      index += 1;
+      if (!target || target === activeTabId) return;
+      void syncCreditsFromOpenTabForAccount(target);
+    }, 20_000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [activeTabId, openTabIds, syncCreditsFromOpenTabForAccount]);
 
   useEffect(() => {
     if (!focusedAccountId || !inspectorOpen) return;
     const info = accountInfoById[focusedAccountId];
     if (info && info.status !== "idle") return;
-    void refreshCreditsForAccount(focusedAccountId);
-  }, [accountInfoById, focusedAccountId, inspectorOpen, refreshCreditsForAccount]);
+    if (!openTabIds.includes(focusedAccountId)) return;
+    scheduleCreditsSyncFromOpenTab(focusedAccountId);
+  }, [accountInfoById, focusedAccountId, inspectorOpen, openTabIds, scheduleCreditsSyncFromOpenTab]);
 
   const runConnectivity = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -1967,7 +2511,7 @@ export default function WorkspaceShell() {
   }, [focusedAccount, focusedAccountId, proxyMode, proxyRules]);
 
   const openTab = useCallback(
-    async (accountId: string) => {
+    async (accountId: string): Promise<boolean> => {
       setError(null);
       setBusy(true);
       try {
@@ -1975,16 +2519,20 @@ export default function WorkspaceShell() {
         await window.desktop.workspace.openTab(accountId);
         setOpenTabIds((prev) => (prev.includes(accountId) ? prev : [...prev, accountId]));
         setActiveTabId(accountId);
+        recordAccountUsed(accountId);
+        scheduleCreditsSyncFromOpenTab(accountId);
         pushUiToast("success", t("toastTabOpened"));
+        return true;
       } catch (e) {
         const message = toErrorMessage(e);
         setError(message);
         pushUiToast("error", message);
+        return false;
       } finally {
         setBusy(false);
       }
     },
-    [pushUiToast, pushViewportBounds, t]
+    [pushUiToast, pushViewportBounds, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
   );
 
   const closeTab = useCallback(
@@ -1993,6 +2541,7 @@ export default function WorkspaceShell() {
       setBusy(true);
       try {
         await window.desktop.workspace.closeTab(accountId);
+        clearCreditsSyncTimers(accountId);
         setOpenTabIds((prev) => prev.filter((id) => id !== accountId));
         setActiveTabId((prev) => {
           if (prev !== accountId) return prev;
@@ -2009,7 +2558,7 @@ export default function WorkspaceShell() {
         setBusy(false);
       }
     },
-    [openTabIds, pushUiToast, t]
+    [clearCreditsSyncTimers, openTabIds, pushUiToast, t]
   );
 
   const activateTab = useCallback(async (accountId: string) => {
@@ -2018,6 +2567,8 @@ export default function WorkspaceShell() {
     try {
       await window.desktop.workspace.setActiveTab(accountId);
       setActiveTabId(accountId);
+      recordAccountUsed(accountId);
+      scheduleCreditsSyncFromOpenTab(accountId);
     } catch (e) {
       const message = toErrorMessage(e);
       setError(message);
@@ -2025,7 +2576,7 @@ export default function WorkspaceShell() {
     } finally {
       setBusy(false);
     }
-  }, [pushUiToast]);
+  }, [pushUiToast, recordAccountUsed, scheduleCreditsSyncFromOpenTab]);
 
   const reloadWorkspace = useCallback(async () => {
     setError(null);
@@ -2042,6 +2593,28 @@ export default function WorkspaceShell() {
     }
   }, [pushUiToast, t]);
 
+  const reloadTabForAccount = useCallback(
+    async (accountId: string) => {
+      setError(null);
+      setBusy(true);
+      try {
+        await window.desktop.workspace.setActiveTab(accountId);
+        setActiveTabId(accountId);
+        recordAccountUsed(accountId);
+        scheduleCreditsSyncFromOpenTab(accountId);
+        await window.desktop.workspace.reloadActive();
+        pushUiToast("info", t("toastTabReloaded"));
+      } catch (e) {
+        const message = toErrorMessage(e);
+        setError(message);
+        pushUiToast("error", message);
+      } finally {
+        setBusy(false);
+      }
+    },
+    [pushUiToast, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
+  );
+
   const batchOpenTabs = useCallback(async () => {
     for (const id of selected) {
       await openTab(id);
@@ -2053,36 +2626,6 @@ export default function WorkspaceShell() {
       await closeTab(id);
     }
   }, [closeTab, selected]);
-
-  const runBatchRefreshCredits = useCallback(async () => {
-    if (selected.length === 0) return;
-    setError(null);
-    setBatchRefreshRunning(true);
-    try {
-      let ok = 0;
-      let fail = 0;
-      for (const accountId of selected) {
-        const current = accountInfoById[accountId] ?? DEFAULT_ACCOUNT_INFO;
-        if (current.status === "loading") continue;
-        const success = await refreshCreditsForAccount(accountId);
-        if (success) ok++;
-        else fail++;
-      }
-      pushUiToast(
-        fail > 0 ? "error" : "success",
-        format(t("toastBatchRefreshResult"), {
-          ok,
-          fail,
-        })
-      );
-    } catch (e) {
-      const message = toErrorMessage(e);
-      setError(message);
-      pushUiToast("error", message);
-    } finally {
-      setBatchRefreshRunning(false);
-    }
-  }, [accountInfoById, pushUiToast, refreshCreditsForAccount, selected, t]);
 
   const openBatchTagsDialog = useCallback(() => {
     if (selected.length === 0) return;
@@ -2125,6 +2668,133 @@ export default function WorkspaceShell() {
     }
   }, [batchTagsDialog, batchTagsDraft, pushUiToast, refreshAccounts, t]);
 
+  const openBatchProxyDialog = useCallback(() => {
+    if (selected.length === 0) return;
+    const first = accounts.find((a) => a.id === selected[0]);
+    setBatchProxyMode(first?.net.proxy.mode ?? "system");
+    setBatchProxyRules(first?.net.proxy.rules ?? "");
+    setBatchProxyInlineError(null);
+    setBatchProxyDialog({ open: true, accountIds: selected });
+  }, [accounts, selected]);
+
+  const runBatchProxy = useCallback(async () => {
+    if (!batchProxyDialog.open) return;
+
+    const proxyError = validateProxyDraft(batchProxyMode, batchProxyRules);
+    if (proxyError) {
+      setBatchProxyInlineError(proxyError);
+      return;
+    }
+
+    setError(null);
+    setBusy(true);
+    try {
+      const proxy =
+        batchProxyMode === "custom"
+          ? { mode: "custom" as const, rules: batchProxyRules }
+          : { mode: batchProxyMode };
+
+      let ok = 0;
+      let fail = 0;
+      const updatedById = new Map<string, AccountSummary>();
+      for (const accountId of batchProxyDialog.accountIds) {
+        try {
+          const updated = await window.desktop.accounts.updateAccountMeta(accountId, { net: { proxy } });
+          updatedById.set(updated.id, updated);
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+      setAccounts((prev) => prev.map((a) => updatedById.get(a.id) ?? a));
+      setBatchProxyDialog({ open: false });
+      pushUiToast(
+        fail > 0 ? "error" : "success",
+        format(t("toastBatchProxyResult"), {
+          ok,
+          fail,
+        })
+      );
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [batchProxyDialog, batchProxyMode, batchProxyRules, pushUiToast, t]);
+
+  const openBatchUserAgentDialog = useCallback(() => {
+    if (selected.length === 0) return;
+    const first = accounts.find((a) => a.id === selected[0]);
+    setBatchUaMode(first?.ua.mode ?? "default");
+    setBatchUaValue(first?.ua.value ?? "");
+    setBatchUaInlineError(null);
+    setBatchUserAgentDialog({ open: true, accountIds: selected });
+  }, [accounts, selected]);
+
+  const runBatchUserAgent = useCallback(async () => {
+    if (!batchUserAgentDialog.open) return;
+    setBatchUaInlineError(null);
+    const trimmed = batchUaValue.trim();
+
+    if (batchUaMode !== "default") {
+      if (!trimmed) {
+        setBatchUaInlineError(t("uaErrorRequired"));
+        return;
+      }
+      if (trimmed.length > 512) {
+        setBatchUaInlineError(t("uaErrorTooLong"));
+        return;
+      }
+      if (/[\r\n]/.test(trimmed)) {
+        setBatchUaInlineError(t("uaErrorSingleLine"));
+        return;
+      }
+      if (batchUaMode === "preset" && !findUserAgentPreset(trimmed)) {
+        setBatchUaInlineError(t("uaErrorPresetUnknown"));
+        return;
+      }
+    }
+
+    setError(null);
+    setBusy(true);
+    try {
+      const ua =
+        batchUaMode === "default"
+          ? { mode: "default" as const }
+          : { mode: batchUaMode, value: trimmed };
+
+      let ok = 0;
+      let fail = 0;
+      const updatedById = new Map<string, AccountSummary>();
+      for (const accountId of batchUserAgentDialog.accountIds) {
+        try {
+          const updated = await window.desktop.accounts.updateAccountMeta(accountId, { ua });
+          updatedById.set(updated.id, updated);
+          ok++;
+        } catch {
+          fail++;
+        }
+      }
+      setAccounts((prev) => prev.map((a) => updatedById.get(a.id) ?? a));
+      setBatchUserAgentDialog({ open: false });
+      pushUiToast(
+        fail > 0 ? "error" : "success",
+        format(t("toastBatchUaResult"), {
+          ok,
+          fail,
+        })
+      );
+    } catch (e) {
+      const message = toErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [batchUaMode, batchUaValue, batchUserAgentDialog, pushUiToast, t]);
+
   const openBatchDeleteDialog = useCallback(() => {
     if (selected.length === 0) return;
     setBatchDeleteDialog({ open: true, accountIds: selected });
@@ -2164,68 +2834,83 @@ export default function WorkspaceShell() {
     }
   }, [batchDeleteDialog, pushUiToast, refreshAccounts, t]);
 
-  const refreshFlowithOsStatus = useCallback(async () => {
-    try {
-      const status = await window.desktop.flowithos.getStatus();
-      setFlowithOsStatus(status);
-      return status;
-    } catch {
-      setFlowithOsStatus(null);
-      return null;
-    }
-  }, []);
-
   useEffect(() => {
-    if (!inspectorOpen) return;
-    void refreshFlowithOsStatus();
-  }, [inspectorOpen, refreshFlowithOsStatus]);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
 
-  const writeFlowithOsFromFocused = useCallback(async () => {
-    if (!focusedAccountId) return;
-    setError(null);
-    setBusy(true);
-    try {
-      const res = await window.desktop.flowithos.writeSessionFromAccount(focusedAccountId);
-      if (!res.success) throw new Error(res.message);
-      pushUiToast("success", t("toastFlowithOsWrote"));
-      void refreshFlowithOsStatus();
-    } catch (e) {
-      const message = toErrorMessage(e);
-      setError(message);
-      pushUiToast("error", message);
-    } finally {
-      setBusy(false);
-    }
-  }, [focusedAccountId, pushUiToast, refreshFlowithOsStatus, t]);
-
-  const syncFromFlowithOsAction = useCallback(async () => {
-    setError(null);
-    setBusy(true);
-    try {
-      const res = await window.desktop.flowithos.syncFromFlowithOs();
-      if (!res.success) throw new Error(res.message);
-
-      if (res.updated) {
-        pushUiToast("success", t("toastFlowithOsSynced"));
-      } else if (res.reason === "up_to_date") {
-        pushUiToast("info", t("toastFlowithOsUpToDate"));
-      } else if (res.reason === "user_mismatch") {
-        pushUiToast("error", t("toastFlowithOsUserMismatch"));
-      } else if (res.reason === "no_match") {
-        pushUiToast("error", t("toastFlowithOsNoMatch"));
-      } else {
-        pushUiToast("info", t("toastFlowithOsUpToDate"));
+      const target = e.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        if (target.isContentEditable) return;
       }
 
-      void refreshFlowithOsStatus();
-    } catch (e) {
-      const message = toErrorMessage(e);
-      setError(message);
-      pushUiToast("error", message);
-    } finally {
-      setBusy(false);
-    }
-  }, [pushUiToast, refreshFlowithOsStatus, t]);
+      if (e.key === "Escape") {
+        if (settingsPopoverOpen) setSettingsPopoverOpen(false);
+        if (downloadsPopoverOpen) setDownloadsPopoverOpen(false);
+        if (connectivityPopoverOpen) setConnectivityPopoverOpen(false);
+        if (inspectorOpen && !settingsPopoverOpen && !downloadsPopoverOpen && !connectivityPopoverOpen) {
+          setInspectorOpen(false);
+        }
+        return;
+      }
+
+      const ctrlOrMeta = e.ctrlKey || e.metaKey;
+      if (!ctrlOrMeta) return;
+
+      const key = e.key;
+
+      if (key === "f" || key === "F") {
+        e.preventDefault();
+        searchInputRef.current?.focus();
+        return;
+      }
+
+      if (key === "r" || key === "R") {
+        e.preventDefault();
+        void reloadWorkspace();
+        return;
+      }
+
+      if (key === "w" || key === "W") {
+        if (!activeTabId) return;
+        e.preventDefault();
+        void closeTab(activeTabId);
+        return;
+      }
+
+      if (key === "t" || key === "T") {
+        if (!focusedAccountId) return;
+        e.preventDefault();
+        if (openTabIds.includes(focusedAccountId)) void activateTab(focusedAccountId);
+        else void openTab(focusedAccountId);
+        return;
+      }
+
+      if (/^[1-9]$/.test(key)) {
+        const index = Number(key) - 1;
+        const accountId = openTabIds[index];
+        if (!accountId) return;
+        e.preventDefault();
+        void activateTab(accountId);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [
+    activeTabId,
+    activateTab,
+    closeTab,
+    connectivityPopoverOpen,
+    downloadsPopoverOpen,
+    focusedAccountId,
+    inspectorOpen,
+    openTab,
+    openTabIds,
+    reloadWorkspace,
+    settingsPopoverOpen,
+  ]);
 
   useEffect(() => {
     const dlg = importDialogRef.current;
@@ -2240,6 +2925,48 @@ export default function WorkspaceShell() {
       // ignore dialog show/close failures in non-standard runtimes
     }
   }, [importDialogOpen]);
+
+  useEffect(() => {
+    const dlg = healthDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (healthDialogOpen) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [healthDialogOpen]);
+
+  useEffect(() => {
+    const dlg = logDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (logDialogOpen) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [logDialogOpen]);
+
+  useEffect(() => {
+    const dlg = downloadsDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (downloadsDialogOpen) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [downloadsDialogOpen]);
 
   useEffect(() => {
     if (!importDialogOpen) return;
@@ -2290,6 +3017,44 @@ export default function WorkspaceShell() {
   }, [batchTagsDialog.open]);
 
   useEffect(() => {
+    const dlg = batchProxyDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (batchProxyDialog.open) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [batchProxyDialog.open]);
+
+  useEffect(() => {
+    const dlg = batchUserAgentDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (batchUserAgentDialog.open) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [batchUserAgentDialog.open]);
+
+  useEffect(() => {
+    if (!batchProxyDialog.open) return;
+    setBatchProxyInlineError(null);
+  }, [batchProxyDialog.open]);
+
+  useEffect(() => {
+    if (!batchUserAgentDialog.open) return;
+    setBatchUaInlineError(null);
+  }, [batchUserAgentDialog.open]);
+
+  useEffect(() => {
     const dlg = batchDeleteDialogRef.current;
     if (!dlg) return;
     try {
@@ -2308,6 +3073,7 @@ export default function WorkspaceShell() {
     0
   );
   const latestDownloadToast = downloadToasts[0] ?? null;
+  const downloadIndicatorNeedsAttention = latestDownloadToast?.state === "interrupted";
   const downloadIndicatorBadgeText =
     downloadToasts.length === 0
       ? null
@@ -2315,11 +3081,9 @@ export default function WorkspaceShell() {
         ? downloadInProgressCount > 99
           ? "99+"
           : String(downloadInProgressCount)
-        : latestDownloadToast?.state === "completed"
-          ? "✓"
-          : latestDownloadToast
-            ? "!"
-            : null;
+        : downloadIndicatorNeedsAttention
+          ? "!"
+          : null;
   const downloadIndicatorTitle =
     downloadToasts.length === 0
       ? t("downloadsSectionTitle")
@@ -2329,35 +3093,84 @@ export default function WorkspaceShell() {
           ? `${t("downloadsSectionTitle")} · ${formatDownloadStateLabel(latestDownloadToast.state, t)}`
           : t("downloadsSectionTitle");
 
+  const healthSummary = useMemo(() => {
+    const now = Date.now();
+    const openTabSet = new Set(openTabIds);
+    const expiringSoonWithinMs = 7 * 24 * 60 * 60 * 1000;
+    const creditsStaleAfterMs = 30 * 60 * 1000;
+
+    let errors = 0;
+    let expiringSoon = 0;
+    let creditsStale = 0;
+    const needsAttention: Array<{ account: AccountSummary; tabOpen: boolean; reasons: StringKey[] }> = [];
+
+    for (const account of accounts) {
+      const info = accountInfoById[account.id] ?? DEFAULT_ACCOUNT_INFO;
+      const tabOpen = openTabSet.has(account.id);
+      const reasons: StringKey[] = [];
+
+      if (info.error) {
+        errors += 1;
+        reasons.push("healthReasonError");
+      }
+
+      if (
+        typeof info.subscriptionExpiresAt === "number" &&
+        Number.isFinite(info.subscriptionExpiresAt) &&
+        info.subscriptionExpiresAt > now &&
+        info.subscriptionExpiresAt - now <= expiringSoonWithinMs
+      ) {
+        expiringSoon += 1;
+        reasons.push("healthReasonExpiringSoon");
+      }
+
+      if (!info.updatedAt || !info.credits) {
+        if (tabOpen) reasons.push("healthReasonCreditsUnknown");
+      } else if (now - info.updatedAt > creditsStaleAfterMs) {
+        creditsStale += 1;
+        reasons.push("healthReasonCreditsStale");
+      }
+
+      if (reasons.length > 0) needsAttention.push({ account, tabOpen, reasons });
+    }
+
+    needsAttention.sort((a, b) => {
+      if (a.account.pinned !== b.account.pinned) return a.account.pinned ? -1 : 1;
+      if (a.reasons.length !== b.reasons.length) return b.reasons.length - a.reasons.length;
+      return a.account.displayName.localeCompare(b.account.displayName, uiPrefs.locale, { sensitivity: "base" });
+    });
+
+    return {
+      totalAccounts: accounts.length,
+      openTabs: openTabIds.length,
+      errors,
+      expiringSoon,
+      creditsStale,
+      needsAttention,
+    };
+  }, [accountInfoById, accounts, openTabIds, uiPrefs.locale]);
+
   return (
     <div className="app">
       <header className="topbar">
         <div className="brand">
-	          <img
-	            className="brand-logo"
-	            src={uiPrefs.theme === "dark" ? logoOnDark : logoOnLight}
-	            alt="Flowith"
-	          />
+		          <img
+		            className="brand-logo"
+		            src={resolvedTheme === "dark" ? logoOnDark : logoOnLight}
+		            alt="Flowith"
+		          />
           <div>
             <div className="brand-title">Flowith Web Account Manager</div>
             <div className="brand-subtitle">{t("subtitle")}</div>
           </div>
         </div>
 
-        <div className="topbar-group topbar-group-right" aria-label="Global actions">
-          <div className="topbar-actions">
-            <input
-              className="input topbar-search"
-              type="text"
-              placeholder={t("searchPlaceholder")}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              disabled={busy}
-            />
-            <button
-              className="btn"
-              onClick={() => {
-                setImportResult(null);
+	        <div className="topbar-group topbar-group-right" aria-label="Global actions">
+	          <div className="topbar-actions">
+	            <button
+	              className="btn"
+	              onClick={() => {
+	                setImportResult(null);
                 setImportText("");
                 setImportDialogOpen(true);
               }}
@@ -2372,111 +3185,141 @@ export default function WorkspaceShell() {
               {t("refresh")}
             </button>
           </div>
-          {downloadToasts.length > 0 ? (
-            <div className="topbar-downloads" style={{ position: "relative" }} ref={downloadsPopoverContainerRef}>
-              <button
-                className="btn btn-ghost btn-icon download-indicator"
-                title={downloadIndicatorTitle}
-                aria-label={t("downloadsSectionTitle")}
-                onClick={() => setDownloadsPopoverOpen((prev) => !prev)}
-                disabled={busy}
-              >
-                ⬇
-                {downloadIndicatorBadgeText ? (
-                  <span
-                    className={clsx(
-                      "download-indicator-badge",
-                      downloadInProgressCount === 0 &&
-                        latestDownloadToast?.state === "completed" &&
-                        "download-indicator-badge-ok",
-                      downloadInProgressCount === 0 &&
-                        latestDownloadToast &&
-                        latestDownloadToast.state !== "completed" &&
-                        "download-indicator-badge-bad"
-                    )}
-                  >
-                    {downloadIndicatorBadgeText}
-                  </span>
-                ) : null}
-              </button>
-              {downloadsPopoverOpen ? (
-                <div className="popover popover-end" ref={downloadsPopoverRef}>
-                  <div className="popover-title">{t("downloadsSectionTitle")}</div>
-                  <div className="downloads-popover-list">
-                    {downloadToasts.map((d) => {
-                      const percent = d.totalBytes > 0 ? Math.min(1, d.receivedBytes / d.totalBytes) : null;
-                      const progressText =
-                        d.state === "progressing"
-                          ? d.totalBytes > 0 && percent !== null
-                            ? `${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)} (${Math.round(percent * 100)}%)`
-                            : formatBytes(d.receivedBytes)
-                          : formatDownloadStateLabel(d.state, t);
+	          <div className="topbar-downloads" style={{ position: "relative" }} ref={downloadsPopoverContainerRef}>
+	              <button
+	                className="btn btn-ghost btn-icon download-indicator"
+	                title={downloadIndicatorTitle}
+	                aria-label={t("downloadsSectionTitle")}
+	                onClick={() => setDownloadsPopoverOpen((prev) => !prev)}
+	                disabled={busy}
+	              >
+	                ⬇
+	                {downloadIndicatorBadgeText ? (
+	                  <span
+	                    className={clsx(
+	                      "download-indicator-badge",
+	                      downloadInProgressCount === 0 &&
+	                        downloadIndicatorNeedsAttention &&
+	                        "download-indicator-badge-bad"
+	                    )}
+	                  >
+	                    {downloadIndicatorBadgeText}
+	                  </span>
+	                ) : null}
+	              </button>
+	              {downloadsPopoverOpen ? (
+	                <div className="popover popover-end downloads-popover" ref={downloadsPopoverRef}>
+                    <div className="downloads-popover-header">
+	                    <div className="popover-title">{t("downloadsSectionTitle")}</div>
+                      {downloadToasts.length > 0 ? (
+                        <button
+                          className="btn btn-ghost downloads-viewall"
+                          onClick={() => {
+                            setDownloadsPopoverOpen(false);
+                            setDownloadsDialogOpen(true);
+                          }}
+                          disabled={busy}
+                        >
+                          {t("downloadsViewAll")}
+                        </button>
+                      ) : null}
+                    </div>
+	                  <div className="downloads-popover-list">
+	                    {downloadToasts.length === 0 ? (
+	                      <div className="muted" style={{ fontSize: 12, padding: "6px 10px" }}>
+	                        {t("downloadsEmpty")}
+	                      </div>
+	                    ) : null}
+	                    {downloadToasts.slice(0, DOWNLOAD_POPOVER_LIMIT).map((d) => {
+	                      const percent = d.totalBytes > 0 ? Math.min(1, d.receivedBytes / d.totalBytes) : null;
+                        const progressText =
+                          d.state === "progressing"
+                            ? d.totalBytes > 0 && percent !== null
+                              ? `${Math.round(percent * 100)}% · ${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)}`
+                              : formatBytes(d.receivedBytes)
+                            : formatDownloadStateLabel(d.state, t);
 
-                      const barClass = clsx(
-                        "download-progress-bar",
-                        d.state === "completed" && "download-progress-bar-ok",
-                        (d.state === "cancelled" || d.state === "interrupted") && "download-progress-bar-bad"
-                      );
+                        const progressBg =
+                          d.state === "progressing" && percent !== null
+                            ? `linear-gradient(to right, rgba(59, 130, 246, 0.16) ${Math.round(percent * 100)}%, transparent ${Math.round(percent * 100)}%)`
+                            : null;
 
-                      const barWidth =
-                        percent !== null
-                          ? `${Math.round(percent * 100)}%`
-                          : d.state === "progressing"
-                            ? "20%"
-                            : "100%";
+                        const stateDotClass =
+                          d.state === "completed"
+                            ? "dot-ok"
+                            : d.state === "progressing"
+                              ? "dot-net"
+                              : d.state === "cancelled"
+                                ? "dot-idle"
+                                : "dot-bad";
 
                       return (
-                        <div key={d.id} className="download-toast glass">
-                          <div className="download-toast-head">
-                            <div className="download-toast-title" title={d.filename}>
+                        <div
+                          key={d.id}
+                          className="download-item-compact"
+                          style={progressBg ? { backgroundImage: progressBg } : undefined}
+                          role={d.state === "completed" ? "button" : undefined}
+                          tabIndex={d.state === "completed" ? 0 : undefined}
+                          onClick={() => {
+                            if (d.state !== "completed") return;
+                            void openDownloadedFile(d.id);
+                          }}
+                          onKeyDown={(e) => {
+                            if (d.state !== "completed") return;
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              void openDownloadedFile(d.id);
+                            }
+                          }}
+                        >
+                          <span className={clsx("dot", stateDotClass)} />
+                          <div className="download-item-main">
+                            <div className="download-item-title" title={d.filename}>
                               {d.filename}
                             </div>
-                            <button
-                              className="btn btn-ghost btn-icon"
-                              title={t("close")}
-                              aria-label={t("close")}
-                              onClick={() => dismissDownloadToast(d.id)}
-                            >
-                              ×
-                            </button>
+                            <div className="download-item-sub muted">{progressText}</div>
                           </div>
-
-                          <div className="download-toast-meta muted">
-                            <span>{progressText}</span>
-                            {d.copiedAt ? <span className="chip download-chip">{t("downloadCopied")}</span> : null}
-                          </div>
-
-                          <div className="download-progress">
-                            <div className={barClass} style={{ width: barWidth }} />
-                          </div>
-
-                          <div className="download-actions">
-                            {d.state === "progressing" ? (
-                              <button className="btn" onClick={() => cancelDownloadToast(d.id)}>
-                                {t("downloadCancelDownload")}
-                              </button>
-                            ) : d.state === "completed" ? (
-                              <>
-                                <button className="btn" onClick={() => showDownloadInFolder(d.id)}>
-                                  {t("downloadShowInFolder")}
-                                </button>
-                                <button className="btn btn-primary" onClick={() => openDownloadedFile(d.id)}>
-                                  {t("downloadOpenFile")}
-                                </button>
-                                <button className="btn" onClick={() => copyDownloadPath(d.id)}>
-                                  {t("downloadCopyPath")}
-                                </button>
-                              </>
-                            ) : null}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+	                          <div className="download-item-actions" onClick={(e) => e.stopPropagation()}>
+	                            {d.state === "progressing" ? (
+	                              <button
+	                                className="btn btn-ghost btn-icon download-item-action"
+	                                title={t("downloadCancelDownload")}
+	                                aria-label={t("downloadCancelDownload")}
+	                                onClick={() => cancelDownloadToast(d.id)}
+	                                disabled={busy}
+	                              >
+	                                ×
+	                              </button>
+	                            ) : d.state === "completed" ? (
+	                              <>
+	                                <button
+	                                  className="btn btn-ghost btn-icon download-item-action"
+	                                  title={t("downloadShowInFolder")}
+	                                  aria-label={t("downloadShowInFolder")}
+	                                  onClick={() => void showDownloadInFolder(d.id)}
+	                                  disabled={busy}
+	                                >
+	                                  📁
+	                                </button>
+	                                <button
+	                                  className="btn btn-ghost btn-icon download-item-action"
+	                                  title={t("downloadOpenFile")}
+	                                  aria-label={t("downloadOpenFile")}
+	                                  onClick={() => void openDownloadedFile(d.id)}
+	                                  disabled={busy}
+	                                >
+	                                  ↗
+	                                </button>
+	                              </>
+	                            ) : null}
+	                          </div>
+	                        </div>
+	                      );
+	                    })}
+	                  </div>
+	                </div>
+	              ) : null}
+	            </div>
           <div className="topbar-settings" style={{ position: "relative" }} ref={settingsContainerRef}>
             <button
               className="btn btn-ghost btn-icon"
@@ -2511,10 +3354,10 @@ export default function WorkspaceShell() {
                       <option value="en">{t("langEn")}</option>
                     </select>
                   </div>
-                  <div className="setting-row">
-                    <div className="muted">{t("theme")}</div>
-                    <select
-                      value={uiPrefs.theme}
+	                  <div className="setting-row">
+	                    <div className="muted">{t("theme")}</div>
+	                    <select
+	                      value={uiPrefs.theme}
                       onPointerDown={openSelectOverlay}
                       onBlur={closeSelectOverlay}
                       onKeyDown={(e) => {
@@ -2527,11 +3370,26 @@ export default function WorkspaceShell() {
                       aria-label={t("theme")}
                       disabled={busy}
                     >
-                      <option value="dark">{t("themeDark")}</option>
-                      <option value="light">{t("themeLight")}</option>
-                    </select>
-                  </div>
-                </div>
+	                      <option value="dark">{t("themeDark")}</option>
+	                      <option value="light">{t("themeLight")}</option>
+	                      <option value="system">{t("themeSystem")}</option>
+	                    </select>
+	                  </div>
+	                  <div className="setting-row">
+	                    <div className="muted">{t("healthPanel")}</div>
+	                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+	                      <button className="btn" onClick={() => setHealthDialogOpen(true)} disabled={busy}>
+	                        {t("healthPanel")}
+	                      </button>
+	                      <button className="btn" onClick={runHealthCheckOpenTabs} disabled={busy}>
+	                        {t("healthCheck")}
+	                      </button>
+	                      <button className="btn" onClick={() => setLogDialogOpen(true)} disabled={busy}>
+	                        {t("logPanel")}
+	                      </button>
+	                    </div>
+	                  </div>
+	                </div>
 
                 <div className="popover-title" style={{ marginTop: 10 }}>
                   {t("downloadsSectionTitle")}
@@ -2700,14 +3558,21 @@ export default function WorkspaceShell() {
             </button>
           </div>
         ) : null}
-      </header>
+	      </header>
 
-      {error ? (
-        <div className="error-banner" role="status">
-          <div className="error-banner-content">
-            <div className="error-banner-title">{t("errorTitle")}</div>
-            <div className="error-banner-body">{error}</div>
-          </div>
+	      {tokenEncryptionAvailable === false ? (
+	        <div className="warning-banner" role="status">
+	          <div className="warning-banner-title">{t("tokenEncryptionWarningTitle")}</div>
+	          <div className="warning-banner-body">{t("tokenEncryptionWarningBody")}</div>
+	        </div>
+	      ) : null}
+
+	      {error ? (
+	        <div className="error-banner" role="status">
+	          <div className="error-banner-content">
+	            <div className="error-banner-title">{t("errorTitle")}</div>
+	            <div className="error-banner-body">{error}</div>
+	          </div>
           <button
             type="button"
             className="error-banner-close"
@@ -2824,65 +3689,85 @@ export default function WorkspaceShell() {
           </button>
         ) : null}
 
-        <aside className={clsx("sidebar", sidebarCollapsed && "collapsed")} id="sidebar">
-          <div className="sidebar-header">
-            <div className="sidebar-title">{t("sidebarTitle")}</div>
-            <div className="sidebar-header-right">
-              {!sidebarCollapsed ? (
-                <>
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-icon"
-                    title={t("collapseSidebar")}
-                    aria-label={t("collapseSidebar")}
-                    onClick={() => updateUiPrefs({ sidebarCollapsed: true })}
-                    disabled={busy}
-                  >
-                    «
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-icon"
-                    title={t("viewCards")}
-                    onClick={() => updateUiPrefs({ accountListView: "cards" })}
-                    disabled={busy}
-                  >
-                    ▦
-                  </button>
-                  <button
-                    className="btn btn-ghost btn-icon"
-                    title={t("viewTable")}
-                    onClick={() => updateUiPrefs({ accountListView: "table" })}
-                    disabled={busy}
-                  >
-                    ☰
-                  </button>
-                </>
-              ) : null}
-            </div>
-          </div>
+	        <aside className={clsx("sidebar", sidebarCollapsed && "collapsed")} id="sidebar">
+	          <div className="sidebar-header">
+	            <div className="sidebar-title">{t("sidebarTitle")}</div>
+	            <div className="sidebar-header-right">
+	              {!sidebarCollapsed ? (
+	                <>
+	                  <input
+	                    ref={searchInputRef}
+	                    className="input sidebar-search"
+	                    type="text"
+	                    placeholder={t("searchPlaceholder")}
+	                    value={searchText}
+	                    onChange={(e) => setSearchText(e.target.value)}
+	                    disabled={busy}
+	                  />
+	                  <button
+	                    className="btn btn-ghost btn-icon"
+	                    title={viewMode === "cards" ? t("viewTable") : t("viewCards")}
+	                    aria-label={viewMode === "cards" ? t("viewTable") : t("viewCards")}
+	                    onClick={() =>
+	                      updateUiPrefs({ accountListView: viewMode === "cards" ? "table" : "cards" })
+	                    }
+	                    disabled={busy}
+	                  >
+	                    {viewMode === "cards" ? "☰" : "▦"}
+	                  </button>
+	                  <button
+	                    type="button"
+	                    className="btn btn-ghost btn-icon"
+	                    title={t("collapseSidebar")}
+	                    aria-label={t("collapseSidebar")}
+	                    onClick={() => updateUiPrefs({ sidebarCollapsed: true })}
+	                    disabled={busy}
+	                  >
+	                    «
+	                  </button>
+	                </>
+	              ) : null}
+	            </div>
+	          </div>
 
-          <div className="sidebar-subheader">
-            <label className="checkbox">
-              <input
-                ref={selectAllRef}
-                type="checkbox"
-                checked={allFilteredSelected}
-                onChange={toggleSelectAllFiltered}
-                disabled={busy || filteredAccounts.length === 0}
-              />
-              <span>{t("selectAll")}</span>
-            </label>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div className="muted">{format(t("selectedCount"), { count: selected.length })}</div>
-              <button
-                className="btn btn-primary"
-                onClick={batchOpenTabs}
-                disabled={busy || selected.length === 0}
-              >
-                {t("batchOpen")}
-              </button>
-            </div>
-          </div>
+	          <div className="sidebar-subheader">
+	            <label className="checkbox sidebar-select-all">
+	              <input
+	                ref={selectAllRef}
+	                type="checkbox"
+	                checked={allFilteredSelected}
+	                onChange={toggleSelectAllFiltered}
+	                disabled={busy || filteredAccounts.length === 0}
+	              />
+	              <span>{t("selectAll")}</span>
+	            </label>
+
+	            <select
+	              className="sidebar-sort"
+	              value={uiPrefs.accountSort}
+	              onPointerDown={openSelectOverlay}
+	              onBlur={closeSelectOverlay}
+	              onKeyDown={(e) => {
+	                if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+	              }}
+	              onChange={(e) => {
+	                closeSelectOverlay();
+	                updateUiPrefs({ accountSort: e.target.value as AccountSortMode });
+	              }}
+	              aria-label={t("sortLabel")}
+	              disabled={busy}
+	            >
+	              <option value="default">{t("sortDefault")}</option>
+	              <option value="displayName">{t("sortDisplayName")}</option>
+	              <option value="lastUsed">{t("sortLastUsed")}</option>
+	              <option value="subscriptionExpiresAt">{t("sortSubscriptionExpiresAt")}</option>
+	              <option value="creditsUpdatedAt">{t("sortCreditsUpdatedAt")}</option>
+	            </select>
+
+	            <div className="chip chip-compact sidebar-selected-chip" title={format(t("selectedCount"), { count: selected.length })}>
+	              {format(t("selectedCountShort"), { count: selected.length })}
+	            </div>
+	          </div>
 
           <div className={clsx("account-list", viewMode === "table" && "view-table")}>
             {filteredAccounts.length === 0 ? (
@@ -2890,101 +3775,124 @@ export default function WorkspaceShell() {
                 {accounts.length === 0 ? t("noAccounts") : t("noMatch")}
               </div>
             ) : (
-	              filteredAccounts.map((a) => {
-	                const selectedRow = selectedIds.has(a.id);
-	                const focused = a.id === focusedAccountId;
-	                const info = accountInfoById[a.id] ?? DEFAULT_ACCOUNT_INFO;
-	                const subscription = info.subscription ?? "-";
-	                const expiresAt = info.subscriptionExpiresAt ? formatDate(info.subscriptionExpiresAt, uiPrefs.locale) : "-";
-	                const credits = info.credits ?? "-";
-	                const updatedAt = info.updatedAt ? formatUpdatedAt(info.updatedAt, uiPrefs.locale) : null;
-	                return (
-	                  <div
-	                    key={a.id}
-	                    className={clsx("account", (selectedRow || focused) && "selected")}
+		              filteredAccounts.map((a) => {
+		                const selectedRow = selectedIds.has(a.id);
+		                const focused = a.id === focusedAccountId;
+		                const info = accountInfoById[a.id] ?? DEFAULT_ACCOUNT_INFO;
+		                const credits = info.credits ? formatCreditsValue(info.credits) : "-";
+		                const updatedAt = info.updatedAt ? formatUpdatedAt(info.updatedAt, uiPrefs.locale) : null;
+	                  const updatedAge = info.updatedAt ? formatUpdatedAgeShort(info.updatedAt, uiPrefs.locale) : null;
+		                const tabOpen = openTabIds.includes(a.id);
+		                return (
+		                  <div
+		                    key={a.id}
+		                    className={clsx("account", (selectedRow || focused) && "selected")}
                     role="button"
                     tabIndex={0}
                     onClick={() => focusAccount(a.id)}
+                    onDoubleClick={(e) => {
+                      if (e.target !== e.currentTarget) return;
+                      void (tabOpen ? activateTab(a.id) : openTab(a.id));
+                    }}
                     onKeyDown={(e) => {
                       if (e.target !== e.currentTarget) return;
                       if (e.key === "Enter" || e.key === " ") {
                         e.preventDefault();
                         focusAccount(a.id);
-                      }
-                    }}
-                  >
-                    <div className="account-row">
-                      <label className="checkbox" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          checked={selectedRow}
-                          onChange={() => toggleSelected(a.id)}
-                          disabled={busy}
-                        />
-                      </label>
-                      <div className="account-main">
-                        <div className="account-name">{a.displayName}</div>
-                        <div className="account-subtitle">id: {a.id}</div>
-                        <div className="account-subtitle">fp: {maskFingerprint(a.fingerprint)}</div>
-                      </div>
-                      <div
-                        className="chip"
-                        title={`${t("proxyMode")}: ${formatProxyModeLabel(a.net.proxy.mode, t)}`}
-                      >
-                        <span className="dot dot-net" />
-                        <span>{formatProxyModeLabel(a.net.proxy.mode, t)}</span>
-                      </div>
+	                      }
+	                    }}
+	                  >
+	                    <div className="account-header">
+	                      <label className="checkbox" onClick={(e) => e.stopPropagation()}>
+	                        <input
+	                          type="checkbox"
+	                          checked={selectedRow}
+	                          onChange={() => toggleSelected(a.id)}
+	                          disabled={busy}
+	                        />
+	                      </label>
+	                      <div className="account-head-main">
+	                        <div className="account-name-row">
+	                          <div className="account-name" title={a.displayName}>
+	                            {a.displayName}
+	                          </div>
+	                          {info.subscription ? (
+	                            <span
+	                              className="account-plan-badge"
+	                              title={`${t("subscriptionLabel")}: ${info.subscription}`}
+	                            >
+	                              {info.subscription}
+	                            </span>
+	                          ) : null}
+	                        </div>
+	                      </div>
+	                      <div className="account-header-actions" onClick={(e) => e.stopPropagation()}>
+	                        <button
+	                          className="btn btn-ghost btn-icon"
+	                          title={tabOpen ? t("activateTab") : t("openTab")}
+	                          onClick={() => void (tabOpen ? activateTab(a.id) : openTab(a.id))}
+	                          disabled={busy}
+	                        >
+	                          ↗
+	                        </button>
+	                        <button
+	                          className="btn btn-ghost btn-icon"
+	                          title={a.pinned ? t("unpin") : t("pin")}
+	                          onClick={() => void togglePinnedForAccount(a.id, !a.pinned)}
+	                          disabled={busy}
+	                        >
+	                          {a.pinned ? "★" : "☆"}
+	                        </button>
+	                      </div>
+	                    </div>
+
+	                    <div className="account-footer">
+	                      <div className="account-metrics">
+	                        <div className="account-credits">
+	                          <div className="account-credits-row">
+	                            <div className="account-credits-label">{t("creditsLabel")}</div>
+	                            <div
+	                              className={clsx("account-credits-value", "mono", info.error && "is-bad")}
+	                              title={`${t("creditsLabel")}: ${credits}${info.error ? `\n${info.error}` : ""}`}
+	                            >
+	                              {credits}
+	                            </div>
+	                          </div>
+	                          {updatedAge && updatedAt ? (
+	                            <div className="account-credits-meta muted mono" title={`${t("updatedAtLabel")}: ${updatedAt}`}>
+	                              {updatedAge}
+	                            </div>
+	                          ) : (
+	                            <div className="account-credits-meta muted mono">-</div>
+	                          )}
+	                        </div>
+
+	                        <div className="account-badges">
+	                          <span
+	                            className={clsx("account-badge", tabOpen && "is-active")}
+	                            title={tabOpen ? t("tabOpenTitle") : t("tabClosedTitle")}
+	                          >
+	                            <span className={clsx("dot", tabOpen ? "dot-ok" : "dot-idle")} />
+	                            <span>{t("tabChip")}</span>
+	                          </span>
+	                          <span className="account-badge" title={`${t("proxyMode")}: ${formatProxyModeLabel(a.net.proxy.mode, t)}`}>
+	                            <span className="dot dot-net" />
+	                            <span>{formatProxyModeShort(a.net.proxy.mode)}</span>
+	                          </span>
+	                          <span className="account-badge" title={`UA: ${formatUaModeLabel(a.ua.mode, t)}`}>
+	                            <span>UA</span>
+	                            <span className="mono">{formatUaModeShort(a.ua.mode)}</span>
+	                          </span>
+	                          {info.error ? (
+	                            <span className="account-badge is-bad" title={info.error}>
+	                              !
+	                            </span>
+	                          ) : null}
+	                        </div>
+	                      </div>
 	                    </div>
 	
-	                    <div className="account-meta">
-	                      <span className="chip">UA: {formatUaModeLabel(a.ua.mode, t)}</span>
-	                      <span className="chip" title={`${t("subscriptionLabel")}: ${subscription}`}>
-	                        {subscription}
-	                      </span>
-	                      {info.subscription ? (
-	                        <span className="chip" title={`${t("subscriptionExpiresAtLabel")}: ${expiresAt}`}>
-	                          {format(t("subscriptionExpiresAtChip"), { date: expiresAt })}
-	                        </span>
-	                      ) : null}
-	                      <span className="chip mono" title={`${t("creditsLabel")}: ${credits}`}>
-	                        {credits}
-	                      </span>
-		                      {updatedAt ? (
-		                        <span className="muted" style={{ fontSize: 11 }} title={`${t("updatedAtLabel")}: ${updatedAt}`}>
-		                          {updatedAt}
-		                        </span>
-		                      ) : null}
-		                      <button
-		                        className="btn btn-ghost btn-icon"
-		                        title={t("openTab")}
-		                        onClick={(e) => {
-		                          e.stopPropagation();
-		                          void openTab(a.id);
-		                        }}
-		                        disabled={busy}
-		                      >
-		                        ↗
-		                      </button>
-		                      <button
-		                        className="btn btn-ghost btn-icon"
-		                        title={t("refreshCredits")}
-	                        onClick={(e) => {
-	                          e.stopPropagation();
-	                          void refreshCreditsForAccount(a.id);
-	                        }}
-	                        disabled={busy || info.status === "loading"}
-	                      >
-	                        ⟳
-	                      </button>
-	                      {info.status === "loading" ? (
-	                        <span className="muted" style={{ fontSize: 11 }}>
-	                          …
-	                        </span>
-	                      ) : null}
-	                      {focused ? <span className="chip">{t("focusedChip")}</span> : null}
-	                    </div>
-	
-	                    {info.error ? (
+	                    {info.error && viewMode !== "table" ? (
 	                      <div
 	                        className="muted"
 	                        style={{
@@ -2998,9 +3906,9 @@ export default function WorkspaceShell() {
 	                      </div>
 	                    ) : null}
 	
-		                    {a.tags.length ? (
-		                      <div className="account-tags">
-		                        {a.tags.map((t) => (
+	                    {a.tags.length ? (
+	                      <div className="account-tags">
+	                        {a.tags.slice(0, 3).map((t) => (
 	                          <button
 	                            key={t}
 	                            type="button"
@@ -3014,90 +3922,159 @@ export default function WorkspaceShell() {
 	                            {t}
 	                          </button>
 	                        ))}
+	                        {a.tags.length > 3 ? (
+	                          <button
+	                            type="button"
+	                            className="tag-chip"
+	                            title={a.tags.slice(3).join(", ")}
+	                            onClick={(e) => e.stopPropagation()}
+	                            disabled={busy}
+	                            style={{ cursor: "default" }}
+	                          >
+	                            +{a.tags.length - 3}
+	                          </button>
+	                        ) : null}
 	                      </div>
 	                    ) : null}
 
-                    <div className="account-table">
-                      <input
-                        type="checkbox"
-                        checked={selectedRow}
-                        onChange={() => toggleSelected(a.id)}
-                        disabled={busy}
-                        onClick={(e) => e.stopPropagation()}
-                      />
-                      <div className="account-table-title">
-                        <div className="account-table-name">{a.displayName}</div>
-	                      <div className="account-table-tags">
-	                        {a.tags.slice(0, 3).map((t) => (
-	                            <button
-	                              key={t}
-	                              type="button"
-	                              className="tag-chip"
-	                              onClick={(e) => {
-	                                e.stopPropagation();
-	                                setSearchText(t);
-	                              }}
-	                              disabled={busy}
-	                            >
-	                              {t}
-	                            </button>
-	                          ))}
+	                    <div className="account-table">
+	                      <input
+	                        type="checkbox"
+	                        checked={selectedRow}
+	                        onChange={() => toggleSelected(a.id)}
+	                        disabled={busy}
+	                        onClick={(e) => e.stopPropagation()}
+	                      />
+	                      <div className="account-table-identity">
+	                        <div className="account-table-name" title={a.displayName}>
+	                          {a.displayName}
 	                        </div>
-                      </div>
-                      <span className="mono">{maskFingerprint(a.fingerprint)}</span>
-                      <span className="mono">{formatProxyModeLabel(a.net.proxy.mode, t)}</span>
-                      <span className="mono">{formatUaModeLabel(a.ua.mode, t)}</span>
-                      <button
-                        className="btn btn-ghost btn-icon"
-                        title={t("openDetails")}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          focusAccount(a.id);
-                        }}
-                        disabled={busy}
-                      >
-                        →
-                      </button>
-                    </div>
-                  </div>
-                );
-              })
+	                        {a.tags.length > 0 ? (
+	                          <div className="account-table-sub">
+	                            <div className="account-table-tags">
+	                              {a.tags.slice(0, 2).map((t) => (
+	                                <button
+	                                  key={t}
+	                                  type="button"
+	                                  className="tag-chip"
+	                                  onClick={(e) => {
+	                                    e.stopPropagation();
+	                                    setSearchText(t);
+	                                  }}
+	                                  disabled={busy}
+	                                >
+	                                  {t}
+	                                </button>
+	                              ))}
+	                            </div>
+	                          </div>
+	                        ) : null}
+	                      </div>
+	                      <div className="account-table-metrics">
+	                        <div className="account-table-metrics-top">
+	                          <span
+	                            className={clsx("dot", openTabIds.includes(a.id) ? "dot-ok" : "dot-idle")}
+	                            title={openTabIds.includes(a.id) ? t("tabOpenTitle") : t("tabClosedTitle")}
+	                          />
+	                          <span
+	                            className={clsx("account-table-credits", "mono", info.error && "is-bad")}
+	                            title={`${t("creditsLabel")}: ${credits}${info.error ? `\n${info.error}` : ""}`}
+	                          >
+	                            {credits}
+	                          </span>
+	                          {info.error ? (
+	                            <span className="account-table-error" title={info.error}>
+	                              !
+	                            </span>
+	                          ) : null}
+	                        </div>
+	                        <div className="account-table-metrics-bottom">
+	                          <span
+	                            className="account-table-badge"
+	                            title={`${t("proxyMode")}: ${formatProxyModeLabel(a.net.proxy.mode, t)}`}
+	                          >
+	                            {formatProxyModeShort(a.net.proxy.mode)}
+	                          </span>
+	                          <span className="account-table-badge" title={`UA: ${formatUaModeLabel(a.ua.mode, t)}`}>
+	                            UA:{formatUaModeShort(a.ua.mode)}
+	                          </span>
+	                          {updatedAt && updatedAge ? (
+	                            <span
+	                              className="account-table-metric muted mono"
+	                              title={`${t("updatedAtLabel")}: ${updatedAt}`}
+	                            >
+	                              {updatedAge}
+	                            </span>
+	                          ) : null}
+	                        </div>
+	                      </div>
+	                      <div className="account-table-actions" onClick={(e) => e.stopPropagation()}>
+	                        <button
+	                          className="btn btn-ghost btn-icon"
+	                          title={openTabIds.includes(a.id) ? t("activateTab") : t("openTab")}
+	                          onClick={() => void (openTabIds.includes(a.id) ? activateTab(a.id) : openTab(a.id))}
+	                          disabled={busy}
+	                        >
+	                          ↗
+	                        </button>
+	                        <button
+	                          className="btn btn-ghost btn-icon"
+	                          title={a.pinned ? t("unpin") : t("pin")}
+	                          onClick={() => void togglePinnedForAccount(a.id, !a.pinned)}
+	                          disabled={busy}
+	                        >
+	                          {a.pinned ? "★" : "☆"}
+	                        </button>
+	                        <button
+	                          className="btn btn-ghost btn-icon"
+	                          title={t("openDetails")}
+	                          onClick={() => focusAccount(a.id)}
+	                          disabled={busy}
+	                        >
+	                          →
+	                        </button>
+	                      </div>
+	                    </div>
+	                  </div>
+	                );
+	              })
             )}
           </div>
 
-	          {selected.length > 0 ? (
-	            <div className="batchbar">
-		              <div className="batchbar-left">{format(t("selectedCount"), { count: selected.length })}</div>
-		              <div className="batchbar-actions">
-		                <button className="btn btn-primary" onClick={batchOpenTabs} disabled={busy || batchRefreshRunning}>
-		                  {t("openTab")}
-		                </button>
-		                <button className="btn" onClick={batchCloseTabs} disabled={busy || batchRefreshRunning}>
-		                  {t("closeTab")}
-		                </button>
-                    <button
-                      className="btn"
-                      onClick={runBatchRefreshCredits}
-                      disabled={busy || batchRefreshRunning}
-                    >
-                      {t("batchRefresh")}
-                    </button>
-		                <button className="btn" onClick={openBatchTagsDialog} disabled={busy || batchRefreshRunning}>
-		                  {t("batchTags")}
-		                </button>
-		                <button className="btn" onClick={runExport} disabled={busy || batchRefreshRunning}>
-		                  {t("export")}
-		                </button>
-		                <button
-                      className="btn btn-danger"
-                      onClick={openBatchDeleteDialog}
-                      disabled={busy || batchRefreshRunning}
-                    >
-		                  {t("batchDelete")}
-		                </button>
-		              </div>
-		            </div>
-		          ) : null}
+			          {selected.length > 0 ? (
+			            <div className="batchbar">
+				              <div className="batchbar-left">
+				                {format(t("selectedCount"), { count: selected.length })}
+				              </div>
+				              <div className="batchbar-actions">
+				                <button className="btn btn-primary" onClick={batchOpenTabs} disabled={busy}>
+				                  {t("openTab")}
+				                </button>
+				                <button className="btn" onClick={batchCloseTabs} disabled={busy}>
+				                  {t("closeTab")}
+				                </button>
+				                <button className="btn" onClick={openBatchTagsDialog} disabled={busy}>
+				                  {t("batchTags")}
+				                </button>
+				                <button className="btn" onClick={openBatchProxyDialog} disabled={busy}>
+				                  {t("batchProxy")}
+				                </button>
+				                <button className="btn" onClick={openBatchUserAgentDialog} disabled={busy}>
+				                  {t("batchUa")}
+				                </button>
+				                <button className="btn" onClick={runExport} disabled={busy}>
+				                  {t("export")}
+				                </button>
+			                <button
+	                      className="btn btn-danger"
+	                      onClick={openBatchDeleteDialog}
+	                      disabled={busy}
+	                    >
+			                  {t("batchDelete")}
+			                </button>
+			              </div>
+			            </div>
+			          ) : null}
 	        </aside>
 
         <main className="workspace">
@@ -3198,7 +4175,18 @@ export default function WorkspaceShell() {
         {inspectorOpen ? (
           <aside className="inspector" id="inspector">
             <div className="inspector-header">
-              <div className="inspector-title">{t("inspectorTitle")}</div>
+              <div className="inspector-header-text">
+                <div className="inspector-title">{focusedAccount ? focusedAccount.displayName : t("inspectorTitle")}</div>
+                {focusedAccount ? (
+                  <div className="inspector-subtitle muted">
+                    {t("creditsLabel")}:{" "}
+                    <span className="mono">
+                      {focusedAccountInfo.credits ? formatCreditsValue(focusedAccountInfo.credits) : "-"}
+                    </span>{" "}
+                    · {focusedAccountId && openTabIds.includes(focusedAccountId) ? t("tabOpenTitle") : t("tabClosedTitle")}
+                  </div>
+                ) : null}
+              </div>
               <button
                 className="btn btn-icon"
                 title={t("close")}
@@ -3210,176 +4198,101 @@ export default function WorkspaceShell() {
             </div>
 
             <div className="inspector-body">
-              {!focusedAccount ? (
-                <div className="muted" style={{ fontSize: 12 }}>
-                  {t("inspectorSelectHint")}
-                </div>
-              ) : (
-                <>
-                  <div className="field">
-                    <div className="field-label">{t("displayNameLabel")}</div>
-                    <div className="field-value">{focusedAccount.displayName}</div>
-                  </div>
-                  <div className="field">
-                    <div className="field-label">{t("accountIdLabel")}</div>
-                    <div className="field-value mono">{focusedAccount.id}</div>
-                  </div>
-                  <div className="field">
-                    <div className="field-label">{t("fingerprintLabel")}</div>
-                    <div className="field-value mono">{maskFingerprint(focusedAccount.fingerprint)}</div>
-                  </div>
-                  <div className="field">
-                    <div className="field-label">{t("tagsLabel")}</div>
-                    <div className="field-value" style={{ display: "grid", gap: 6 }}>
-                      <input
-                        className="input"
-                        type="text"
-                        value={tagsDraft}
-                        onChange={(e) => setTagsDraft(e.target.value)}
-                        placeholder={t("tagsPlaceholder")}
-                        disabled={busy}
-                      />
-                      <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                        <button className="btn" onClick={saveTags} disabled={busy || !focusedAccountId}>
-                          {t("saveTags")}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
+		              {!focusedAccount ? (
+		                <div className="muted" style={{ fontSize: 12 }}>
+		                  {t("inspectorSelectHint")}
+		                </div>
+		              ) : (
+		                <>
+		                  <div className="inspector-group">
+		                    <div className="inspector-group-title">{t("accountInfoTitle")}</div>
+		                    <div className="inspector-overview">
+		                      <div className="overview-card glass">
+		                        <div className="overview-label">{t("creditsLabel")}</div>
+		                        <div className={clsx("overview-value", "mono", focusedAccountInfo.error && "is-bad")}>
+		                          {focusedAccountInfo.credits ? formatCreditsValue(focusedAccountInfo.credits) : "-"}
+		                        </div>
+		                        <div className="overview-meta muted">
+		                          {focusedAccountId && openTabIds.includes(focusedAccountId)
+		                            ? t("creditsSyncHintOpenTab")
+		                            : t("creditsSyncHintClosedTab")}
+		                          {focusedAccountInfo.updatedAt ? (
+		                            <>
+		                              {" "}
+		                              · {formatUpdatedAt(focusedAccountInfo.updatedAt, uiPrefs.locale)}
+		                            </>
+		                          ) : null}
+		                        </div>
+		                      </div>
+		                      <div className="overview-card glass">
+		                        <div className="overview-label">{t("subscriptionLabel")}</div>
+		                        <div className="overview-value mono">{focusedAccountInfo.subscription ?? "-"}</div>
+		                        <div className="overview-meta muted">
+		                          {t("subscriptionExpiresAtLabel")}:{" "}
+		                          <span className="mono">
+		                            {focusedAccountInfo.subscriptionExpiresAt
+		                              ? formatDate(focusedAccountInfo.subscriptionExpiresAt, uiPrefs.locale)
+		                              : "-"}
+		                          </span>
+		                        </div>
+		                      </div>
+		                    </div>
+		                    {focusedAccountInfo.error ? (
+		                      <div className="muted" style={{ marginTop: 6, fontSize: 11, whiteSpace: "pre-wrap" }}>
+		                        {focusedAccountInfo.error}
+		                      </div>
+		                    ) : null}
+		                  </div>
 
-                  <div className="section-divider" />
-                  <div className="section-title">{t("accountInfoTitle")}</div>
-                  <div className="field">
-                    <div className="field-label">{t("subscriptionLabel")}</div>
-                    <div className="field-value">
-                      {focusedAccountInfo.subscription ? (
-                        <span className="mono">{focusedAccountInfo.subscription}</span>
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="field">
-                    <div className="field-label">{t("subscriptionExpiresAtLabel")}</div>
-                    <div className="field-value">
-                      {focusedAccountInfo.subscriptionExpiresAt ? (
-                        <span className="mono">
-                          {formatDate(focusedAccountInfo.subscriptionExpiresAt, uiPrefs.locale)}
-                        </span>
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="field">
-                    <div className="field-label">{t("creditsLabel")}</div>
-                    <div className="field-value">
-                      {focusedAccountInfo.credits ? (
-                        <span className="mono">{focusedAccountInfo.credits}</span>
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <button
-                      className="btn"
-                      onClick={refreshAccountInfo}
-                      disabled={busy || !focusedAccountId || focusedAccountInfo.status === "loading"}
-                    >
-                      {t("refreshCredits")}
-                    </button>
-                    {focusedAccountInfo.updatedAt ? (
-                      <span className="muted" style={{ fontSize: 11 }}>
-                        {t("updatedAtLabel")}: {formatUpdatedAt(focusedAccountInfo.updatedAt, uiPrefs.locale)}
-                      </span>
-                    ) : null}
-                    {focusedAccountInfo.status === "loading" ? (
-                      <span className="muted" style={{ fontSize: 11 }}>
-                        …
-                      </span>
-                    ) : null}
-                  </div>
-                  {focusedAccountInfo.error ? (
-                    <div
-                      className="muted"
-                      style={{ marginTop: 8, fontSize: 11, whiteSpace: "pre-wrap" }}
-                    >
-                      {focusedAccountInfo.error}
-                    </div>
-                  ) : null}
+		                  <div className="inspector-group">
+		                    <div className="inspector-group-title">{t("identitySectionTitle")}</div>
+		                    <div className="field">
+		                      <div className="field-label">{t("displayNameLabel")}</div>
+		                      <div className="field-value" style={{ display: "grid", gap: 6 }}>
+		                        <input
+		                          className="input"
+		                          type="text"
+		                          value={displayNameDraft}
+		                          onChange={(e) => {
+		                            setDisplayNameInlineError(null);
+		                            setDisplayNameDraft(e.target.value);
+		                          }}
+		                          disabled={busy}
+		                        />
+		                        {displayNameInlineError ? (
+		                          <div className="inline-error">{displayNameInlineError}</div>
+		                        ) : null}
+		                      </div>
+		                    </div>
+		                    <div className="field" style={{ marginBottom: 0 }}>
+		                      <div className="field-label">{t("tagsLabel")}</div>
+		                      <div className="field-value" style={{ display: "grid", gap: 6 }}>
+		                        <input
+		                          className="input"
+		                          type="text"
+		                          value={tagsDraft}
+		                          onChange={(e) => setTagsDraft(e.target.value)}
+		                          placeholder={t("tagsPlaceholder")}
+		                          disabled={busy}
+		                        />
+		                      </div>
+		                    </div>
+		                    <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+		                      <button className="btn" onClick={saveDisplayName} disabled={busy || !focusedAccountId}>
+		                        {t("saveDisplayName")}
+		                      </button>
+		                      <button className="btn" onClick={saveTags} disabled={busy || !focusedAccountId}>
+		                        {t("saveTags")}
+		                      </button>
+		                    </div>
+		                  </div>
 
-                  <div className="section-divider" />
-                  <div className="section-title">{t("flowithosSectionTitle")}</div>
-                  <div className="field">
-                    <div className="field-label">{t("flowithosStatusLabel")}</div>
-                    <div className="field-value">
-                      {flowithOsStatus ? (
-                        flowithOsStatus.reason ? (
-                          <span className="muted">{flowithOsStatus.reason}</span>
-                        ) : (
-                          <span className="mono">{t("flowithosReady")}</span>
-                        )
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="field">
-                    <div className="field-label">{t("flowithosPathLabel")}</div>
-                    <div className="field-value mono" title={flowithOsStatus?.userDataPath ?? undefined}>
-                      {flowithOsStatus ? flowithOsStatus.userDataPath : "-"}
-                    </div>
-                  </div>
-                  <div className="field">
-                    <div className="field-label">{t("flowithosLinkedLabel")}</div>
-                    <div className="field-value mono">{flowithOsStatus?.linkedAccountId ? flowithOsStatus.linkedAccountId : "-"}</div>
-                  </div>
-                  <div className="field">
-                    <div className="field-label">{t("flowithosLastSyncLabel")}</div>
-                    <div className="field-value">
-                      {flowithOsStatus?.lastSyncedAt ? (
-                        <span className="mono">{formatDate(flowithOsStatus.lastSyncedAt, uiPrefs.locale)}</span>
-                      ) : (
-                        <span className="muted">-</span>
-                      )}
-                    </div>
-                  </div>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <button
-                      className="btn"
-                      onClick={writeFlowithOsFromFocused}
-                      disabled={
-                        busy ||
-                        !focusedAccountId ||
-                        !flowithOsStatus ||
-                        flowithOsStatus.running ||
-                        !flowithOsStatus.sessionFileWritable
-                      }
-                    >
-                      {t("flowithosWriteButton")}
-                    </button>
-                    <button
-                      className="btn"
-                      onClick={syncFromFlowithOsAction}
-                      disabled={busy || !flowithOsStatus || !flowithOsStatus.sessionFileExists}
-                    >
-                      {t("flowithosSyncButton")}
-                    </button>
-                    <button className="btn" onClick={() => void refreshFlowithOsStatus()} disabled={busy}>
-                      {t("refresh")}
-                    </button>
-                  </div>
-                  <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
-                    {t("flowithosHint")}
-                  </div>
-
-                  <div className="section-divider" />
-                  <div className="section-title">{t("networkSectionTitle")}</div>
-                  <div className="setting-grid">
-                    <div className="setting-row">
-                      <div className="muted">{t("proxyMode")}</div>
-                      <select
+		                  <div className="inspector-group">
+		                    <div className="inspector-group-title">{t("networkSectionTitle")}</div>
+		                    <div className="setting-grid">
+		                    <div className="setting-row">
+		                      <div className="muted">{t("proxyMode")}</div>
+		                      <select
                         value={proxyMode}
                         onPointerDown={openSelectOverlay}
                         onBlur={closeSelectOverlay}
@@ -3400,76 +4313,77 @@ export default function WorkspaceShell() {
                       </select>
                     </div>
 
-	                    {proxyMode === "custom" ? (
-	                      <>
-	                        {proxyPresets.length > 0 ? (
-	                          <div className="setting-row">
-	                            <div className="muted">{t("proxyPresetLabel")}</div>
-	                            <select
-	                              value={proxyPresetValue}
-	                              onPointerDown={openSelectOverlay}
-	                              onBlur={closeSelectOverlay}
-	                              onKeyDown={(e) => {
-	                                if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
-	                              }}
-	                              onChange={(e) => {
-	                                closeSelectOverlay();
-	                                setProxyInlineError(null);
-	                                const next = e.target.value;
-	                                if (next) setProxyRules(next);
-	                              }}
-	                              disabled={busy}
-	                              aria-label={t("proxyPresetLabel")}
-	                            >
-	                              <option value="">{t("proxyPresetManual")}</option>
-	                              {proxyPresets.map((preset) => (
-	                                <option key={preset} value={preset}>
-	                                  {preset}
-	                                </option>
-	                              ))}
-	                            </select>
-	                          </div>
-	                        ) : null}
-	                        <div className="setting-row">
-	                          <div className="muted">{t("proxyRulesLabel")}</div>
-	                          <input
-	                            className="input mono"
-	                            type="text"
-	                            placeholder={t("proxyPlaceholder")}
-	                            value={proxyRules}
-	                            onChange={(e) => {
-	                              setProxyInlineError(null);
-	                              setProxyRules(e.target.value);
-	                            }}
-	                            disabled={busy}
-	                          />
-	                          {proxyInlineError ? <div className="inline-error">{proxyInlineError}</div> : null}
-	                        </div>
-	                      </>
-	                    ) : null}
-	                  </div>
+			                    {proxyMode === "custom" ? (
+			                      <>
+			                        {proxyPresets.length > 0 ? (
+			                          <div className="setting-row">
+			                            <div className="muted">{t("proxyPresetLabel")}</div>
+			                            <select
+			                              value={proxyPresetValue}
+			                              onPointerDown={openSelectOverlay}
+			                              onBlur={closeSelectOverlay}
+			                              onKeyDown={(e) => {
+			                                if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+			                              }}
+			                              onChange={(e) => {
+			                                closeSelectOverlay();
+			                                setProxyInlineError(null);
+			                                const next = e.target.value;
+			                                if (next) setProxyRules(next);
+			                              }}
+			                              disabled={busy}
+			                              aria-label={t("proxyPresetLabel")}
+			                            >
+			                              <option value="">{t("proxyPresetManual")}</option>
+			                              {proxyPresets.map((preset) => (
+			                                <option key={preset} value={preset}>
+			                                  {preset}
+			                                </option>
+			                              ))}
+			                            </select>
+			                          </div>
+			                        ) : null}
+			                        <div className="setting-row">
+			                          <div className="muted">{t("proxyRulesLabel")}</div>
+			                          <input
+			                            className="input mono"
+			                            type="text"
+			                            placeholder={t("proxyPlaceholder")}
+			                            value={proxyRules}
+			                            onChange={(e) => {
+			                              setProxyInlineError(null);
+			                              setProxyRules(e.target.value);
+			                            }}
+			                            disabled={busy}
+			                          />
+			                          {proxyInlineError ? <div className="inline-error">{proxyInlineError}</div> : null}
+			                        </div>
+			                      </>
+			                    ) : null}
+			                  </div>
 
-                  <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-                    <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
-                      {t("saveProxy")}
-                    </button>
-                    <div ref={connectivityPopoverAnchorRef}>
-                      <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
-                        {t("connectivity")}
-                      </button>
-                    </div>
-                  </div>
+		                    <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+		                      <button className="btn" onClick={saveProxy} disabled={busy || !focusedAccountId}>
+		                        {t("saveProxy")}
+		                      </button>
+		                      <div ref={connectivityPopoverAnchorRef}>
+		                        <button className="btn" onClick={runConnectivity} disabled={busy || !focusedAccountId}>
+		                          {t("connectivity")}
+		                        </button>
+		                      </div>
+		                    </div>
 
-                  <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
-                    {t("proxyHint")}
-                  </div>
+		                    <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+		                      {t("proxyHint")}
+		                    </div>
+		                  </div>
 
-                  <div className="section-divider" />
-                  <div className="section-title">{t("uaSectionTitle")}</div>
-                  <div className="setting-grid">
-                    <div className="setting-row">
-                      <div className="muted">{t("uaModeLabel")}</div>
-                      <select
+		                  <div className="inspector-group">
+		                    <div className="inspector-group-title">{t("uaSectionTitle")}</div>
+		                    <div className="setting-grid">
+		                    <div className="setting-row">
+		                      <div className="muted">{t("uaModeLabel")}</div>
+		                      <select
                         value={uaMode}
                         onPointerDown={openSelectOverlay}
                         onBlur={closeSelectOverlay}
@@ -3483,7 +4397,7 @@ export default function WorkspaceShell() {
                           if (nextMode === "preset") {
                             const current = uaValue.trim();
                             const preset = current ? findUserAgentPreset(current) : null;
-                            setUaValue(preset?.id ?? USER_AGENT_PRESETS[0]?.id ?? "");
+                            setUaValue(preset?.id ?? USER_AGENT_PRESETS_VISIBLE[0]?.id ?? "");
                           } else if (nextMode === "default") {
                             setUaValue("");
                           } else if (uaMode === "preset") {
@@ -3520,7 +4434,7 @@ export default function WorkspaceShell() {
                             disabled={busy}
                             aria-label={t("uaPreset")}
                           >
-                            {USER_AGENT_PRESETS.map((preset) => (
+                            {USER_AGENT_PRESETS_VISIBLE.map((preset) => (
                               <option key={preset.id} value={preset.id}>
                                 {preset.label}
                               </option>
@@ -3552,42 +4466,65 @@ export default function WorkspaceShell() {
                         />
                       </div>
                     )}
-                  </div>
+		                  </div>
 
-                  {uaInlineError ? (
-                    <div
-                      className="muted"
-                      style={{ marginTop: 8, fontSize: 11, color: "rgba(248, 113, 113, 1)", whiteSpace: "pre-wrap" }}
-                    >
-                      {uaInlineError}
-                    </div>
-                  ) : null}
-                  <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
-                    {t("uaHint")}
-                  </div>
-                </>
-              )}
+		                  {uaInlineError ? (
+		                    <div
+		                      className="muted"
+		                      style={{ marginTop: 8, fontSize: 11, color: "rgba(248, 113, 113, 1)", whiteSpace: "pre-wrap" }}
+		                    >
+		                      {uaInlineError}
+		                    </div>
+		                  ) : null}
+		                  <div className="muted" style={{ marginTop: 8, fontSize: 12, lineHeight: 1.45 }}>
+		                    {t("uaHint")}
+		                  </div>
+		                  <div style={{ marginTop: 10, display: "flex", justifyContent: "flex-end" }}>
+		                    <button className="btn" onClick={saveUserAgent} disabled={busy || !focusedAccountId}>
+		                      {t("saveUa")}
+		                    </button>
+		                  </div>
+		                </div>
+
+		                <details className="inspector-details">
+		                  <summary>{t("advancedTechnicalIds")}</summary>
+		                  <div className="field">
+		                    <div className="field-label">{t("accountIdLabel")}</div>
+		                    <div className="field-value mono">{focusedAccount.id}</div>
+		                  </div>
+		                  <div className="field" style={{ marginBottom: 0 }}>
+		                    <div className="field-label">{t("fingerprintLabel")}</div>
+		                    <div className="field-value mono">{maskFingerprint(focusedAccount.fingerprint)}</div>
+		                  </div>
+		                </details>
+		                </>
+		              )}
             </div>
 
             <div className="inspector-actions">
               <button
                 className="btn btn-primary"
-                onClick={() => focusedAccountId && openTab(focusedAccountId)}
+                onClick={() => {
+                  if (!focusedAccountId) return;
+                  if (openTabIds.includes(focusedAccountId)) void activateTab(focusedAccountId);
+                  else void openTab(focusedAccountId);
+                }}
                 disabled={busy || !focusedAccountId}
               >
-                {t("openTab")}
+                {focusedAccountId && openTabIds.includes(focusedAccountId) ? t("activateTab") : t("openTab")}
               </button>
               <button
                 className="btn"
                 onClick={() => focusedAccountId && closeTab(focusedAccountId)}
-                disabled={busy || !focusedAccountId}
+                disabled={busy || !focusedAccountId || !openTabIds.includes(focusedAccountId)}
               >
                 {t("closeTab")}
               </button>
-              <button className="btn" onClick={saveUserAgent} disabled={busy || !focusedAccountId}>
-                {t("saveUa")}
-              </button>
-              <button className="btn" onClick={reloadWorkspace} disabled={busy}>
+              <button
+                className="btn"
+                onClick={() => focusedAccountId && reloadTabForAccount(focusedAccountId)}
+                disabled={busy || !focusedAccountId || !openTabIds.includes(focusedAccountId)}
+              >
                 {t("reload")}
               </button>
               <button className="btn btn-danger" onClick={openDeleteDialog} disabled={busy || !focusedAccountId}>
@@ -3644,6 +4581,22 @@ export default function WorkspaceShell() {
             <div className="muted" style={{ fontSize: 12 }}>
               {t("importHint")}
             </div>
+
+            {importProgress && busy ? (
+              <div
+                className="chip"
+                style={{ alignSelf: "flex-start" }}
+                title={importProgress.currentFingerprint ? `line: ${importProgress.done}, fp: ${importProgress.currentFingerprint}` : undefined}
+              >
+                <span className="dot dot-net" />
+                {format(t("importProgressChip"), {
+                  done: importProgress.done,
+                  total: importProgress.total,
+                  ok: importProgress.imported,
+                  fail: importProgress.failed,
+                })}
+              </div>
+            ) : null}
 
             <div className="section-title">{t("importOptionsTitle")}</div>
             <div className="setting-grid">
@@ -3734,7 +4687,7 @@ export default function WorkspaceShell() {
                     if (nextMode === "preset") {
                       const current = importUaValue.trim();
                       const preset = current ? findUserAgentPreset(current) : null;
-                      setImportUaValue(preset?.id ?? USER_AGENT_PRESETS[0]?.id ?? "");
+                      setImportUaValue(preset?.id ?? USER_AGENT_PRESETS_VISIBLE[0]?.id ?? "");
                     } else if (nextMode === "default" || nextMode === "auto") {
                       setImportUaValue("");
                     } else if (importUaMode === "preset") {
@@ -3771,7 +4724,7 @@ export default function WorkspaceShell() {
                     disabled={busy}
                     aria-label={t("uaPreset")}
                   >
-                    {USER_AGENT_PRESETS.map((preset) => (
+                    {USER_AGENT_PRESETS_VISIBLE.map((preset) => (
                       <option key={preset.id} value={preset.id}>
                         {preset.label}
                       </option>
@@ -3846,13 +4799,320 @@ export default function WorkspaceShell() {
               {t("confirmImport")}
             </button>
           </div>
-        </div>
-      </dialog>
+	        </div>
+	      </dialog>
 
-      <dialog
-        ref={exportDialogRef}
-        onCancel={(e) => {
-          e.preventDefault();
+	      <dialog
+	        ref={healthDialogRef}
+	        onCancel={(e) => {
+	          e.preventDefault();
+	          setHealthDialogOpen(false);
+	        }}
+	        onClose={() => setHealthDialogOpen(false)}
+	        aria-label={t("healthPanel")}
+	      >
+	        <div className="modal">
+	          <div className="modal-header">
+	            <div>
+	              <div className="modal-title">{t("healthPanel")}</div>
+	              <div className="modal-note">{t("healthCheckHint")}</div>
+	            </div>
+	            <button
+	              className="btn btn-icon"
+	              title={t("close")}
+	              onClick={() => setHealthDialogOpen(false)}
+	              disabled={busy}
+	            >
+	              ×
+	            </button>
+	          </div>
+
+	          <div className="modal-grid">
+	            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+	              <span className="chip">
+	                {t("healthTotalAccountsLabel")}: {healthSummary.totalAccounts}
+	              </span>
+	              <span className="chip">
+	                {t("healthOpenTabsLabel")}: {healthSummary.openTabs}
+	              </span>
+	              <span className="chip">
+	                {t("healthErrorsLabel")}: {healthSummary.errors}
+	              </span>
+	              <span className="chip">
+	                {t("healthExpiringSoonLabel")}: {healthSummary.expiringSoon}
+	              </span>
+	              <span className="chip">
+	                {t("healthCreditsStaleLabel")}: {healthSummary.creditsStale}
+	              </span>
+	            </div>
+
+	            <div style={{ display: "flex", justifyContent: "flex-end" }}>
+	              <button className="btn" onClick={runHealthCheckOpenTabs} disabled={busy}>
+	                {t("healthCheck")}
+	              </button>
+	            </div>
+
+	            <div className="section-title">
+	              {t("healthNeedsAttention")} ({healthSummary.needsAttention.length})
+	            </div>
+	            {healthSummary.needsAttention.length === 0 ? (
+	              <div className="muted" style={{ fontSize: 12 }}>
+	                {t("healthAllGood")}
+	              </div>
+	            ) : (
+	              <div style={{ display: "grid", gap: 8 }}>
+	                {healthSummary.needsAttention.map(({ account, tabOpen, reasons }) => (
+	                  <button
+	                    key={account.id}
+	                    type="button"
+	                    className="account"
+	                    onClick={() => {
+	                      focusAccount(account.id);
+	                      setHealthDialogOpen(false);
+	                    }}
+	                    disabled={busy}
+	                    style={{ textAlign: "left" }}
+	                  >
+	                    <div className="account-row" style={{ padding: 10 }}>
+	                      <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
+	                        <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
+	                          <span className="mono" style={{ whiteSpace: "nowrap" }}>
+	                            {account.pinned ? "★" : ""}
+	                          </span>
+	                          <span style={{ fontWeight: 650, overflow: "hidden", textOverflow: "ellipsis" }}>
+	                            {account.displayName}
+	                          </span>
+	                          <span className="muted mono" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>
+	                            {account.id}
+	                          </span>
+	                        </div>
+	                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+	                          <span
+	                            className="chip"
+	                            title={tabOpen ? t("tabOpenTitle") : t("tabClosedTitle")}
+	                          >
+	                            <span className={clsx("dot", tabOpen ? "dot-ok" : "dot-idle")} />
+	                            <span>{t("tabChip")}</span>
+	                          </span>
+	                          {reasons.map((reasonKey) => (
+	                            <span key={reasonKey} className="chip">
+	                              {t(reasonKey)}
+	                            </span>
+	                          ))}
+	                        </div>
+	                      </div>
+	                    </div>
+	                  </button>
+	                ))}
+	              </div>
+	            )}
+	          </div>
+
+	          <div className="modal-actions">
+	            <button className="btn btn-primary" onClick={() => setHealthDialogOpen(false)} disabled={busy}>
+	              {t("close")}
+	            </button>
+	          </div>
+	        </div>
+	      </dialog>
+
+	      <dialog
+	        ref={logDialogRef}
+	        onCancel={(e) => {
+	          e.preventDefault();
+	          setLogDialogOpen(false);
+	        }}
+	        onClose={() => setLogDialogOpen(false)}
+	        aria-label={t("logPanel")}
+	      >
+	        <div className="modal">
+	          <div className="modal-header">
+	            <div>
+	              <div className="modal-title">{t("logPanel")}</div>
+	              <div className="modal-note">{t("logDangerNote")}</div>
+	            </div>
+	            <button
+	              className="btn btn-icon"
+	              title={t("close")}
+	              onClick={() => setLogDialogOpen(false)}
+	              disabled={busy}
+	            >
+	              ×
+	            </button>
+	          </div>
+
+	          <div className="modal-grid">
+	            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
+	              <button className="btn" onClick={copyUiLog} disabled={busy || uiLog.length === 0}>
+	                {t("copyLog")}
+	              </button>
+	              <button className="btn btn-danger" onClick={clearUiLog} disabled={busy || uiLog.length === 0}>
+	                {t("clearLog")}
+	              </button>
+	            </div>
+	            <div style={{ display: "grid", gap: 8 }}>
+	              {uiLog.length === 0 ? (
+	                <div className="muted" style={{ fontSize: 12 }}>
+	                  {t("logEmpty")}
+	                </div>
+	              ) : (
+	                uiLog.map((entry, index) => (
+	                  <div key={`${entry.createdAt}-${index}`} className="chip" style={{ whiteSpace: "pre-wrap" }}>
+	                    <span
+	                      className={clsx(
+	                        "dot",
+	                        entry.kind === "error" && "dot-bad",
+	                        entry.kind === "success" && "dot-ok",
+	                        entry.kind === "info" && "dot-net"
+	                      )}
+	                    />
+	                    <span className="mono" style={{ fontSize: 11 }}>
+	                      {formatUpdatedAt(entry.createdAt, uiPrefs.locale)}
+	                    </span>
+	                    <span style={{ fontSize: 12 }}>{entry.message}</span>
+	                  </div>
+	                ))
+	              )}
+	            </div>
+	          </div>
+
+	          <div className="modal-actions">
+	            <button className="btn btn-primary" onClick={() => setLogDialogOpen(false)} disabled={busy}>
+	              {t("close")}
+	            </button>
+	          </div>
+	        </div>
+	      </dialog>
+
+        <dialog
+          ref={downloadsDialogRef}
+          className="dialog-wide"
+          onCancel={(e) => {
+            e.preventDefault();
+            setDownloadsDialogOpen(false);
+          }}
+          onClose={() => setDownloadsDialogOpen(false)}
+          aria-label={t("downloadsHistoryTitle")}
+        >
+          {downloadsDialogOpen ? (
+            <div className="modal">
+              <div className="modal-header">
+                <div>
+                  <div className="modal-title">{t("downloadsHistoryTitle")}</div>
+                  <div className="modal-note">{format(t("downloadsHistoryCount"), { count: downloadToasts.length })}</div>
+                </div>
+                <button
+                  className="btn btn-icon"
+                  title={t("close")}
+                  onClick={() => setDownloadsDialogOpen(false)}
+                  disabled={busy}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="modal-grid">
+                <div className="download-history-list">
+                  {downloadToasts.length === 0 ? (
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {t("downloadsEmpty")}
+                    </div>
+                  ) : (
+                    downloadToasts.map((d) => {
+                      const percent = d.totalBytes > 0 ? Math.min(1, d.receivedBytes / d.totalBytes) : null;
+                      const progressText =
+                        d.state === "progressing"
+                          ? d.totalBytes > 0 && percent !== null
+                            ? `${formatBytes(d.receivedBytes)} / ${formatBytes(d.totalBytes)} (${Math.round(percent * 100)}%)`
+                            : formatBytes(d.receivedBytes)
+                          : formatDownloadStateLabel(d.state, t);
+
+                      const barClass = clsx(
+                        "download-progress-bar",
+                        d.state === "completed" && "download-progress-bar-ok",
+                        (d.state === "cancelled" || d.state === "interrupted") && "download-progress-bar-bad"
+                      );
+
+                      const barWidth =
+                        percent !== null
+                          ? `${Math.round(percent * 100)}%`
+                          : d.state === "progressing"
+                            ? "20%"
+                            : "100%";
+
+                      const sizeBytes = Math.max(d.totalBytes, d.receivedBytes);
+                      const sizeText = sizeBytes > 0 ? formatBytes(sizeBytes) : "-";
+                      const timeText = formatUpdatedAt(d.updatedAt, uiPrefs.locale);
+
+                      return (
+                        <div key={d.id} className="download-toast glass">
+                          <div className="download-toast-head">
+                            <div className="download-toast-title" title={d.filename}>
+                              {d.filename}
+                            </div>
+                            <button
+                              className="btn btn-ghost btn-icon"
+                              title={t("close")}
+                              aria-label={t("close")}
+                              onClick={() => dismissDownloadToast(d.id)}
+                              disabled={busy}
+                            >
+                              ×
+                            </button>
+                          </div>
+
+                          <div className="download-toast-meta muted">
+                            <div style={{ display: "flex", gap: 10, minWidth: 0, flexWrap: "wrap" }}>
+                              <span>{progressText}</span>
+                              <span className="mono">{sizeText}</span>
+                              <span className="mono">{timeText}</span>
+                              {d.copiedAt ? <span className="chip download-chip">{t("downloadCopied")}</span> : null}
+                            </div>
+                          </div>
+
+                          <div className="download-progress">
+                            <div className={barClass} style={{ width: barWidth }} />
+                          </div>
+
+                          <div className="download-actions">
+                            {d.state === "progressing" ? (
+                              <button className="btn" onClick={() => cancelDownloadToast(d.id)} disabled={busy}>
+                                {t("downloadCancelDownload")}
+                              </button>
+                            ) : d.state === "completed" ? (
+                              <>
+                                <button className="btn" onClick={() => showDownloadInFolder(d.id)} disabled={busy}>
+                                  {t("downloadShowInFolder")}
+                                </button>
+                                <button className="btn btn-primary" onClick={() => openDownloadedFile(d.id)} disabled={busy}>
+                                  {t("downloadOpenFile")}
+                                </button>
+                                <button className="btn" onClick={() => copyDownloadPath(d.id)} disabled={busy}>
+                                  {t("downloadCopyPath")}
+                                </button>
+                              </>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div className="modal-actions">
+                <button className="btn btn-primary" onClick={() => setDownloadsDialogOpen(false)} disabled={busy}>
+                  {t("close")}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </dialog>
+
+	      <dialog
+	        ref={exportDialogRef}
+	        onCancel={(e) => {
+	          e.preventDefault();
           setExportDialog({ open: false });
         }}
         onClose={() => setExportDialog({ open: false })}
@@ -4001,12 +5261,255 @@ export default function WorkspaceShell() {
             </div>
           </div>
         ) : null}
-      </dialog>
+	      </dialog>
 
-      <dialog
-        ref={batchDeleteDialogRef}
-        onCancel={(e) => {
-          e.preventDefault();
+	      <dialog
+	        ref={batchProxyDialogRef}
+	        onCancel={(e) => {
+	          e.preventDefault();
+	          setBatchProxyDialog({ open: false });
+	          setBatchProxyInlineError(null);
+	        }}
+	        onClose={() => setBatchProxyDialog({ open: false })}
+	        aria-label={t("batchProxyTitle")}
+	      >
+	        {batchProxyDialog.open ? (
+	          <div className="modal">
+	            <div className="modal-header">
+	              <div>
+	                <div className="modal-title">{t("batchProxyTitle")}</div>
+	                <div className="modal-note">
+	                  {format(t("batchProxyNote"), { count: batchProxyDialog.accountIds.length })}
+	                </div>
+	              </div>
+	              <button
+	                className="btn btn-icon"
+	                title={t("close")}
+	                onClick={() => setBatchProxyDialog({ open: false })}
+	                disabled={busy}
+	              >
+	                ×
+	              </button>
+	            </div>
+
+	            <div className="modal-grid">
+	              <div className="setting-grid">
+	                <div className="setting-row">
+	                  <div className="muted">{t("proxyMode")}</div>
+	                  <select
+	                    value={batchProxyMode}
+	                    onPointerDown={openSelectOverlay}
+	                    onBlur={closeSelectOverlay}
+	                    onKeyDown={(e) => {
+	                      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+	                    }}
+	                    onChange={(e) => {
+	                      closeSelectOverlay();
+	                      setBatchProxyInlineError(null);
+	                      setBatchProxyMode(e.target.value as ProxyMode);
+	                    }}
+	                    disabled={busy}
+	                    aria-label={t("proxyMode")}
+	                  >
+	                    <option value="system">{t("proxySystem")}</option>
+	                    <option value="custom">{t("proxyCustom")}</option>
+	                    <option value="direct">{t("proxyDirect")}</option>
+	                  </select>
+	                </div>
+
+	                {batchProxyMode === "custom" ? (
+	                  <>
+	                    {proxyPresets.length > 0 ? (
+	                      <div className="setting-row">
+	                        <div className="muted">{t("proxyPresetLabel")}</div>
+	                        <select
+	                          value={batchProxyRules.trim() && proxyPresets.includes(batchProxyRules.trim()) ? batchProxyRules.trim() : ""}
+	                          onPointerDown={openSelectOverlay}
+	                          onBlur={closeSelectOverlay}
+	                          onKeyDown={(e) => {
+	                            if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+	                          }}
+	                          onChange={(e) => {
+	                            closeSelectOverlay();
+	                            setBatchProxyInlineError(null);
+	                            const next = e.target.value;
+	                            if (next) setBatchProxyRules(next);
+	                          }}
+	                          disabled={busy}
+	                          aria-label={t("proxyPresetLabel")}
+	                        >
+	                          <option value="">{t("proxyPresetManual")}</option>
+	                          {proxyPresets.map((preset) => (
+	                            <option key={preset} value={preset}>
+	                              {preset}
+	                            </option>
+	                          ))}
+	                        </select>
+	                      </div>
+	                    ) : null}
+	                    <div className="setting-row">
+	                      <div className="muted">{t("proxyRulesLabel")}</div>
+	                      <input
+	                        className="input mono"
+	                        type="text"
+	                        placeholder={t("proxyPlaceholder")}
+	                        value={batchProxyRules}
+	                        onChange={(e) => {
+	                          setBatchProxyInlineError(null);
+	                          setBatchProxyRules(e.target.value);
+	                        }}
+	                        disabled={busy}
+	                      />
+	                      {batchProxyInlineError ? (
+	                        <div className="inline-error">{batchProxyInlineError}</div>
+	                      ) : null}
+	                    </div>
+	                  </>
+	                ) : null}
+	              </div>
+	            </div>
+
+	            <div className="modal-actions">
+	              <button className="btn" onClick={() => setBatchProxyDialog({ open: false })} disabled={busy}>
+	                {t("cancel")}
+	              </button>
+	              <button className="btn btn-primary" onClick={runBatchProxy} disabled={busy}>
+	                {t("confirmApply")}
+	              </button>
+	            </div>
+	          </div>
+	        ) : null}
+	      </dialog>
+
+	      <dialog
+	        ref={batchUserAgentDialogRef}
+	        onCancel={(e) => {
+	          e.preventDefault();
+	          setBatchUserAgentDialog({ open: false });
+	          setBatchUaInlineError(null);
+	        }}
+	        onClose={() => setBatchUserAgentDialog({ open: false })}
+	        aria-label={t("batchUaTitle")}
+	      >
+	        {batchUserAgentDialog.open ? (
+	          <div className="modal">
+	            <div className="modal-header">
+	              <div>
+	                <div className="modal-title">{t("batchUaTitle")}</div>
+	                <div className="modal-note">
+	                  {format(t("batchUaNote"), { count: batchUserAgentDialog.accountIds.length })}
+	                </div>
+	              </div>
+	              <button
+	                className="btn btn-icon"
+	                title={t("close")}
+	                onClick={() => setBatchUserAgentDialog({ open: false })}
+	                disabled={busy}
+	              >
+	                ×
+	              </button>
+	            </div>
+
+	            <div className="modal-grid">
+	              <div className="setting-grid">
+	                <div className="setting-row">
+	                  <div className="muted">{t("uaModeLabel")}</div>
+	                  <select
+	                    value={batchUaMode}
+	                    onPointerDown={openSelectOverlay}
+	                    onBlur={closeSelectOverlay}
+	                    onKeyDown={(e) => {
+	                      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+	                    }}
+	                    onChange={(e) => {
+	                      closeSelectOverlay();
+	                      setBatchUaInlineError(null);
+	                      const nextMode = e.target.value as UaMode;
+	                      if (nextMode === "preset") {
+	                        const current = batchUaValue.trim();
+	                        const preset = current ? findUserAgentPreset(current) : null;
+	                        setBatchUaValue(preset?.id ?? USER_AGENT_PRESETS_VISIBLE[0]?.id ?? "");
+	                      } else if (nextMode === "default") {
+	                        setBatchUaValue("");
+	                      } else if (batchUaMode === "preset") {
+	                        const preset = findUserAgentPreset(batchUaValue);
+	                        if (preset) setBatchUaValue(preset.value);
+	                      }
+	                      setBatchUaMode(nextMode);
+	                    }}
+	                    disabled={busy}
+	                    aria-label={t("uaModeLabel")}
+	                  >
+	                    <option value="default">{t("uaDefault")}</option>
+	                    <option value="preset">{t("uaPreset")}</option>
+	                    <option value="custom">{t("uaCustom")}</option>
+	                  </select>
+	                </div>
+
+	                {batchUaMode === "preset" ? (
+	                  <div className="setting-row">
+	                    <div className="muted">{t("uaValueLabel")}</div>
+	                    <select
+	                      value={batchUaValue}
+	                      onPointerDown={openSelectOverlay}
+	                      onBlur={closeSelectOverlay}
+	                      onKeyDown={(e) => {
+	                        if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") openSelectOverlay();
+	                      }}
+	                      onChange={(e) => {
+	                        closeSelectOverlay();
+	                        setBatchUaInlineError(null);
+	                        setBatchUaValue(e.target.value);
+	                      }}
+	                      disabled={busy}
+	                      aria-label={t("uaValueLabel")}
+	                    >
+	                      {USER_AGENT_PRESETS_VISIBLE.map((p) => (
+	                        <option key={p.id} value={p.id}>
+	                          {p.label}
+	                        </option>
+	                      ))}
+	                    </select>
+	                  </div>
+	                ) : null}
+
+	                {batchUaMode === "custom" ? (
+	                  <div className="setting-row">
+	                    <div className="muted">{t("uaValueLabel")}</div>
+	                    <input
+	                      className="input mono"
+	                      type="text"
+	                      value={batchUaValue}
+	                      onChange={(e) => {
+	                        setBatchUaInlineError(null);
+	                        setBatchUaValue(e.target.value);
+	                      }}
+	                      disabled={busy}
+	                      aria-label={t("uaValueLabel")}
+	                    />
+	                  </div>
+	                ) : null}
+
+	                {batchUaInlineError ? <div className="inline-error">{batchUaInlineError}</div> : null}
+	              </div>
+	            </div>
+
+	            <div className="modal-actions">
+	              <button className="btn" onClick={() => setBatchUserAgentDialog({ open: false })} disabled={busy}>
+	                {t("cancel")}
+	              </button>
+	              <button className="btn btn-primary" onClick={runBatchUserAgent} disabled={busy}>
+	                {t("confirmApply")}
+	              </button>
+	            </div>
+	          </div>
+	        ) : null}
+	      </dialog>
+
+	      <dialog
+	        ref={batchDeleteDialogRef}
+	        onCancel={(e) => {
+	          e.preventDefault();
           setBatchDeleteDialog({ open: false });
         }}
         onClose={() => setBatchDeleteDialog({ open: false })}

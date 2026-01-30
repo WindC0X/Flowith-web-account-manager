@@ -224,6 +224,31 @@ export class FlowithLoginBootstrapService {
     return null;
   }
 
+  private async waitForAccessTokenFromWebContents(
+    webContents: WebContents,
+    options?: { timeoutMs?: number }
+  ): Promise<string | null> {
+    const timeoutMs = Math.max(0, options?.timeoutMs ?? 0);
+    if (timeoutMs <= 0) return await this.readAccessTokenFromWebContents(webContents);
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+      if (webContents.isDestroyed()) return null;
+      try {
+        const token = await this.readAccessTokenFromWebContents(webContents);
+        if (token) return token;
+      } catch {
+        // ignore
+      }
+
+      if (Date.now() >= deadline) break;
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, 250);
+      });
+    }
+    return null;
+  }
+
   async peekAccessTokenFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<string | null> {
     const webContents = this.workspace.getWebContents(accountId);
     if (!webContents) return null;
@@ -566,6 +591,14 @@ export class FlowithLoginBootstrapService {
     await waitForFlowithReady(webContents, 30_000);
     this.ensureTokenSync(accountId, webContents);
     await this.syncFromOpenTab(accountId, { timeoutMs: 1000, forceRefreshTokenWrite: true });
+
+    // Tab-first: if the page already has a valid access token in its own storage (persisted profile),
+    // do not refresh via vault refresh_token. This avoids "already used" caused by vault/tab divergence.
+    const tabAccessToken = await this.waitForAccessTokenFromWebContents(webContents, { timeoutMs: 4000 });
+    if (tabAccessToken) {
+      this.ensureAuthHeaderInjection(accountId, webContents, tabAccessToken);
+      return;
+    }
 
     let flowithSession: Session;
     try {

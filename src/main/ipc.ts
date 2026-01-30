@@ -1,6 +1,8 @@
 import { BrowserWindow, ipcMain, session } from "electron";
 import {
   IPC_CHANNELS,
+  IPC_EVENTS,
+  type AccountsImportProgressEvent,
   type AccountMetaPatch,
   type DownloadSaveMode,
   type ImportRefreshTokensOptions,
@@ -12,10 +14,17 @@ import {
 } from "../shared/ipc";
 import { importRefreshTokens } from "./accounts/import";
 import { normalizeAccountMetaPatch } from "./accounts/normalize";
-import { deleteAccount, getRefreshToken, listAccounts, upsertAccountMeta } from "./accounts/vault";
+import {
+  deleteAccount,
+  getRefreshToken,
+  isTokenEncryptionAvailable,
+  listAccounts,
+  upsertAccountMeta,
+} from "./accounts/vault";
 import {
   cancelDownload,
   copyDownloadedPath,
+  getDownloadsHistory,
   getDownloadsPreferencesPublic,
   openDownloadedFile,
   pickDownloadsCustomDirectory,
@@ -23,15 +32,13 @@ import {
   showDownloadInFolder,
 } from "./downloads/service";
 import { CreditsUnauthorizedError, fetchAccountCreditsWithAccessToken } from "./flowith/credits";
-import { refreshFlowithSessionForAccount } from "./flowith/sessionRefresh";
 import { testConnectivity } from "./network/connectivity";
-import { validateProxyConfig } from "./network/proxy";
-import { validateUaConfig } from "./network/userAgent";
+import { applyProxy, validateProxyConfig } from "./network/proxy";
+import { resolveUserAgent, validateUaConfig } from "./network/userAgent";
 import { redactSensitive } from "./security/redact";
 import { checkForUpdates, downloadUpdate, getUpdaterStatus, quitAndInstall } from "./updater/service";
 import { partitionForAccount, type WebWorkspaceService } from "./workspace/WebWorkspaceService";
 import type { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
-import type { FlowithOsIntegrationService } from "./flowithos/flowithOsIntegrationService";
 
 const preferences: Preferences = {
   locale: "zh-CN",
@@ -42,7 +49,6 @@ const preferences: Preferences = {
 type IpcDeps = {
   workspace: WebWorkspaceService;
   loginBootstrap: FlowithLoginBootstrapService;
-  flowithos: FlowithOsIntegrationService;
 };
 
 function safeErrorMessage(error: unknown): string {
@@ -95,11 +101,6 @@ export function registerIpcHandlers(deps: IpcDeps) {
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_OPEN_TAB, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
-      try {
-        await deps.flowithos.syncFromFlowithOs({ silent: true });
-      } catch {
-        // best-effort
-      }
       deps.workspace.openTab(accountId);
       await deps.loginBootstrap.bootstrap(accountId);
     } catch (e) {
@@ -161,6 +162,10 @@ export function registerIpcHandlers(deps: IpcDeps) {
 
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE, async () => {
     deps.workspace.reloadActive();
+  });
+
+  ipcMain.handle(IPC_CHANNELS.DOWNLOADS_GET_HISTORY, async () => {
+    return getDownloadsHistory();
   });
 
   ipcMain.handle(IPC_CHANNELS.DOWNLOADS_GET_PREFERENCES, async () => {
@@ -275,9 +280,13 @@ export function registerIpcHandlers(deps: IpcDeps) {
     return listAccounts();
   });
 
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_IS_TOKEN_ENCRYPTION_AVAILABLE, async () => {
+    return isTokenEncryptionAvailable();
+  });
+
   ipcMain.handle(
     IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS,
-    async (_event, text: unknown, options?: unknown) => {
+    async (event, text: unknown, options?: unknown) => {
       try {
         assertString(text, "text");
         const trimmed = text.trim();
@@ -285,6 +294,15 @@ export function registerIpcHandlers(deps: IpcDeps) {
 
         const lines = trimmed.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
         if (lines.length === 0) return { imported: 0, failed: 0, warnings: [], errors: [] };
+
+        const total = lines.length;
+        const sendImportProgress = (payload: AccountsImportProgressEvent) => {
+          try {
+            event.sender.send(IPC_EVENTS.ACCOUNTS_IMPORT_PROGRESS_EVENT, payload);
+          } catch {
+            // ignore
+          }
+        };
 
         let importOptions: ImportRefreshTokensOptions | undefined;
         if (options !== undefined) {
@@ -328,7 +346,28 @@ export function registerIpcHandlers(deps: IpcDeps) {
           importOptions = normalized;
         }
 
-        return await importRefreshTokens(lines, importOptions);
+        sendImportProgress({ type: "start", total });
+        try {
+          const result = await importRefreshTokens(lines, importOptions, (payload) => sendImportProgress(payload));
+          const creditsFailed = Object.keys(result.creditsErrorsByAccountId ?? {}).length;
+          sendImportProgress({
+            type: "end",
+            total,
+            imported: result.imported,
+            failed: result.failed,
+            creditsFailed,
+          });
+          return result;
+        } catch (e) {
+          sendImportProgress({
+            type: "end",
+            total,
+            imported: 0,
+            failed: total,
+            creditsFailed: 0,
+          });
+          throw e;
+        }
       } catch (e) {
         throw new Error(safeErrorMessage(e));
       }
@@ -398,53 +437,6 @@ export function registerIpcHandlers(deps: IpcDeps) {
     }
   });
 
-  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_REFRESH_CREDITS, async (_event, accountId: unknown) => {
-    try {
-      assertString(accountId, "accountId");
-
-      const tabAccessToken = await deps.loginBootstrap.peekAccessTokenFromOpenTab(accountId, { timeoutMs: 800 });
-      if (tabAccessToken) {
-        try {
-          return await fetchAccountCreditsWithAccessToken(accountId, tabAccessToken);
-        } catch (e) {
-          if (!(e instanceof CreditsUnauthorizedError)) throw e;
-        }
-      }
-
-      try {
-        await deps.flowithos.syncFromFlowithOs({ silent: true });
-      } catch {
-        // best-effort
-      }
-
-      const flowithSession = await refreshFlowithSessionForAccount(accountId, {
-        onAlreadyUsed: async () => {
-          const before = getRefreshToken(accountId);
-          try {
-            await deps.flowithos.syncFromFlowithOs({ silent: true });
-          } catch {
-            // best-effort
-          }
-          const afterFlowithOs = getRefreshToken(accountId);
-          if (afterFlowithOs && afterFlowithOs !== before) return;
-
-          await deps.loginBootstrap.waitForNewRefreshTokenFromOpenTab(accountId, { totalTimeoutMs: 15_000 });
-          try {
-            await deps.flowithos.syncFromFlowithOs({ silent: true });
-          } catch {
-            // best-effort
-          }
-        },
-      });
-
-      const credits = await fetchAccountCreditsWithAccessToken(accountId, flowithSession.access_token ?? "");
-      void deps.loginBootstrap.reconcileSessionForOpenTab(accountId, flowithSession, { timeoutMs: 2000, reload: true });
-      return credits;
-    } catch (e) {
-      throw new Error(safeErrorMessage(e));
-    }
-  });
-
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
@@ -463,74 +455,51 @@ export function registerIpcHandlers(deps: IpcDeps) {
     }
   });
 
-  ipcMain.handle(
-    IPC_CHANNELS.ACCOUNTS_UPDATE_META,
-    async (_event, accountId: unknown, patch: unknown) => {
-      try {
-        assertString(accountId, "accountId");
-        assertObject(patch, "patch");
-        const metaPatch = patch as AccountMetaPatch;
-        validateAccountMetaPatch(metaPatch);
-        const normalized = normalizeAccountMetaPatch(metaPatch);
-        return upsertAccountMeta(accountId, normalized);
-      } catch (e) {
-        throw new Error(safeErrorMessage(e));
-      }
-    }
-  );
+	  ipcMain.handle(
+	    IPC_CHANNELS.ACCOUNTS_UPDATE_META,
+	    async (_event, accountId: unknown, patch: unknown) => {
+	      try {
+	        assertString(accountId, "accountId");
+	        assertObject(patch, "patch");
+	        const metaPatch = patch as AccountMetaPatch;
+	        validateAccountMetaPatch(metaPatch);
+	        const normalized = normalizeAccountMetaPatch(metaPatch);
+	        const updated = upsertAccountMeta(accountId, normalized);
+
+	        const shouldApplyProxy = normalized.net?.proxy !== undefined;
+	        const shouldApplyUa = normalized.ua !== undefined;
+	        if (shouldApplyProxy || shouldApplyUa) {
+	          const webContents = deps.workspace.getWebContents(accountId);
+	          if (webContents && !webContents.isDestroyed()) {
+	            if (shouldApplyUa) {
+	              try {
+	                const userAgent = resolveUserAgent(updated.ua);
+	                webContents.setUserAgent(userAgent ?? webContents.session.getUserAgent());
+	              } catch {
+	                // best-effort
+	              }
+	            }
+	            if (shouldApplyProxy) {
+	              try {
+	                await applyProxy(webContents.session, updated.net.proxy);
+	              } catch {
+	                // best-effort
+	              }
+	            }
+	          }
+	        }
+
+	        return updated;
+	      } catch (e) {
+	        throw new Error(safeErrorMessage(e));
+	      }
+	    }
+	  );
 
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
       return await testConnectivity(accountId);
-    } catch (e) {
-      throw new Error(safeErrorMessage(e));
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.FLOWITHOS_GET_STATUS, async () => {
-    try {
-      return await deps.flowithos.getStatus();
-    } catch (e) {
-      throw new Error(safeErrorMessage(e));
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.FLOWITHOS_WRITE_SESSION_FROM_ACCOUNT, async (_event, accountId: unknown) => {
-    try {
-      assertString(accountId, "accountId");
-      try {
-        await deps.flowithos.syncFromFlowithOs({ silent: true });
-      } catch {
-        // best-effort
-      }
-      return await deps.flowithos.writeSessionFromAccount(accountId, {
-        onAlreadyUsed: async () => {
-          const before = getRefreshToken(accountId);
-          try {
-            await deps.flowithos.syncFromFlowithOs({ silent: true });
-          } catch {
-            // best-effort
-          }
-          const afterFlowithOs = getRefreshToken(accountId);
-          if (afterFlowithOs && afterFlowithOs !== before) return;
-
-          await deps.loginBootstrap.waitForNewRefreshTokenFromOpenTab(accountId, { totalTimeoutMs: 8000 });
-          try {
-            await deps.flowithos.syncFromFlowithOs({ silent: true });
-          } catch {
-            // best-effort
-          }
-        },
-      });
-    } catch (e) {
-      throw new Error(safeErrorMessage(e));
-    }
-  });
-
-  ipcMain.handle(IPC_CHANNELS.FLOWITHOS_SYNC_FROM_FLOWITHOS, async () => {
-    try {
-      return await deps.flowithos.syncFromFlowithOs();
     } catch (e) {
       throw new Error(safeErrorMessage(e));
     }
