@@ -264,22 +264,9 @@ const UI_STRINGS = {
 	    tabChip: "Tab",
 	    tabOpenTitle: "Tab 已打开",
 	    tabClosedTitle: "Tab 未打开",
-	    healthPanel: "健康面板",
 	    healthCheck: "健康检查",
-	    healthCheckHint: "仅已打开 Tab",
 	    toastHealthCheckStarted: "已开始健康检查（仅已打开 Tab）",
 	    toastHealthNoOpenTabs: "暂无已打开 Tab",
-	    healthNeedsAttention: "需要关注",
-	    healthReasonError: "错误",
-	    healthReasonExpiringSoon: "订阅即将到期",
-	    healthReasonCreditsUnknown: "积分未知",
-	    healthReasonCreditsStale: "积分陈旧",
-	    healthTotalAccountsLabel: "总账号",
-	    healthOpenTabsLabel: "已打开 Tab",
-	    healthErrorsLabel: "错误",
-	    healthExpiringSoonLabel: "即将到期",
-	    healthCreditsStaleLabel: "积分陈旧",
-	    healthAllGood: "暂无需要关注的账号。",
 	    logPanel: "日志",
 	    clearLog: "清空日志",
 	    copyLog: "复制日志",
@@ -492,22 +479,9 @@ const UI_STRINGS = {
 	    tabChip: "Tab",
 	    tabOpenTitle: "Tab is open",
 	    tabClosedTitle: "Tab is closed",
-	    healthPanel: "Health",
 	    healthCheck: "Health check",
-	    healthCheckHint: "Open tabs only",
 	    toastHealthCheckStarted: "Health check started (open tabs only)",
 	    toastHealthNoOpenTabs: "No open tabs",
-	    healthNeedsAttention: "Needs attention",
-	    healthReasonError: "Error",
-	    healthReasonExpiringSoon: "Expiring soon",
-	    healthReasonCreditsUnknown: "Credits unknown",
-	    healthReasonCreditsStale: "Credits stale",
-	    healthTotalAccountsLabel: "Accounts",
-	    healthOpenTabsLabel: "Open tabs",
-	    healthErrorsLabel: "Errors",
-	    healthExpiringSoonLabel: "Expiring soon",
-	    healthCreditsStaleLabel: "Credits stale",
-	    healthAllGood: "No issues detected.",
 	    logPanel: "Logs",
 	    clearLog: "Clear logs",
 	    copyLog: "Copy logs",
@@ -1028,7 +1002,6 @@ export default function WorkspaceShell() {
   }, []);
 
   const [importDialogOpen, setImportDialogOpen] = useState(false);
-  const [healthDialogOpen, setHealthDialogOpen] = useState(false);
   const [logDialogOpen, setLogDialogOpen] = useState(false);
   const [importText, setImportText] = useState("");
   const [importResult, setImportResult] = useState<ImportRefreshTokensResult | null>(null);
@@ -1096,7 +1069,6 @@ export default function WorkspaceShell() {
   const viewportBoundsFlushInFlightRef = useRef<Promise<void> | null>(null);
   const viewportBoundsFlushNeededRef = useRef(false);
   const importDialogRef = useRef<HTMLDialogElement | null>(null);
-  const healthDialogRef = useRef<HTMLDialogElement | null>(null);
   const logDialogRef = useRef<HTMLDialogElement | null>(null);
   const downloadsDialogRef = useRef<HTMLDialogElement | null>(null);
   const exportDialogRef = useRef<HTMLDialogElement | null>(null);
@@ -1443,7 +1415,6 @@ export default function WorkspaceShell() {
 
   const overlayActive =
     importDialogOpen ||
-    healthDialogOpen ||
     logDialogOpen ||
     downloadsDialogOpen ||
     exportDialog.open ||
@@ -2927,20 +2898,6 @@ export default function WorkspaceShell() {
   }, [importDialogOpen]);
 
   useEffect(() => {
-    const dlg = healthDialogRef.current;
-    if (!dlg) return;
-    try {
-      if (healthDialogOpen) {
-        if (!dlg.open) dlg.showModal();
-      } else if (dlg.open) {
-        dlg.close();
-      }
-    } catch {
-      // ignore dialog show/close failures in non-standard runtimes
-    }
-  }, [healthDialogOpen]);
-
-  useEffect(() => {
     const dlg = logDialogRef.current;
     if (!dlg) return;
     try {
@@ -3092,63 +3049,6 @@ export default function WorkspaceShell() {
         : latestDownloadToast
           ? `${t("downloadsSectionTitle")} · ${formatDownloadStateLabel(latestDownloadToast.state, t)}`
           : t("downloadsSectionTitle");
-
-  const healthSummary = useMemo(() => {
-    const now = Date.now();
-    const openTabSet = new Set(openTabIds);
-    const expiringSoonWithinMs = 7 * 24 * 60 * 60 * 1000;
-    const creditsStaleAfterMs = 30 * 60 * 1000;
-
-    let errors = 0;
-    let expiringSoon = 0;
-    let creditsStale = 0;
-    const needsAttention: Array<{ account: AccountSummary; tabOpen: boolean; reasons: StringKey[] }> = [];
-
-    for (const account of accounts) {
-      const info = accountInfoById[account.id] ?? DEFAULT_ACCOUNT_INFO;
-      const tabOpen = openTabSet.has(account.id);
-      const reasons: StringKey[] = [];
-
-      if (info.error) {
-        errors += 1;
-        reasons.push("healthReasonError");
-      }
-
-      if (
-        typeof info.subscriptionExpiresAt === "number" &&
-        Number.isFinite(info.subscriptionExpiresAt) &&
-        info.subscriptionExpiresAt > now &&
-        info.subscriptionExpiresAt - now <= expiringSoonWithinMs
-      ) {
-        expiringSoon += 1;
-        reasons.push("healthReasonExpiringSoon");
-      }
-
-      if (!info.updatedAt || !info.credits) {
-        if (tabOpen) reasons.push("healthReasonCreditsUnknown");
-      } else if (now - info.updatedAt > creditsStaleAfterMs) {
-        creditsStale += 1;
-        reasons.push("healthReasonCreditsStale");
-      }
-
-      if (reasons.length > 0) needsAttention.push({ account, tabOpen, reasons });
-    }
-
-    needsAttention.sort((a, b) => {
-      if (a.account.pinned !== b.account.pinned) return a.account.pinned ? -1 : 1;
-      if (a.reasons.length !== b.reasons.length) return b.reasons.length - a.reasons.length;
-      return a.account.displayName.localeCompare(b.account.displayName, uiPrefs.locale, { sensitivity: "base" });
-    });
-
-    return {
-      totalAccounts: accounts.length,
-      openTabs: openTabIds.length,
-      errors,
-      expiringSoon,
-      creditsStale,
-      needsAttention,
-    };
-  }, [accountInfoById, accounts, openTabIds, uiPrefs.locale]);
 
   return (
     <div className="app">
@@ -3376,14 +3276,16 @@ export default function WorkspaceShell() {
 	                    </select>
 	                  </div>
 	                  <div className="setting-row">
-	                    <div className="muted">{t("healthPanel")}</div>
+	                    <div className="muted">{t("healthCheck")}</div>
 	                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-	                      <button className="btn" onClick={() => setHealthDialogOpen(true)} disabled={busy}>
-	                        {t("healthPanel")}
-	                      </button>
 	                      <button className="btn" onClick={runHealthCheckOpenTabs} disabled={busy}>
 	                        {t("healthCheck")}
 	                      </button>
+	                    </div>
+	                  </div>
+	                  <div className="setting-row">
+	                    <div className="muted">{t("logPanel")}</div>
+	                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
 	                      <button className="btn" onClick={() => setLogDialogOpen(true)} disabled={busy}>
 	                        {t("logPanel")}
 	                      </button>
@@ -4799,120 +4701,6 @@ export default function WorkspaceShell() {
               {t("confirmImport")}
             </button>
           </div>
-	        </div>
-	      </dialog>
-
-	      <dialog
-	        ref={healthDialogRef}
-	        onCancel={(e) => {
-	          e.preventDefault();
-	          setHealthDialogOpen(false);
-	        }}
-	        onClose={() => setHealthDialogOpen(false)}
-	        aria-label={t("healthPanel")}
-	      >
-	        <div className="modal">
-	          <div className="modal-header">
-	            <div>
-	              <div className="modal-title">{t("healthPanel")}</div>
-	              <div className="modal-note">{t("healthCheckHint")}</div>
-	            </div>
-	            <button
-	              className="btn btn-icon"
-	              title={t("close")}
-	              onClick={() => setHealthDialogOpen(false)}
-	              disabled={busy}
-	            >
-	              ×
-	            </button>
-	          </div>
-
-	          <div className="modal-grid">
-	            <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-	              <span className="chip">
-	                {t("healthTotalAccountsLabel")}: {healthSummary.totalAccounts}
-	              </span>
-	              <span className="chip">
-	                {t("healthOpenTabsLabel")}: {healthSummary.openTabs}
-	              </span>
-	              <span className="chip">
-	                {t("healthErrorsLabel")}: {healthSummary.errors}
-	              </span>
-	              <span className="chip">
-	                {t("healthExpiringSoonLabel")}: {healthSummary.expiringSoon}
-	              </span>
-	              <span className="chip">
-	                {t("healthCreditsStaleLabel")}: {healthSummary.creditsStale}
-	              </span>
-	            </div>
-
-	            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-	              <button className="btn" onClick={runHealthCheckOpenTabs} disabled={busy}>
-	                {t("healthCheck")}
-	              </button>
-	            </div>
-
-	            <div className="section-title">
-	              {t("healthNeedsAttention")} ({healthSummary.needsAttention.length})
-	            </div>
-	            {healthSummary.needsAttention.length === 0 ? (
-	              <div className="muted" style={{ fontSize: 12 }}>
-	                {t("healthAllGood")}
-	              </div>
-	            ) : (
-	              <div style={{ display: "grid", gap: 8 }}>
-	                {healthSummary.needsAttention.map(({ account, tabOpen, reasons }) => (
-	                  <button
-	                    key={account.id}
-	                    type="button"
-	                    className="account"
-	                    onClick={() => {
-	                      focusAccount(account.id);
-	                      setHealthDialogOpen(false);
-	                    }}
-	                    disabled={busy}
-	                    style={{ textAlign: "left" }}
-	                  >
-	                    <div className="account-row" style={{ padding: 10 }}>
-	                      <div style={{ display: "grid", gap: 4, minWidth: 0 }}>
-	                        <div style={{ display: "flex", gap: 8, alignItems: "center", minWidth: 0 }}>
-	                          <span className="mono" style={{ whiteSpace: "nowrap" }}>
-	                            {account.pinned ? "★" : ""}
-	                          </span>
-	                          <span style={{ fontWeight: 650, overflow: "hidden", textOverflow: "ellipsis" }}>
-	                            {account.displayName}
-	                          </span>
-	                          <span className="muted mono" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis" }}>
-	                            {account.id}
-	                          </span>
-	                        </div>
-	                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
-	                          <span
-	                            className="chip"
-	                            title={tabOpen ? t("tabOpenTitle") : t("tabClosedTitle")}
-	                          >
-	                            <span className={clsx("dot", tabOpen ? "dot-ok" : "dot-idle")} />
-	                            <span>{t("tabChip")}</span>
-	                          </span>
-	                          {reasons.map((reasonKey) => (
-	                            <span key={reasonKey} className="chip">
-	                              {t(reasonKey)}
-	                            </span>
-	                          ))}
-	                        </div>
-	                      </div>
-	                    </div>
-	                  </button>
-	                ))}
-	              </div>
-	            )}
-	          </div>
-
-	          <div className="modal-actions">
-	            <button className="btn btn-primary" onClick={() => setHealthDialogOpen(false)} disabled={busy}>
-	              {t("close")}
-	            </button>
-	          </div>
 	        </div>
 	      </dialog>
 
