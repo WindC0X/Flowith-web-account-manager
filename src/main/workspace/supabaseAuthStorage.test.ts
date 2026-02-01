@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { extractSupabaseSessionTokensFromStorageValue } from "./supabaseAuthStorage";
+import {
+  extractSupabaseSessionSnapshotFromStorageValue,
+  extractSupabaseSessionTokensFromStorageValue,
+} from "./supabaseAuthStorage";
 
 describe("extractSupabaseSessionTokensFromStorageValue", () => {
   it("extracts access/refresh token from a direct Session JSON", () => {
@@ -17,3 +20,13 @@ describe("extractSupabaseSessionTokensFromStorageValue", () => {
   });
 });
 
+describe("extractSupabaseSessionSnapshotFromStorageValue", () => {
+  it("extracts expiresAt from expires_at seconds", () => {
+    const raw = JSON.stringify({ access_token: "at", refresh_token: "rt", expires_at: 1700000000 });
+    expect(extractSupabaseSessionSnapshotFromStorageValue(raw)).toEqual({
+      accessToken: "at",
+      refreshToken: "rt",
+      expiresAt: 1700000000 * 1000,
+    });
+  });
+});

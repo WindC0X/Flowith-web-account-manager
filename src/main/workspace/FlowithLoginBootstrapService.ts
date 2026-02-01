@@ -10,7 +10,7 @@ import { getRefreshToken, setRefreshToken } from "../accounts/vault";
 import { isKnownUsedRefreshToken, refreshFlowithSessionForAccount } from "../flowith/sessionRefresh";
 import { redactSensitive } from "../security/redact";
 import type { WebWorkspaceService } from "./WebWorkspaceService";
-import { extractSupabaseSessionTokensFromStorageValue } from "./supabaseAuthStorage";
+import { extractSupabaseSessionSnapshotFromStorageValue, type SupabaseSessionSnapshot } from "./supabaseAuthStorage";
 
 const FLOWITH_WEB_TARGET_HOSTS = ["flowith.io", "flowith.net", "flo.ing"] as const;
 
@@ -212,16 +212,75 @@ export class FlowithLoginBootstrapService {
     return result.values;
   }
 
-  private async readAccessTokenFromWebContents(webContents: WebContents): Promise<string | null> {
+  private pickBestSupabaseSnapshot(values: Array<{ value: string }>): SupabaseSessionSnapshot | null {
+    const candidates: SupabaseSessionSnapshot[] = [];
+    for (const entry of values) {
+      const extracted = extractSupabaseSessionSnapshotFromStorageValue(entry.value);
+      if (!extracted) continue;
+      if (!extracted.accessToken && !extracted.refreshToken) continue;
+      candidates.push(extracted);
+    }
+    if (candidates.length === 0) return null;
+
+    const rank = (snapshot: SupabaseSessionSnapshot): number => {
+      if (snapshot.accessToken && snapshot.refreshToken) return 3;
+      if (snapshot.refreshToken) return 2;
+      if (snapshot.accessToken) return 1;
+      return 0;
+    };
+
+    candidates.sort((a, b) => {
+      const ar = rank(a);
+      const br = rank(b);
+      if (ar !== br) return br - ar;
+      const ae = a.expiresAt ?? 0;
+      const be = b.expiresAt ?? 0;
+      if (ae !== be) return be - ae;
+      return 0;
+    });
+
+    return candidates[0] ?? null;
+  }
+
+  private async readBestSupabaseSnapshotFromWebContents(webContents: WebContents): Promise<SupabaseSessionSnapshot | null> {
     const values = await this.readSupabaseAuthStorageValues(webContents);
     if (!values) return null;
-    for (const entry of values) {
-      const extracted = extractSupabaseSessionTokensFromStorageValue(entry.value);
-      if (!extracted?.accessToken) continue;
-      return extracted.accessToken;
+    return this.pickBestSupabaseSnapshot(values);
+  }
+
+  private async waitForSupabaseSnapshotFromWebContents(
+    webContents: WebContents,
+    options?: { timeoutMs?: number }
+  ): Promise<SupabaseSessionSnapshot | null> {
+    const timeoutMs = Math.max(0, options?.timeoutMs ?? 0);
+    if (timeoutMs <= 0) return await this.readBestSupabaseSnapshotFromWebContents(webContents);
+
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() <= deadline) {
+      if (webContents.isDestroyed()) return null;
+      try {
+        const snapshot = await this.readBestSupabaseSnapshotFromWebContents(webContents);
+        if (snapshot?.accessToken || snapshot?.refreshToken) return snapshot;
+      } catch {
+        // ignore
+      }
+
+      if (Date.now() >= deadline) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
     }
 
     return null;
+  }
+
+  private isLikelyActiveAccessToken(expiresAt: number | null): boolean {
+    if (!expiresAt || !Number.isFinite(expiresAt)) return true;
+    // Give a small buffer to avoid treating near-expiry token as "active".
+    return expiresAt > Date.now() + 60_000;
+  }
+
+  private async readAccessTokenFromWebContents(webContents: WebContents): Promise<string | null> {
+    const snapshot = await this.readBestSupabaseSnapshotFromWebContents(webContents);
+    return snapshot?.accessToken ?? null;
   }
 
   private async waitForAccessTokenFromWebContents(
@@ -270,6 +329,16 @@ export class FlowithLoginBootstrapService {
         setTimeout(() => resolve(null), timeoutMs);
       }),
     ]);
+  }
+
+  async waitForAccessTokenFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<string | null> {
+    const webContents = this.workspace.getWebContents(accountId);
+    if (!webContents) return null;
+    try {
+      return await this.waitForAccessTokenFromWebContents(webContents, options);
+    } catch {
+      return null;
+    }
   }
 
   async reconcileSessionForOpenTab(
@@ -331,36 +400,24 @@ export class FlowithLoginBootstrapService {
       (options?.forceRefreshTokenWrite && canOverwriteVaultRefreshToken) ||
       canOverwriteVaultRefreshToken;
 
-    const values = await this.readSupabaseAuthStorageValues(webContents);
-    if (!values) return;
+    const snapshot = await this.readBestSupabaseSnapshotFromWebContents(webContents);
+    if (!snapshot) return;
 
-    let nextRefreshToken: string | null = null;
-    let nextAccessToken: string | null = null;
+    const nextAccessToken = snapshot.accessToken ?? null;
+    const nextRefreshToken = snapshot.refreshToken ?? null;
 
-    for (const entry of values) {
-      const extracted = extractSupabaseSessionTokensFromStorageValue(entry.value);
-      if (!extracted) continue;
-      if (!nextAccessToken && extracted.accessToken) nextAccessToken = extracted.accessToken;
-      if (
-        !nextRefreshToken &&
-        allowRefreshTokenWrite &&
-        extracted.refreshToken &&
-        !isKnownUsedRefreshToken(accountId, extracted.refreshToken)
-      ) {
-        nextRefreshToken = extracted.refreshToken;
-      }
-      if (nextAccessToken && nextRefreshToken) break;
-    }
+    if (nextRefreshToken && currentVaultRefreshToken !== nextRefreshToken) {
+      const shouldWriteRefreshToken =
+        allowRefreshTokenWrite ||
+        !currentVaultRefreshToken ||
+        (nextAccessToken && this.isLikelyActiveAccessToken(snapshot.expiresAt));
 
-    if (nextRefreshToken) {
-      if (currentVaultRefreshToken !== nextRefreshToken) {
+      if (shouldWriteRefreshToken && !isKnownUsedRefreshToken(accountId, nextRefreshToken)) {
         setRefreshToken(accountId, nextRefreshToken);
       }
     }
 
-    if (nextAccessToken) {
-      this.ensureAuthHeaderInjection(accountId, webContents, nextAccessToken);
-    }
+    if (nextAccessToken) this.ensureAuthHeaderInjection(accountId, webContents, nextAccessToken);
   }
 
   private ensureTokenSync(accountId: string, webContents: WebContents) {
@@ -461,6 +518,9 @@ export class FlowithLoginBootstrapService {
     const timeoutMs = options?.timeoutMs ?? 0;
     const task = (async () => {
       try {
+        if (timeoutMs > 0) {
+          await this.waitForSupabaseSnapshotFromWebContents(webContents, { timeoutMs });
+        }
         await this.syncTokensFromWebContents(
           accountId,
           webContents,
@@ -528,6 +588,11 @@ export class FlowithLoginBootstrapService {
 
     const supabaseHost = supabaseHostFromConfig();
     let token = accessToken;
+    const toBearer = (value: string): string => {
+      const raw = value.trim();
+      if (!raw) return "";
+      return raw.toLowerCase().startsWith("bearer ") ? raw : `Bearer ${raw}`;
+    };
 
     const filter = {
       urls: ["https://edge.flowith.net/*", `https://${supabaseHost}/*`, `wss://${supabaseHost}/*`],
@@ -560,9 +625,9 @@ export class FlowithLoginBootstrapService {
         }
 
         if (host === "edge.flowith.net") {
-          headers["Authorization"] = token;
+          headers["Authorization"] = toBearer(token);
         } else if (host === supabaseHost) {
-          headers["Authorization"] = `Bearer ${token}`;
+          headers["Authorization"] = toBearer(token);
         }
 
         callback({ requestHeaders: headers });
@@ -594,9 +659,15 @@ export class FlowithLoginBootstrapService {
 
     // Tab-first: if the page already has a valid access token in its own storage (persisted profile),
     // do not refresh via vault refresh_token. This avoids "already used" caused by vault/tab divergence.
-    const tabAccessToken = await this.waitForAccessTokenFromWebContents(webContents, { timeoutMs: 4000 });
+    const tabSnapshot = await this.waitForSupabaseSnapshotFromWebContents(webContents, { timeoutMs: 4000 });
+    const tabAccessToken = tabSnapshot?.accessToken ?? null;
     if (tabAccessToken) {
       this.ensureAuthHeaderInjection(accountId, webContents, tabAccessToken);
+      return;
+    }
+    // If we can see a refresh_token in the tab, assume the tab will recover its own access token.
+    // Avoid refreshing via vault to prevent refresh_token divergence.
+    if (tabSnapshot?.refreshToken) {
       return;
     }
 

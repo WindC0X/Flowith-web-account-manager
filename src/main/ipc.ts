@@ -441,13 +441,26 @@ export function registerIpcHandlers(deps: IpcDeps) {
     try {
       assertString(accountId, "accountId");
 
-      const tabAccessToken = await deps.loginBootstrap.peekAccessTokenFromOpenTab(accountId, { timeoutMs: 800 });
+      const tabAccessToken = await deps.loginBootstrap.waitForAccessTokenFromOpenTab(accountId, { timeoutMs: 2500 });
       if (!tabAccessToken) return null;
 
       try {
         return await fetchAccountCreditsWithAccessToken(accountId, tabAccessToken);
       } catch (e) {
-        if (e instanceof CreditsUnauthorizedError) return null;
+        if (e instanceof CreditsUnauthorizedError) {
+          await deps.loginBootstrap.syncFromOpenTab(accountId, { timeoutMs: 800 });
+          const nextAccessToken = await deps.loginBootstrap.waitForAccessTokenFromOpenTab(accountId, {
+            timeoutMs: 2500,
+          });
+          if (!nextAccessToken) return null;
+
+          try {
+            return await fetchAccountCreditsWithAccessToken(accountId, nextAccessToken);
+          } catch (e2) {
+            if (e2 instanceof CreditsUnauthorizedError) return null;
+            throw e2;
+          }
+        }
         throw e;
       }
     } catch (e) {
