@@ -19,6 +19,7 @@ import {
   getRefreshToken,
   isTokenEncryptionAvailable,
   listAccounts,
+  setRefreshToken,
   upsertAccountMeta,
 } from "./accounts/vault";
 import {
@@ -32,6 +33,7 @@ import {
   showDownloadInFolder,
 } from "./downloads/service";
 import { CreditsUnauthorizedError, fetchAccountCreditsWithAccessToken } from "./flowith/credits";
+import { isKnownUsedRefreshToken } from "./flowith/sessionRefresh";
 import { testConnectivity } from "./network/connectivity";
 import { applyProxy, validateProxyConfig } from "./network/proxy";
 import { resolveUserAgent, validateUaConfig } from "./network/userAgent";
@@ -396,7 +398,20 @@ export function registerIpcHandlers(deps: IpcDeps) {
         const tokens: string[] = [];
 
         for (const id of ids) {
-          const token = getRefreshToken(id);
+          let token: string | null = null;
+
+          const tabToken = await deps.loginBootstrap.waitForRefreshTokenFromOpenTab(id, { timeoutMs: 2500 });
+          if (tabToken && !isKnownUsedRefreshToken(id, tabToken)) {
+            token = tabToken;
+            try {
+              setRefreshToken(id, tabToken);
+            } catch {
+              // ignore
+            }
+          } else {
+            token = getRefreshToken(id);
+          }
+
           if (!token) {
             missing.push(id);
             continue;

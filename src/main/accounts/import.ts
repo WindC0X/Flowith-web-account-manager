@@ -41,7 +41,7 @@ export async function importRefreshTokens(
   const warnings: string[] = [];
   if (!isTokenEncryptionAvailable()) {
     warnings.push(
-      "Token encryption is unavailable on this host. Tokens will not be persisted and must be re-imported after restart."
+      "Token encryption is unavailable on this host. Tokens will not be stored in the app vault. To keep login state across restarts, open the account tab at least once so the browser profile can persist the session."
     );
   }
 

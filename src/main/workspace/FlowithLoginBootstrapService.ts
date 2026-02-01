@@ -331,11 +331,46 @@ export class FlowithLoginBootstrapService {
     ]);
   }
 
+  async peekRefreshTokenFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<string | null> {
+    const webContents = this.workspace.getWebContents(accountId);
+    if (!webContents) return null;
+
+    const timeoutMs = options?.timeoutMs ?? 0;
+    const task = (async () => {
+      try {
+        const snapshot = await this.readBestSupabaseSnapshotFromWebContents(webContents);
+        return snapshot?.refreshToken ?? null;
+      } catch {
+        return null;
+      }
+    })();
+
+    if (timeoutMs <= 0) return await task;
+
+    return await Promise.race([
+      task,
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), timeoutMs);
+      }),
+    ]);
+  }
+
   async waitForAccessTokenFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<string | null> {
     const webContents = this.workspace.getWebContents(accountId);
     if (!webContents) return null;
     try {
       return await this.waitForAccessTokenFromWebContents(webContents, options);
+    } catch {
+      return null;
+    }
+  }
+
+  async waitForRefreshTokenFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<string | null> {
+    const webContents = this.workspace.getWebContents(accountId);
+    if (!webContents) return null;
+    try {
+      const snapshot = await this.waitForSupabaseSnapshotFromWebContents(webContents, options);
+      return snapshot?.refreshToken ?? null;
     } catch {
       return null;
     }

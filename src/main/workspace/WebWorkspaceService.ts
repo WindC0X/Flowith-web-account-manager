@@ -1,6 +1,6 @@
 import { BrowserWindow, Menu, shell, WebContentsView } from "electron";
 import type { Rect } from "../../shared/ipc";
-import { getAccount, isTokenEncryptionAvailable } from "../accounts/vault";
+import { getAccount } from "../accounts/vault";
 import { attachDownloadsToSession } from "../downloads/service";
 import { applyProxy } from "../network/proxy";
 import { resolveUserAgent } from "../network/userAgent";
@@ -20,8 +20,7 @@ function isTrustedUrl(rawUrl: string): boolean {
 
 export function partitionForAccount(accountId: string): string {
   const safe = accountId.replace(/[^a-zA-Z0-9_-]/g, "_");
-  const persist = isTokenEncryptionAvailable() ? "persist:" : "";
-  return `${persist}flowith-web-${safe}`;
+  return `persist:flowith-web-${safe}`;
 }
 
 export class WebWorkspaceService {
