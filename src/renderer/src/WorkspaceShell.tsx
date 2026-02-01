@@ -2367,8 +2367,14 @@ export default function WorkspaceShell() {
       const delaysMs = [0, 1500, 4500, 9000, 30_000];
       const handles = delaysMs.map((delayMs, index) =>
         window.setTimeout(() => {
-          void syncCreditsFromOpenTabForAccount(normalized);
-          if (index === delaysMs.length - 1) creditSyncTimersRef.current.delete(normalized);
+          void (async () => {
+            const ok = await syncCreditsFromOpenTabForAccount(normalized);
+            if (ok) {
+              clearCreditsSyncTimers(normalized);
+              return;
+            }
+            if (index === delaysMs.length - 1) creditSyncTimersRef.current.delete(normalized);
+          })();
         }, delayMs)
       );
 

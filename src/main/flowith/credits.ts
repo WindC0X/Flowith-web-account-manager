@@ -15,6 +15,15 @@ export class CreditsUnauthorizedError extends Error {
   }
 }
 
+export class CreditsRateLimitedError extends Error {
+  retryAfterMs: number;
+  constructor(message: string, retryAfterMs: number) {
+    super(message);
+    this.name = "CreditsRateLimitedError";
+    this.retryAfterMs = Math.max(0, Math.round(retryAfterMs));
+  }
+}
+
 function toAuthorizationHeader(accessToken: string): string {
   const token = accessToken.trim();
   if (!token) return "";
@@ -22,7 +31,35 @@ function toAuthorizationHeader(accessToken: string): string {
   return `Bearer ${token}`;
 }
 
-async function fetchAccountCreditsWithAuthHeader(accountId: string, authHeader: string): Promise<AccountCredits> {
+const inFlightByAccountId = new Map<string, Promise<AccountCredits>>();
+const rateLimitedUntilByAccountId = new Map<string, number>();
+const rateLimitBackoffMsByAccountId = new Map<string, number>();
+
+function parseRetryAfterMs(headers: Headers): number | null {
+  const raw = headers.get("retry-after");
+  if (!raw) return null;
+  const value = raw.trim();
+  if (!value) return null;
+
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, Math.round(seconds * 1000));
+
+  const asDate = Date.parse(value);
+  if (Number.isFinite(asDate)) return Math.max(0, asDate - Date.now());
+
+  return null;
+}
+
+function nextBackoffMs(accountId: string): number {
+  const prev = rateLimitBackoffMsByAccountId.get(accountId) ?? 0;
+  const base = prev > 0 ? Math.min(prev * 2, 5 * 60_000) : 15_000;
+  const jitter = Math.floor(Math.random() * 800);
+  const next = base + jitter;
+  rateLimitBackoffMsByAccountId.set(accountId, base);
+  return next;
+}
+
+async function fetchAccountCreditsWithAuthHeaderNetwork(accountId: string, authHeader: string): Promise<AccountCredits> {
   if (!authHeader.trim()) throw new Error("Missing Authorization header.");
 
   const account = getAccount(accountId);
@@ -46,6 +83,12 @@ async function fetchAccountCreditsWithAuthHeader(accountId: string, authHeader: 
     if (res.status === 401 || res.status === 403) {
       throw new CreditsUnauthorizedError("Unauthorized (401/403). Access token may be invalid or expired.");
     }
+    if (res.status === 429) {
+      const retryAfter = parseRetryAfterMs(res.headers) ?? nextBackoffMs(accountId);
+      const until = Date.now() + retryAfter;
+      rateLimitedUntilByAccountId.set(accountId, until);
+      throw new CreditsRateLimitedError("Rate limited (429).", retryAfter);
+    }
     if (!res.ok) {
       throw new Error(`Credits request failed: HTTP ${res.status}.`);
     }
@@ -61,10 +104,32 @@ async function fetchAccountCreditsWithAuthHeader(accountId: string, authHeader: 
     }
 
     const parsed = parseUserCreditsResponse(payload);
+    rateLimitBackoffMsByAccountId.delete(accountId);
     return { ...parsed, fetchedAt: Date.now() };
   } finally {
     clearTimeout(timeout);
   }
+}
+
+async function fetchAccountCreditsWithAuthHeader(accountId: string, authHeader: string): Promise<AccountCredits> {
+  const until = rateLimitedUntilByAccountId.get(accountId) ?? 0;
+  if (until > Date.now()) {
+    throw new CreditsRateLimitedError("Rate limited (cached).", until - Date.now());
+  }
+
+  const existing = inFlightByAccountId.get(accountId);
+  if (existing) return existing;
+
+  const task = (async () => {
+    try {
+      return await fetchAccountCreditsWithAuthHeaderNetwork(accountId, authHeader);
+    } finally {
+      inFlightByAccountId.delete(accountId);
+    }
+  })();
+
+  inFlightByAccountId.set(accountId, task);
+  return await task;
 }
 
 export async function fetchAccountCreditsWithAccessToken(accountId: string, accessToken: string): Promise<AccountCredits> {
