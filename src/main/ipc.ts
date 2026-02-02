@@ -166,6 +166,10 @@ export function registerIpcHandlers(deps: IpcDeps) {
     deps.workspace.reloadActive();
   });
 
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_GET_STATE, async () => {
+    return deps.workspace.getState();
+  });
+
   ipcMain.handle(IPC_CHANNELS.DOWNLOADS_GET_HISTORY, async () => {
     return getDownloadsHistory();
   });

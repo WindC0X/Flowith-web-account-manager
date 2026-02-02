@@ -201,6 +201,7 @@ export type DesktopApi = {
     setOverlayActive(active: boolean): Promise<void>;
     captureTabSnapshot(accountId: string): Promise<string | null>;
     reloadActive(): Promise<void>;
+    getState(): Promise<{ openTabIds: string[]; activeTabId: string | null }>;
   };
   downloads: {
     subscribe(listener: (event: DownloadEvent) => void): () => void;
@@ -254,6 +255,7 @@ export const IPC_CHANNELS = {
   WORKSPACE_SET_OVERLAY_ACTIVE: "workspace:setOverlayActive",
   WORKSPACE_CAPTURE_TAB_SNAPSHOT: "workspace:captureTabSnapshot",
   WORKSPACE_RELOAD_ACTIVE: "workspace:reloadActive",
+  WORKSPACE_GET_STATE: "workspace:getState",
 
   DOWNLOADS_GET_HISTORY: "downloads:getHistory",
   DOWNLOADS_GET_PREFERENCES: "downloads:getPreferences",
@@ -310,6 +312,7 @@ export type IpcInvokeMap = {
   [IPC_CHANNELS.WORKSPACE_SET_OVERLAY_ACTIVE]: { args: [active: boolean]; result: void };
   [IPC_CHANNELS.WORKSPACE_CAPTURE_TAB_SNAPSHOT]: { args: [accountId: string]; result: string | null };
   [IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE]: { args: []; result: void };
+  [IPC_CHANNELS.WORKSPACE_GET_STATE]: { args: []; result: { openTabIds: string[]; activeTabId: string | null } };
 
   [IPC_CHANNELS.DOWNLOADS_GET_HISTORY]: { args: []; result: DownloadHistoryItem[] };
   [IPC_CHANNELS.DOWNLOADS_GET_PREFERENCES]: { args: []; result: DownloadPreferencesPublic };

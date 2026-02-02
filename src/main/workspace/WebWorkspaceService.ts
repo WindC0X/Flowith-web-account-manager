@@ -32,13 +32,36 @@ export class WebWorkspaceService {
   private lastAppliedAccountId: string | null = null;
   private lastAppliedBounds: Rect | null = null;
   private boundsRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private windowShortcutsAttached = false;
+  private readonly handleWindowBeforeInputEvent = (event: Electron.Event, input: Electron.Input) => {
+    if (input.type !== "keyDown") return;
+
+    const key = typeof input.key === "string" ? input.key.toLowerCase() : "";
+    const ctrlOrMeta = Boolean(input.control) || Boolean(input.meta);
+
+    // Prevent reloading the renderer window which can desync UI state from BrowserViews.
+    if (ctrlOrMeta && key === "r") {
+      event.preventDefault();
+      this.reloadActive();
+      return;
+    }
+
+    // Windows users often press F5 to refresh.
+    if (key === "f5") {
+      event.preventDefault();
+      this.reloadActive();
+    }
+  };
 
   constructor(window: BrowserWindow) {
     this.window = window;
+    this.attachWindowShortcuts();
   }
 
   setWindow(window: BrowserWindow) {
+    this.detachWindowShortcuts();
     this.window = window;
+    this.attachWindowShortcuts();
     if (this.activeAccountId) {
       this.attach(this.activeAccountId);
     }
@@ -92,6 +115,10 @@ export class WebWorkspaceService {
     view?.webContents.reload();
   }
 
+  getState(): { openTabIds: string[]; activeTabId: string | null } {
+    return { openTabIds: this.listOpenTabs(), activeTabId: this.activeAccountId };
+  }
+
   listOpenTabs(): string[] {
     return [...this.views.keys()];
   }
@@ -134,6 +161,7 @@ export class WebWorkspaceService {
     });
 
     this.hardenWebContents(view);
+    this.hardenShortcuts(view);
     attachDownloadsToSession(view.webContents.session, accountId, () => this.window);
     void (async () => {
       try {
@@ -148,6 +176,55 @@ export class WebWorkspaceService {
       await view.webContents.loadURL(FLOWITH_URL);
     })();
     this.views.set(accountId, view);
+  }
+
+  private attachWindowShortcuts() {
+    if (this.windowShortcutsAttached) return;
+    this.windowShortcutsAttached = true;
+    try {
+      this.window.webContents.on("before-input-event", this.handleWindowBeforeInputEvent);
+    } catch {
+      // ignore
+    }
+  }
+
+  private detachWindowShortcuts() {
+    if (!this.windowShortcutsAttached) return;
+    this.windowShortcutsAttached = false;
+    try {
+      this.window.webContents.removeListener("before-input-event", this.handleWindowBeforeInputEvent);
+    } catch {
+      // ignore
+    }
+  }
+
+  private hardenShortcuts(view: WebContentsView) {
+    try {
+      view.webContents.on("before-input-event", (event, input) => {
+        if (input.type !== "keyDown") return;
+        const key = typeof input.key === "string" ? input.key.toLowerCase() : "";
+        const ctrlOrMeta = Boolean(input.control) || Boolean(input.meta);
+        if (ctrlOrMeta && key === "r") {
+          event.preventDefault();
+          try {
+            view.webContents.reload();
+          } catch {
+            // ignore
+          }
+          return;
+        }
+        if (key === "f5") {
+          event.preventDefault();
+          try {
+            view.webContents.reload();
+          } catch {
+            // ignore
+          }
+        }
+      });
+    } catch {
+      // ignore
+    }
   }
 
   private hardenWebContents(view: WebContentsView) {

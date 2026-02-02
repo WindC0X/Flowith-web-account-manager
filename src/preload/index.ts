@@ -24,6 +24,7 @@ const api: DesktopApi = {
     setOverlayActive: (active) => invoke(IPC_CHANNELS.WORKSPACE_SET_OVERLAY_ACTIVE, active),
     captureTabSnapshot: (accountId) => invoke(IPC_CHANNELS.WORKSPACE_CAPTURE_TAB_SNAPSHOT, accountId),
     reloadActive: () => invoke(IPC_CHANNELS.WORKSPACE_RELOAD_ACTIVE),
+    getState: () => invoke(IPC_CHANNELS.WORKSPACE_GET_STATE),
   },
   downloads: {
     subscribe: (listener) => {

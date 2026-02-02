@@ -1422,22 +1422,38 @@ export default function WorkspaceShell() {
       const list = await window.desktop.accounts.list();
       setAccounts(list);
 
+      const workspaceState = await window.desktop.workspace.getState().catch(() => null);
+      const allowed = new Set(list.map((a) => a.id));
+      const openTabIdsFromWorkspace = workspaceState
+        ? (workspaceState.openTabIds ?? []).filter((id) => allowed.has(id))
+        : null;
+      const activeTabIdFromWorkspace =
+        workspaceState?.activeTabId && allowed.has(workspaceState.activeTabId)
+          ? workspaceState.activeTabId
+          : null;
+
+      if (!activeTabIdFromWorkspace && openTabIdsFromWorkspace && openTabIdsFromWorkspace.length > 0) {
+        try {
+          await window.desktop.workspace.setActiveTab(openTabIdsFromWorkspace[0]!);
+        } catch {
+          // ignore
+        }
+      }
+
       setSelectedIds((prev) => {
-        const allowed = new Set(list.map((a) => a.id));
         const next = new Set<string>();
         for (const id of prev) if (allowed.has(id)) next.add(id);
         return next;
       });
 
       setAccountInfoById((prev) => {
-        const allowed = new Set(list.map((a) => a.id));
         const next: Record<string, AccountInfoEntry> = {};
         for (const [id, info] of Object.entries(prev)) if (allowed.has(id)) next[id] = info;
         return next;
       });
 
       setOpenTabIds((prev) => {
-        const allowed = new Set(list.map((a) => a.id));
+        if (openTabIdsFromWorkspace) return openTabIdsFromWorkspace;
         return prev.filter((id) => allowed.has(id));
       });
 
@@ -1450,10 +1466,13 @@ export default function WorkspaceShell() {
       });
 
       setActiveTabId((prev) => {
-        if (!prev) return prev;
-        const exists = list.some((a) => a.id === prev);
-        if (exists) return prev;
-        return null;
+        if (activeTabIdFromWorkspace) return activeTabIdFromWorkspace;
+        const fallback = prev && allowed.has(prev) ? prev : null;
+        if (openTabIdsFromWorkspace && openTabIdsFromWorkspace.length > 0) {
+          if (fallback && openTabIdsFromWorkspace.includes(fallback)) return fallback;
+          return openTabIdsFromWorkspace[0] ?? null;
+        }
+        return fallback;
       });
     } catch (e) {
       setError(formatErrorMessage(e));
