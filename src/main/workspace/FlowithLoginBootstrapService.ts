@@ -1,8 +1,10 @@
 import type {
   BeforeSendResponse,
+  Cookie,
   OnBeforeSendHeadersListenerDetails,
   OnCompletedListenerDetails,
   WebContents,
+  Session as ElectronSession,
 } from "electron";
 import type { Session } from "@supabase/supabase-js";
 import { resolveFlowithSupabaseConfig } from "../flowith/supabase";
@@ -32,6 +34,32 @@ function storageKeysFromSupabaseUrl(): string[] {
     "sb-server-auth-token",
     "supabase.auth.token",
   ];
+}
+
+const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+
+function safeDecodeCookieValue(raw: string): string[] {
+  const trimmed = raw.trim();
+  if (!trimmed) return [];
+
+  const candidates: string[] = [trimmed];
+  try {
+    const decoded = decodeURIComponent(trimmed);
+    if (decoded && decoded !== trimmed) candidates.push(decoded);
+  } catch {
+    // ignore
+  }
+
+  if (/^[A-Za-z0-9+/=]{32,}$/.test(trimmed)) {
+    try {
+      const decoded = Buffer.from(trimmed, "base64").toString("utf-8").trim();
+      if (decoded) candidates.push(decoded);
+    } catch {
+      // ignore
+    }
+  }
+
+  return [...new Set(candidates)];
 }
 
 function supabaseHostFromConfig(): string {
@@ -169,9 +197,9 @@ export class FlowithLoginBootstrapService {
     this.workspace = workspace;
   }
 
-  private async readSupabaseAuthStorageValues(
-    webContents: WebContents
-  ): Promise<Array<{ storage: "local" | "session"; key: string; value: string }> | null> {
+	  private async readSupabaseAuthStorageValues(
+	    webContents: WebContents
+	  ): Promise<Array<{ storage: "local" | "session"; key: string; value: string }> | null> {
     if (webContents.isDestroyed()) return null;
 
     let href: unknown;
@@ -208,14 +236,78 @@ export class FlowithLoginBootstrapService {
       | { ok: false; error?: string }
       | undefined;
 
-    if (!result || result.ok !== true || !Array.isArray(result.values)) return null;
-    return result.values;
+	    if (!result || result.ok !== true || !Array.isArray(result.values)) return null;
+	    return result.values;
+	  }
+
+  private async readSupabaseAuthCookieValues(
+    session: ElectronSession
+  ): Promise<Array<{ storage: "cookie"; key: string; value: string }> | null> {
+    const keys = storageKeysFromSupabaseUrl();
+    const { projectRef } = resolveFlowithSupabaseConfig();
+
+    let all: Cookie[] = [];
+    try {
+      all = await session.cookies.get({});
+    } catch {
+      return null;
+    }
+
+    if (!Array.isArray(all) || all.length === 0) return null;
+
+    const acceptedDomains = FLOWITH_WEB_TARGET_HOSTS;
+    const values: Array<{ storage: "cookie"; key: string; value: string }> = [];
+
+    for (const cookie of all) {
+      const domain = typeof cookie.domain === "string" ? cookie.domain.toLowerCase() : "";
+      const name = typeof cookie.name === "string" ? cookie.name.trim() : "";
+      const value = typeof cookie.value === "string" ? cookie.value : "";
+      if (!name || !value) continue;
+
+      const normalizedDomain = domain.startsWith(".") ? domain.slice(1) : domain;
+      if (!acceptedDomains.some((host) => normalizedDomain === host || normalizedDomain.endsWith(`.${host}`))) continue;
+
+      const lowerName = name.toLowerCase();
+      const looksRelevant =
+        keys.includes(name) ||
+        lowerName.includes(projectRef.toLowerCase()) ||
+        lowerName.includes("supabase") ||
+        lowerName.includes("auth") ||
+        lowerName.includes("access") ||
+        lowerName.includes("refresh");
+
+      if (!looksRelevant) continue;
+
+      for (const decoded of safeDecodeCookieValue(value)) {
+        values.push({ storage: "cookie", key: name, value: decoded });
+      }
+    }
+
+    if (values.length === 0) return null;
+
+    // Some deployments store access/refresh tokens in separate cookies (not JSON).
+    let accessToken: string | null = null;
+    let refreshToken: string | null = null;
+    for (const entry of values) {
+      const lower = entry.key.toLowerCase();
+      const v = entry.value.trim();
+      if (!v) continue;
+      if (!accessToken && lower.includes("access") && JWT_PATTERN.test(v)) accessToken = v;
+      if (!refreshToken && lower.includes("refresh") && v.length >= 24) refreshToken = v;
+    }
+
+    if (accessToken || refreshToken) {
+      const synthesized = JSON.stringify({ access_token: accessToken, refresh_token: refreshToken });
+      values.unshift({ storage: "cookie", key: "__synthetic__", value: synthesized });
+    }
+
+    return values;
   }
 
-  private pickBestSupabaseSnapshot(values: Array<{ value: string }>): SupabaseSessionSnapshot | null {
-    const candidates: SupabaseSessionSnapshot[] = [];
-    for (const entry of values) {
-      const extracted = extractSupabaseSessionSnapshotFromStorageValue(entry.value);
+	  private pickBestSupabaseSnapshot(values: Array<{ value: string }>): SupabaseSessionSnapshot | null {
+	    const candidates: SupabaseSessionSnapshot[] = [];
+	    for (const entry of values) {
+	      const extracted = extractSupabaseSessionSnapshotFromStorageValue(entry.value);
       if (!extracted) continue;
       if (!extracted.accessToken && !extracted.refreshToken) continue;
       candidates.push(extracted);
@@ -239,14 +331,21 @@ export class FlowithLoginBootstrapService {
       return 0;
     });
 
-    return candidates[0] ?? null;
-  }
+	    return candidates[0] ?? null;
+	  }
 
-  private async readBestSupabaseSnapshotFromWebContents(webContents: WebContents): Promise<SupabaseSessionSnapshot | null> {
-    const values = await this.readSupabaseAuthStorageValues(webContents);
+  private async readBestSupabaseSnapshotFromCookies(session: ElectronSession): Promise<SupabaseSessionSnapshot | null> {
+    const values = await this.readSupabaseAuthCookieValues(session);
     if (!values) return null;
     return this.pickBestSupabaseSnapshot(values);
   }
+
+	  private async readBestSupabaseSnapshotFromWebContents(webContents: WebContents): Promise<SupabaseSessionSnapshot | null> {
+	    const values = await this.readSupabaseAuthStorageValues(webContents);
+      const snapshotFromStorage = values ? this.pickBestSupabaseSnapshot(values) : null;
+      if (snapshotFromStorage) return snapshotFromStorage;
+      return await this.readBestSupabaseSnapshotFromCookies(webContents.session);
+	  }
 
   private async waitForSupabaseSnapshotFromWebContents(
     webContents: WebContents,
