@@ -268,13 +268,12 @@ export class FlowithLoginBootstrapService {
       if (!acceptedDomains.some((host) => normalizedDomain === host || normalizedDomain.endsWith(`.${host}`))) continue;
 
       const lowerName = name.toLowerCase();
+      const projectRefLower = projectRef.toLowerCase();
       const looksRelevant =
         keys.includes(name) ||
-        lowerName.includes(projectRef.toLowerCase()) ||
-        lowerName.includes("supabase") ||
-        lowerName.includes("auth") ||
-        lowerName.includes("access") ||
-        lowerName.includes("refresh");
+        lowerName.includes(projectRefLower) ||
+        lowerName.startsWith("sb-") ||
+        lowerName.includes("supabase");
 
       if (!looksRelevant) continue;
 
