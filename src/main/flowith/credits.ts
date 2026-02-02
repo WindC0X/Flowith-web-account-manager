@@ -87,7 +87,8 @@ async function fetchAccountCreditsWithAuthHeaderNetwork(accountId: string, authH
       const retryAfter = parseRetryAfterMs(res.headers) ?? nextBackoffMs(accountId);
       const until = Date.now() + retryAfter;
       rateLimitedUntilByAccountId.set(accountId, until);
-      throw new CreditsRateLimitedError("Rate limited (429).", retryAfter);
+      const seconds = Math.max(1, Math.ceil(retryAfter / 1000));
+      throw new CreditsRateLimitedError(`Rate limited (429). Retry after ${seconds}s.`, retryAfter);
     }
     if (!res.ok) {
       throw new Error(`Credits request failed: HTTP ${res.status}.`);
@@ -114,7 +115,9 @@ async function fetchAccountCreditsWithAuthHeaderNetwork(accountId: string, authH
 async function fetchAccountCreditsWithAuthHeader(accountId: string, authHeader: string): Promise<AccountCredits> {
   const until = rateLimitedUntilByAccountId.get(accountId) ?? 0;
   if (until > Date.now()) {
-    throw new CreditsRateLimitedError("Rate limited (cached).", until - Date.now());
+    const remaining = until - Date.now();
+    const seconds = Math.max(1, Math.ceil(remaining / 1000));
+    throw new CreditsRateLimitedError(`Rate limited (429). Retry after ${seconds}s.`, remaining);
   }
 
   const existing = inFlightByAccountId.get(accountId);

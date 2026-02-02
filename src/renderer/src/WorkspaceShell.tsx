@@ -264,13 +264,33 @@ const UI_STRINGS = {
 	    tabChip: "Tab",
 	    tabOpenTitle: "Tab 已打开",
 	    tabClosedTitle: "Tab 未打开",
-	    healthCheck: "健康检查",
-	    toastHealthCheckStarted: "已开始健康检查（仅已打开 Tab）",
-	    toastHealthNoOpenTabs: "暂无已打开 Tab",
 	    logPanel: "日志",
 	    clearLog: "清空日志",
 	    copyLog: "复制日志",
 	    toastCopied: "已复制",
+	    errorUnknown: "未知错误",
+	    errorNetworkGeneric: "网络错误，请检查网络/代理后重试。",
+	    errorRequestTimeout: "请求超时，请检查网络/代理后重试。",
+	    errorPageLoadTimeout: "页面加载超时，请检查网络/代理，或在该账号 Tab 内刷新后重试。",
+	    errorTokenNotImported: "该账号尚未导入 token。",
+	    errorTokenMissingForExportWithCount:
+	      "无法获取所选 {count} 个账号的 token。请先打开这些账号的 Tab 并确认已登录，然后重试导出。",
+	    errorRefreshTokenAlreadyUsed: "该 token 已失效/已被轮换（already used）。请重新获取最新 token 并重新导入。",
+	    errorUnauthorized: "登录态可能已失效/未就绪。请在该账号 Tab 内刷新页面或重新登录。",
+	    errorRateLimited: "请求过于频繁，被限流（429）。稍后会自动重试。",
+	    errorRateLimitedWithDelay: "请求过于频繁，被限流（429）。{seconds}s 后自动重试。",
+	    errorCreditsSyncUnavailable: "积分同步暂不可用：Tab 登录态未就绪/已失效。请在该账号 Tab 内刷新或重新登录。",
+	    errorProxyRulesRequired: "代理地址不能为空。",
+	    errorProxyCredentialsNotAllowed: "代理地址暂不支持包含账号密码。",
+	    errorProxyInvalidMode: "代理模式无效。",
+	    uaErrorModeInvalid: "User-Agent 模式无效。",
+	    errorDownloadNotFound: "下载记录不存在（可能已被清理）。",
+	    errorDownloadPathUnavailable: "该下载暂无可用的保存路径。",
+	    errorDownloadOpenFailed: "打开下载文件失败。",
+	    errorUpdaterPackagedOnly: "更新功能仅发布版（安装包）可用。",
+	    errorAccountNotFound: "账号不存在。",
+	    errorWorkspaceTabNotFound: "该账号 Tab 未就绪/已关闭，请重新打开后重试。",
+	    errorInvalidSelection: "所选账号列表无效，请刷新后重试。",
 	    logDangerNote: "注意：日志用于排障回溯，可能包含敏感信息（已脱敏）。请勿外发/截图公开。",
 	    logEmpty: "暂无日志。",
 	    updatedAtLabel: "更新时间",
@@ -479,13 +499,34 @@ const UI_STRINGS = {
 	    tabChip: "Tab",
 	    tabOpenTitle: "Tab is open",
 	    tabClosedTitle: "Tab is closed",
-	    healthCheck: "Health check",
-	    toastHealthCheckStarted: "Health check started (open tabs only)",
-	    toastHealthNoOpenTabs: "No open tabs",
 	    logPanel: "Logs",
 	    clearLog: "Clear logs",
 	    copyLog: "Copy logs",
 	    toastCopied: "Copied",
+	    errorUnknown: "Unknown error",
+	    errorNetworkGeneric: "Network error. Check network/proxy and try again.",
+	    errorRequestTimeout: "Request timed out. Check network/proxy and try again.",
+	    errorPageLoadTimeout: "Page load timed out. Check network/proxy or reload within the tab.",
+	    errorTokenNotImported: "Token not imported for this account.",
+	    errorTokenMissingForExportWithCount:
+	      "Token unavailable for {count} selected account(s). Open the account tab(s), ensure they are logged in, then export again.",
+	    errorRefreshTokenAlreadyUsed:
+	      "Token is already used/rotated. Re-export the latest token from the original environment and re-import.",
+	    errorUnauthorized: "Login state may be expired/not ready. Reload or re-login inside the tab.",
+	    errorRateLimited: "Too many requests (429). Will retry later.",
+	    errorRateLimitedWithDelay: "Too many requests (429). Retrying in {seconds}s.",
+	    errorCreditsSyncUnavailable: "Credits sync unavailable: tab login is not ready/expired. Reload or re-login inside the tab.",
+	    errorProxyRulesRequired: "Proxy rules are required.",
+	    errorProxyCredentialsNotAllowed: "Proxy rules must not include username:password credentials.",
+	    errorProxyInvalidMode: "Invalid proxy mode.",
+	    uaErrorModeInvalid: "Invalid User-Agent mode.",
+	    errorDownloadNotFound: "Download record not found.",
+	    errorDownloadPathUnavailable: "Save path is unavailable for this download.",
+	    errorDownloadOpenFailed: "Failed to open the downloaded file.",
+	    errorUpdaterPackagedOnly: "Updater is only available in packaged builds.",
+	    errorAccountNotFound: "Account not found.",
+	    errorWorkspaceTabNotFound: "Account tab is not ready/closed. Reopen the tab and try again.",
+	    errorInvalidSelection: "Invalid account selection. Refresh and try again.",
 	    logDangerNote: "Sensitive: logs are for troubleshooting and may contain redacted secrets. Do not share publicly.",
 	    logEmpty: "No logs yet.",
 	    updatedAtLabel: "Updated",
@@ -677,6 +718,64 @@ function toErrorMessage(error: unknown): string {
   // "Error invoking remote method 'channel': Error: <message>"
   const withoutInvokePrefix = raw.replace(/^Error invoking remote method '[^']+':\s*/i, "");
   return withoutInvokePrefix.replace(/^Error:\s*/i, "").trim() || "Unknown error";
+}
+
+function humanizeErrorMessage(raw: string, t: (key: StringKey) => string): string {
+  const message = raw.trim();
+  if (!message || /^unknown error$/i.test(message)) return t("errorUnknown");
+
+  if (/Timeout waiting for Flowith Web to load\./i.test(message)) return t("errorPageLoadTimeout");
+  if (/No refresh_token available for this account/i.test(message)) return t("errorTokenNotImported");
+  if (/Invalid accountIds: duplicate ids\./i.test(message)) return t("errorInvalidSelection");
+  if (/Account not found\./i.test(message)) return t("errorAccountNotFound");
+  if (/Workspace webContents not found for account\./i.test(message)) return t("errorWorkspaceTabNotFound");
+  if (/Updater is only available in packaged builds\./i.test(message)) return t("errorUpdaterPackagedOnly");
+
+  const tokenUnavailableMatch = message.match(/^Token unavailable for\s+(\d+)\s+selected account\(s\)\./i);
+  if (tokenUnavailableMatch) {
+    const count = Number(tokenUnavailableMatch[1]);
+    const safeCount = Number.isFinite(count) ? Math.max(0, count) : 0;
+    return format(t("errorTokenMissingForExportWithCount"), { count: safeCount });
+  }
+
+  const rateLimitedMatch = message.match(/Rate limited\s*\(429\)\.\s*Retry after\s+(\d+)s\./i);
+  if (rateLimitedMatch) {
+    const seconds = Number(rateLimitedMatch[1]);
+    const safeSeconds = Number.isFinite(seconds) ? Math.max(1, seconds) : 1;
+    return format(t("errorRateLimitedWithDelay"), { seconds: safeSeconds });
+  }
+
+  if (/Invalid proxy mode\./i.test(message)) return t("errorProxyInvalidMode");
+  if (/Custom proxy rules are required\./i.test(message)) return t("errorProxyRulesRequired");
+  if (/Proxy rules must not include username:password credentials\./i.test(message)) return t("errorProxyCredentialsNotAllowed");
+
+  if (/Invalid User-Agent mode\./i.test(message)) return t("uaErrorModeInvalid");
+  if (/User-Agent value is required/i.test(message)) return t("uaErrorRequired");
+  if (/User-Agent value is too long\./i.test(message)) return t("uaErrorTooLong");
+  if (/User-Agent value must be single-line\./i.test(message)) return t("uaErrorSingleLine");
+  if (/Unknown User-Agent preset\./i.test(message)) return t("uaErrorPresetUnknown");
+
+  if (/Download not found\./i.test(message)) return t("errorDownloadNotFound");
+  if (/Save path is unavailable for this download\./i.test(message)) return t("errorDownloadPathUnavailable");
+  if (/Failed to open the downloaded file\./i.test(message)) return t("errorDownloadOpenFailed");
+
+  if (/already used/i.test(message)) return t("errorRefreshTokenAlreadyUsed");
+  if (/\b429\b/i.test(message) || /rate limited/i.test(message)) return t("errorRateLimited");
+  if (/\b401\b|\b403\b/i.test(message) || /unauthorized/i.test(message)) return t("errorUnauthorized");
+
+  if (/The operation was aborted|aborted/i.test(message)) return t("errorRequestTimeout");
+  if (
+    /Failed to fetch/i.test(message) ||
+    /(ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ERR_NETWORK)/i.test(message)
+  ) {
+    return t("errorNetworkGeneric");
+  }
+
+  return message;
+}
+
+function toUiErrorMessage(error: unknown, t: (key: StringKey) => string): string {
+  return humanizeErrorMessage(toErrorMessage(error), t);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -923,6 +1022,7 @@ export default function WorkspaceShell() {
 
 	  const strings = UI_STRINGS[uiPrefs.locale];
 	  const t = useCallback((key: StringKey) => strings[key], [strings]);
+	  const formatErrorMessage = useCallback((e: unknown) => toUiErrorMessage(e, t), [t]);
 	  const isWindows = useMemo(() => /windows/i.test(navigator.userAgent), []);
 	  const [windowMaximized, setWindowMaximized] = useState(false);
 	  const [systemTheme, setSystemTheme] = useState<"dark" | "light">(() => {
@@ -1356,11 +1456,11 @@ export default function WorkspaceShell() {
         return null;
       });
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     } finally {
       setBusy(false);
     }
-  }, []);
+  }, [formatErrorMessage]);
 
   useEffect(() => {
     void refreshAccounts();
@@ -1915,9 +2015,9 @@ export default function WorkspaceShell() {
       const next = await window.desktop.downloads.setMode(mode);
       setDownloadPrefs(next);
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     }
-  }, []);
+  }, [formatErrorMessage]);
 
   const pickDownloadDirectory = useCallback(async () => {
     setError(null);
@@ -1925,36 +2025,36 @@ export default function WorkspaceShell() {
       const next = await window.desktop.downloads.pickCustomDirectory();
       setDownloadPrefs(next);
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     }
-  }, []);
+  }, [formatErrorMessage]);
 
   const showDownloadInFolder = useCallback(async (id: string) => {
     setError(null);
     try {
       await window.desktop.downloads.showInFolder(id);
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     }
-  }, []);
+  }, [formatErrorMessage]);
 
   const openDownloadedFile = useCallback(async (id: string) => {
     setError(null);
     try {
       await window.desktop.downloads.open(id);
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     }
-  }, []);
+  }, [formatErrorMessage]);
 
   const cancelDownloadToast = useCallback(async (id: string) => {
     setError(null);
     try {
       await window.desktop.downloads.cancel(id);
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     }
-  }, []);
+  }, [formatErrorMessage]);
 
   const copyDownloadPath = useCallback(async (id: string) => {
     setError(null);
@@ -1968,9 +2068,9 @@ export default function WorkspaceShell() {
         );
       }, 1800);
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     }
-  }, []);
+  }, [formatErrorMessage]);
 
   const checkForUpdates = useCallback(async () => {
     setError(null);
@@ -1979,13 +2079,13 @@ export default function WorkspaceShell() {
       const next = await window.desktop.updater.check();
       setUpdaterStatus(next);
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setUpdaterRunning(false);
     }
-  }, [pushUiToast]);
+  }, [formatErrorMessage, pushUiToast]);
 
   const downloadAppUpdate = useCallback(async () => {
     setError(null);
@@ -1994,13 +2094,13 @@ export default function WorkspaceShell() {
       const next = await window.desktop.updater.download();
       setUpdaterStatus(next);
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setUpdaterRunning(false);
     }
-  }, [pushUiToast]);
+  }, [formatErrorMessage, pushUiToast]);
 
   const installUpdate = useCallback(async () => {
     setError(null);
@@ -2008,13 +2108,13 @@ export default function WorkspaceShell() {
     try {
       await window.desktop.updater.quitAndInstall();
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setUpdaterRunning(false);
     }
-  }, [pushUiToast]);
+  }, [formatErrorMessage, pushUiToast]);
 
   const runImport = useCallback(async () => {
     setImportProxyInlineError(null);
@@ -2022,7 +2122,7 @@ export default function WorkspaceShell() {
 
     const proxyError = validateProxyDraft(importProxyMode, importProxyRules);
     if (proxyError) {
-      setImportProxyInlineError(proxyError);
+      setImportProxyInlineError(humanizeErrorMessage(proxyError, t));
       return;
     }
 
@@ -2100,7 +2200,7 @@ export default function WorkspaceShell() {
       const summary = format(t("importResultChip"), { ok: result.imported, fail: result.failed });
       pushUiToast(result.failed > 0 ? "error" : "success", summary);
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
@@ -2112,6 +2212,7 @@ export default function WorkspaceShell() {
     importText,
     importUaMode,
     importUaValue,
+    formatErrorMessage,
     pushUiToast,
     refreshAccounts,
     t,
@@ -2124,11 +2225,11 @@ export default function WorkspaceShell() {
       const text = await window.desktop.accounts.exportRefreshTokens(selected);
       setExportDialog({ open: true, tokenText: text, selectedCount: selected.length });
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     } finally {
       setBusy(false);
     }
-  }, [selected]);
+  }, [formatErrorMessage, selected]);
 
   const openDeleteDialog = useCallback(() => {
     if (!focusedAccount) return;
@@ -2179,20 +2280,20 @@ export default function WorkspaceShell() {
       setDeleteDialog({ open: false });
       pushUiToast("success", t("toastAccountDeleted"));
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [activeTabId, deleteDialog, openTabIds, pushUiToast, t]);
+  }, [activeTabId, deleteDialog, formatErrorMessage, openTabIds, pushUiToast, t]);
 
   const saveProxy = useCallback(async () => {
     if (!focusedAccountId) return;
     setProxyInlineError(null);
     const proxyError = validateProxyDraft(proxyMode, proxyRules);
     if (proxyError) {
-      setProxyInlineError(proxyError);
+      setProxyInlineError(humanizeErrorMessage(proxyError, t));
       return;
     }
     setError(null);
@@ -2210,13 +2311,13 @@ export default function WorkspaceShell() {
       await refreshAccounts();
       pushUiToast("success", t("toastProxySaved"));
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [focusedAccountId, proxyMode, proxyRules, pushUiToast, refreshAccounts, t]);
+  }, [focusedAccountId, formatErrorMessage, proxyMode, proxyRules, pushUiToast, refreshAccounts, t]);
 
   const saveDisplayName = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -2235,13 +2336,13 @@ export default function WorkspaceShell() {
       setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       pushUiToast("success", t("toastDisplayNameSaved"));
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setDisplayNameInlineError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [displayNameDraft, focusedAccountId, pushUiToast, t]);
+  }, [displayNameDraft, focusedAccountId, formatErrorMessage, pushUiToast, t]);
 
   const saveTags = useCallback(async () => {
     if (!focusedAccountId) return;
@@ -2253,13 +2354,13 @@ export default function WorkspaceShell() {
       await refreshAccounts();
       pushUiToast("success", t("toastTagsSaved"));
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [focusedAccountId, pushUiToast, refreshAccounts, t, tagsDraft]);
+  }, [focusedAccountId, formatErrorMessage, pushUiToast, refreshAccounts, t, tagsDraft]);
 
   const togglePinnedForAccount = useCallback(
     async (accountId: string, nextPinned: boolean) => {
@@ -2269,14 +2370,14 @@ export default function WorkspaceShell() {
         const updated = await window.desktop.accounts.updateAccountMeta(accountId, { pinned: nextPinned });
         setAccounts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
       } catch (e) {
-        const message = toErrorMessage(e);
+        const message = formatErrorMessage(e);
         setError(message);
         pushUiToast("error", message);
       } finally {
         setBusy(false);
       }
     },
-    [pushUiToast]
+    [formatErrorMessage, pushUiToast]
   );
 
   const saveUserAgent = useCallback(async () => {
@@ -2313,18 +2414,34 @@ export default function WorkspaceShell() {
       await refreshAccounts();
       pushUiToast("success", t("toastUaSaved"));
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setUaInlineError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [focusedAccountId, pushUiToast, refreshAccounts, t, uaMode, uaValue]);
+  }, [focusedAccountId, formatErrorMessage, pushUiToast, refreshAccounts, t, uaMode, uaValue]);
 
   const syncCreditsFromOpenTabForAccount = useCallback(async (accountId: string) => {
     try {
       const info = await window.desktop.accounts.syncCreditsFromOpenTab(accountId);
-      if (!info) return false;
+      if (!info) {
+        const fallback = t("errorCreditsSyncUnavailable");
+        setAccountInfoById((prev) => {
+          const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
+          if (current.status === "unavailable" && current.error === fallback) return prev;
+          return {
+            ...prev,
+            [accountId]: {
+              ...current,
+              status: "unavailable",
+              error: fallback,
+              updatedAt: Date.now(),
+            },
+          };
+        });
+        return false;
+      }
 
       const remaining = Math.round(info.remainingCredits);
       const total = Math.round(info.totalCredits);
@@ -2346,10 +2463,24 @@ export default function WorkspaceShell() {
       });
 
       return true;
-    } catch {
+    } catch (e) {
+      const message = formatErrorMessage(e);
+      setAccountInfoById((prev) => {
+        const current = prev[accountId] ?? DEFAULT_ACCOUNT_INFO;
+        if (current.status === "unavailable" && current.error === message) return prev;
+        return {
+          ...prev,
+          [accountId]: {
+            ...current,
+            status: "unavailable",
+            error: message,
+            updatedAt: Date.now(),
+          },
+        };
+      });
       return false;
     }
-  }, []);
+  }, [formatErrorMessage, t]);
 
   const clearCreditsSyncTimers = useCallback((accountId: string) => {
     const handles = creditSyncTimersRef.current.get(accountId);
@@ -2383,17 +2514,6 @@ export default function WorkspaceShell() {
     [clearCreditsSyncTimers, syncCreditsFromOpenTabForAccount]
   );
 
-  const runHealthCheckOpenTabs = useCallback(() => {
-    if (openTabIds.length === 0) {
-      pushUiToast("info", t("toastHealthNoOpenTabs"));
-      return;
-    }
-    pushUiToast("info", t("toastHealthCheckStarted"));
-    for (const [index, accountId] of openTabIds.entries()) {
-      window.setTimeout(() => scheduleCreditsSyncFromOpenTab(accountId), index * 350);
-    }
-  }, [openTabIds, pushUiToast, scheduleCreditsSyncFromOpenTab, t]);
-
   const clearUiLog = useCallback(() => {
     setUiLog([]);
   }, []);
@@ -2411,9 +2531,9 @@ export default function WorkspaceShell() {
       await navigator.clipboard.writeText(text);
       pushUiToast("success", t("toastCopied"));
     } catch (e) {
-      pushUiToast("error", toErrorMessage(e));
+      pushUiToast("error", formatErrorMessage(e));
     }
-  }, [pushUiToast, t, uiLog, uiPrefs.locale]);
+  }, [formatErrorMessage, pushUiToast, t, uiLog, uiPrefs.locale]);
 
   useEffect(() => {
     if (!activeTabId) return;
@@ -2455,7 +2575,7 @@ export default function WorkspaceShell() {
     setProxyInlineError(null);
     const proxyError = validateProxyDraft(proxyMode, proxyRules);
     if (proxyError) {
-      setProxyInlineError(proxyError);
+      setProxyInlineError(humanizeErrorMessage(proxyError, t));
       return;
     }
     setError(null);
@@ -2481,11 +2601,11 @@ export default function WorkspaceShell() {
       setConnectivity(report);
       setConnectivityPopoverOpen(true);
     } catch (e) {
-      setError(toErrorMessage(e));
+      setError(formatErrorMessage(e));
     } finally {
       setBusy(false);
     }
-  }, [focusedAccount, focusedAccountId, proxyMode, proxyRules]);
+  }, [focusedAccount, focusedAccountId, formatErrorMessage, proxyMode, proxyRules, t]);
 
   const openTab = useCallback(
     async (accountId: string): Promise<boolean> => {
@@ -2501,7 +2621,7 @@ export default function WorkspaceShell() {
         pushUiToast("success", t("toastTabOpened"));
         return true;
       } catch (e) {
-        const message = toErrorMessage(e);
+        const message = formatErrorMessage(e);
         setError(message);
         pushUiToast("error", message);
         return false;
@@ -2509,7 +2629,7 @@ export default function WorkspaceShell() {
         setBusy(false);
       }
     },
-    [pushUiToast, pushViewportBounds, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
+    [formatErrorMessage, pushUiToast, pushViewportBounds, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
   );
 
   const closeTab = useCallback(
@@ -2528,14 +2648,14 @@ export default function WorkspaceShell() {
         });
         pushUiToast("info", t("toastTabClosed"));
       } catch (e) {
-        const message = toErrorMessage(e);
+        const message = formatErrorMessage(e);
         setError(message);
         pushUiToast("error", message);
       } finally {
         setBusy(false);
       }
     },
-    [clearCreditsSyncTimers, openTabIds, pushUiToast, t]
+    [clearCreditsSyncTimers, formatErrorMessage, openTabIds, pushUiToast, t]
   );
 
   const activateTab = useCallback(async (accountId: string) => {
@@ -2547,13 +2667,13 @@ export default function WorkspaceShell() {
       recordAccountUsed(accountId);
       scheduleCreditsSyncFromOpenTab(accountId);
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [pushUiToast, recordAccountUsed, scheduleCreditsSyncFromOpenTab]);
+  }, [formatErrorMessage, pushUiToast, recordAccountUsed, scheduleCreditsSyncFromOpenTab]);
 
   const reloadWorkspace = useCallback(async () => {
     setError(null);
@@ -2562,13 +2682,13 @@ export default function WorkspaceShell() {
       await window.desktop.workspace.reloadActive();
       pushUiToast("info", t("toastTabReloaded"));
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [pushUiToast, t]);
+  }, [formatErrorMessage, pushUiToast, t]);
 
   const reloadTabForAccount = useCallback(
     async (accountId: string) => {
@@ -2582,14 +2702,14 @@ export default function WorkspaceShell() {
         await window.desktop.workspace.reloadActive();
         pushUiToast("info", t("toastTabReloaded"));
       } catch (e) {
-        const message = toErrorMessage(e);
+        const message = formatErrorMessage(e);
         setError(message);
         pushUiToast("error", message);
       } finally {
         setBusy(false);
       }
     },
-    [pushUiToast, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
+    [formatErrorMessage, pushUiToast, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
   );
 
   const batchOpenTabs = useCallback(async () => {
@@ -2637,13 +2757,13 @@ export default function WorkspaceShell() {
         })
       );
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [batchTagsDialog, batchTagsDraft, pushUiToast, refreshAccounts, t]);
+  }, [batchTagsDialog, batchTagsDraft, formatErrorMessage, pushUiToast, refreshAccounts, t]);
 
   const openBatchProxyDialog = useCallback(() => {
     if (selected.length === 0) return;
@@ -2659,7 +2779,7 @@ export default function WorkspaceShell() {
 
     const proxyError = validateProxyDraft(batchProxyMode, batchProxyRules);
     if (proxyError) {
-      setBatchProxyInlineError(proxyError);
+      setBatchProxyInlineError(humanizeErrorMessage(proxyError, t));
       return;
     }
 
@@ -2693,13 +2813,13 @@ export default function WorkspaceShell() {
         })
       );
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [batchProxyDialog, batchProxyMode, batchProxyRules, pushUiToast, t]);
+  }, [batchProxyDialog, batchProxyMode, batchProxyRules, formatErrorMessage, pushUiToast, t]);
 
   const openBatchUserAgentDialog = useCallback(() => {
     if (selected.length === 0) return;
@@ -2764,13 +2884,13 @@ export default function WorkspaceShell() {
         })
       );
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [batchUaMode, batchUaValue, batchUserAgentDialog, pushUiToast, t]);
+  }, [batchUaMode, batchUaValue, batchUserAgentDialog, formatErrorMessage, pushUiToast, t]);
 
   const openBatchDeleteDialog = useCallback(() => {
     if (selected.length === 0) return;
@@ -2803,13 +2923,13 @@ export default function WorkspaceShell() {
         })
       );
     } catch (e) {
-      const message = toErrorMessage(e);
+      const message = formatErrorMessage(e);
       setError(message);
       pushUiToast("error", message);
     } finally {
       setBusy(false);
     }
-  }, [batchDeleteDialog, pushUiToast, refreshAccounts, t]);
+  }, [batchDeleteDialog, formatErrorMessage, pushUiToast, refreshAccounts, t]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -3280,14 +3400,6 @@ export default function WorkspaceShell() {
 	                      <option value="light">{t("themeLight")}</option>
 	                      <option value="system">{t("themeSystem")}</option>
 	                    </select>
-	                  </div>
-	                  <div className="setting-row">
-	                    <div className="muted">{t("healthCheck")}</div>
-	                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-	                      <button className="btn" onClick={runHealthCheckOpenTabs} disabled={busy}>
-	                        {t("healthCheck")}
-	                      </button>
-	                    </div>
 	                  </div>
 	                  <div className="setting-row">
 	                    <div className="muted">{t("logPanel")}</div>

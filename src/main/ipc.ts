@@ -462,7 +462,7 @@ export function registerIpcHandlers(deps: IpcDeps) {
       try {
         return await fetchAccountCreditsWithAccessToken(accountId, tabAccessToken);
       } catch (e) {
-        if (e instanceof CreditsRateLimitedError) return null;
+        if (e instanceof CreditsRateLimitedError) throw e;
         if (e instanceof CreditsUnauthorizedError) {
           await deps.loginBootstrap.syncFromOpenTab(accountId, { timeoutMs: 800 });
           const nextAccessToken = await deps.loginBootstrap.waitForAccessTokenFromOpenTab(accountId, {
@@ -473,7 +473,7 @@ export function registerIpcHandlers(deps: IpcDeps) {
           try {
             return await fetchAccountCreditsWithAccessToken(accountId, nextAccessToken);
           } catch (e2) {
-            if (e2 instanceof CreditsRateLimitedError) return null;
+            if (e2 instanceof CreditsRateLimitedError) throw e2;
             if (e2 instanceof CreditsUnauthorizedError) return null;
             throw e2;
           }
