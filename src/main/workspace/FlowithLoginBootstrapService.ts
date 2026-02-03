@@ -38,10 +38,12 @@ function storageKeysFromSupabaseUrl(): string[] {
 }
 
 function storageKeysForInjection(): string[] {
-  // Prefer canonical supabase-js storage keys only.
-  // Avoid writing into non-standard keys like "sb-server-auth-token" to reduce the chance of polluting
-  // app-internal sessions and accidentally exporting stale tokens.
-  return storageKeysFromSupabaseUrl();
+  // Prefer canonical supabase-js storage keys, but also write to "sb-server-auth-token" for compatibility:
+  // Flowith Web keeps its live session under this key in some builds. Without injecting it, imported
+  // accounts may open as logged-out even though we have a valid session.
+  const keys = storageKeysFromSupabaseUrl();
+  keys.push("sb-server-auth-token");
+  return [...new Set(keys)];
 }
 
 function isStandardSupabaseAuthKey(key: string): boolean {
@@ -145,7 +147,22 @@ async function waitForFlowithReady(webContents: WebContents, timeoutMs: number) 
 
 async function injectSupabaseSession(webContents: WebContents, session: Session) {
   const keys = storageKeysForInjection();
-  const value = JSON.stringify(session);
+  // Flowith Web may use different supabase-js/auth-js storage shapes depending on build/version.
+  // To maximize compatibility we inject a superset payload that contains:
+  // - top-level access_token/refresh_token (newer formats)
+  // - currentSession/session/data.session wrappers (older formats)
+  // - expiresAt (ms) alongside expires_at (seconds)
+  const expiresAtMs =
+    typeof session.expires_at === "number" && Number.isFinite(session.expires_at) && session.expires_at > 0
+      ? Math.round(session.expires_at * 1000)
+      : null;
+  const value = JSON.stringify({
+    ...session,
+    currentSession: session,
+    session,
+    data: { session },
+    ...(expiresAtMs ? { expiresAt: expiresAtMs } : {}),
+  });
 
   const script = `
 	    (() => {
@@ -754,7 +771,9 @@ export class FlowithLoginBootstrapService {
 	      activeAccessFromServerKey.sort(compare);
 	      return activeAccessFromServerKey[0]?.snapshot ?? null;
 	    }
-	    const activeAccessFromPreferred = activeAccessCandidates.filter((c) => preferredKeys.includes(c.key as any));
+		    const activeAccessFromPreferred = activeAccessCandidates.filter((c) =>
+		      preferredKeys.includes(c.key.trim() as (typeof preferredKeys)[number])
+		    );
 	    if (activeAccessFromPreferred.length > 0) {
 	      activeAccessFromPreferred.sort(compare);
 	      return activeAccessFromPreferred[0]?.snapshot ?? null;
@@ -1097,16 +1116,15 @@ export class FlowithLoginBootstrapService {
 	    if (!webContents) return null;
 	    try {
 	      const timeoutMs = Math.max(0, options?.timeoutMs ?? 0);
-        const snapshot = await this.waitForSupabaseSnapshotFromWebContents(webContents, {
-          timeoutMs,
-          require: "refreshToken",
-        });
-        if (!snapshot?.refreshToken) return null;
+        const candidate = await this.waitForRefreshTokenCandidateFromWebContents(webContents, timeoutMs);
+        if (!candidate?.refreshToken) return null;
         if (options?.requireActiveAccess) {
-          if (!snapshot.accessToken) return null;
-          if (!this.isLikelyActiveAccessToken(snapshot.expiresAt)) return null;
+          // The export path must only accept refresh_token that comes with an active access token
+          // from the same storage value; otherwise we risk exporting stale/rotated tokens.
+          if (candidate.expiresAt == null) return null;
+          if (!this.isLikelyActiveAccessToken(candidate.expiresAt)) return null;
         }
-        return snapshot.refreshToken;
+        return candidate.refreshToken;
 	    } catch {
 	      return null;
 	    }
@@ -1182,9 +1200,10 @@ export class FlowithLoginBootstrapService {
     const refreshCandidate = this.pickBestRefreshTokenCandidate(values);
     const accessExpiresAt = snapshot?.expiresAt ?? null;
     const hasActiveAccess = Boolean(nextAccessToken && this.isLikelyActiveAccessToken(accessExpiresAt));
-    const snapshotRefreshToken = snapshot?.refreshToken ?? null;
-    const nextRefreshToken = (hasActiveAccess && snapshotRefreshToken) ? snapshotRefreshToken : (refreshCandidate?.refreshToken ?? null);
-    const allowPersistNonStandardRefreshToken = Boolean(hasActiveAccess && snapshotRefreshToken);
+    const nextRefreshToken = refreshCandidate?.refreshToken ?? null;
+    const allowPersistNonStandardRefreshToken = Boolean(
+      hasActiveAccess && nextRefreshToken && (refreshCandidate?.key ?? "").trim() === "sb-server-auth-token"
+    );
 
     if (!nextAccessToken && !nextRefreshToken) return;
 
@@ -1548,14 +1567,27 @@ export class FlowithLoginBootstrapService {
     // do not refresh via vault refresh_token. This avoids "already used" caused by vault/tab divergence.
     const tabSnapshot = await this.waitForSupabaseSnapshotFromWebContents(webContents, { timeoutMs: 4000 });
     const tabAccessToken = tabSnapshot?.accessToken ?? null;
-    if (tabAccessToken) {
-      this.ensureAuthHeaderInjection(accountId, webContents, tabAccessToken);
-      return;
+    const tabExpiresAt = tabSnapshot?.expiresAt ?? null;
+    const tabHasActiveAccess = Boolean(tabAccessToken && this.isLikelyActiveAccessToken(tabExpiresAt));
+    if (tabHasActiveAccess) {
+      this.ensureAuthHeaderInjection(accountId, webContents, tabAccessToken ?? "");
+      // Only treat the tab as "ready" when we can also see a refresh_token; otherwise we may be looking at
+      // a non-user/anonymous session snapshot and would incorrectly skip vault bootstrap.
+      if (tabSnapshot?.refreshToken) return;
+
+      const refreshCandidate = await this.waitForRefreshTokenCandidateFromWebContents(webContents, 1500);
+      if (refreshCandidate?.refreshToken) return;
     }
-    // If we can see a refresh_token in the tab, assume the tab will recover its own access token.
-    // Avoid refreshing via vault to prevent refresh_token divergence.
+
+    // If the tab has a refresh_token but no active access token, give the page a moment to recover its own access token
+    // (supabase-js auto refresh) before falling back to vault refresh. This reduces refresh_token contention.
     if (tabSnapshot?.refreshToken) {
-      return;
+      const recovered = await this.waitForSupabaseSnapshotFromWebContents(webContents, { timeoutMs: 6000 });
+      const recoveredAccessToken = recovered?.accessToken ?? null;
+      if (recoveredAccessToken && this.isLikelyActiveAccessToken(recovered?.expiresAt ?? null)) {
+        this.ensureAuthHeaderInjection(accountId, webContents, recoveredAccessToken);
+        return;
+      }
     }
 
     let flowithSession: Session;

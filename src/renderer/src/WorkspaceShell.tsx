@@ -176,6 +176,7 @@ const UI_STRINGS = {
 	    updateStateDownloading: "下载中…",
 	    updateStateDownloaded: "已下载",
 	    updateStateError: "更新失败",
+	    toastUpdateAvailable: "发现新版本 {version}，请到“设置 > 更新”下载。",
 	    searchPlaceholder: "搜索：displayName / id / tag",
 
     expandSidebar: "展开账号面板",
@@ -345,13 +346,16 @@ const UI_STRINGS = {
 	      "将为所选账号执行一次刷新以生成全新 refresh_token（每行一个），用于在新设备导入。",
 	    exportMigrationDanger:
 	      "注意：迁移导出会封存本机该账号（本机将退出且不可再打开）。迁移 token 会保留在本地（如系统支持加密存储）以便你忘记复制时可再次导出；请尽快复制并在新设备导入。",
+	    exportMigrationDangerNoVault:
+	      "注意：当前系统不支持加密存储。迁移导出后本机仍会封存该账号（本机将退出且不可再打开），且迁移 token 无法长期保留：一旦你关闭/崩溃/重启程序就可能永久丢失。请立刻复制并在新设备导入。",
 		    exportDanger: "注意：导出内容属于敏感凭据。UI 与日志中必须始终脱敏；请勿分享或粘贴到日志/工单中。",
 		    exportHint: "已导出 {count} 个账号的 token。默认不自动复制。",
 		    exportMigrationCloseConfirm: "你还没有复制迁移 token。确定关闭？",
 		    copyToClipboard: "复制到剪贴板",
 		    toastCopiedToClipboard: "已复制到剪贴板",
 		    sealedBadge: "已封存",
-		    sealedHint: "该账号已迁移封存：本机不可打开，避免 refresh_token 被再次使用。",
+		    sealedHint:
+		      "该账号已迁移封存：本机不可打开，避免 refresh_token 被再次使用。若你忘记保存迁移 token，可勾选该账号后使用“导出”再次获取（前提：系统支持加密存储）。",
 		    errorAccountSealed: "该账号已封存，不能在本机打开。请在新设备导入迁移 token。",
 		    errorMigrationExportSealed: "所选账号包含已封存账号：无法再次迁移导出。",
 		    toastBatchOpenSkippedSealed: "已跳过 {count} 个封存账号（不可在本机打开）。",
@@ -427,6 +431,7 @@ const UI_STRINGS = {
 	    updateStateDownloading: "Downloading…",
 	    updateStateDownloaded: "Downloaded",
 	    updateStateError: "Update failed",
+	    toastUpdateAvailable: "Update available: {version}. Open “Settings > Updates” to download.",
 	    searchPlaceholder: "Search: displayName / id / tag",
 
     expandSidebar: "Expand accounts",
@@ -599,6 +604,8 @@ const UI_STRINGS = {
 	      "Refreshes once to generate a new refresh_token (one per line) for importing on a new device.",
 	    exportMigrationDanger:
 	      "Note: Migration export seals this account on this machine (it will be signed out and cannot be opened). Tokens are kept locally (when encrypted storage is available) so you can re-copy if needed; import on the new device ASAP.",
+	    exportMigrationDangerNoVault:
+	      "Warning: Token encryption is unavailable on this host. Migration export will still seal the account on this device (signed out and cannot be opened), and the migration token cannot be kept safely: once you close/crash/restart the app, it may be lost permanently. Copy it immediately and import on the new device.",
 		    exportDanger:
 		      "Sensitive: export contains credentials. Never paste into logs or tickets. UI/logs must remain redacted.",
 		    exportHint: "Exported token(s) for {count} account(s). Nothing is auto-copied.",
@@ -606,7 +613,8 @@ const UI_STRINGS = {
 		    copyToClipboard: "Copy to clipboard",
 		    toastCopiedToClipboard: "Copied to clipboard",
 		    sealedBadge: "Sealed",
-		    sealedHint: "This account is sealed after migration export to prevent refresh_token reuse.",
+		    sealedHint:
+		      "This account is sealed after migration export to prevent refresh_token reuse. If you forgot to save the migration token, select this account and use “Export” to retrieve it again (requires encrypted storage).",
 		    errorAccountSealed: "This account is sealed and cannot be opened on this machine. Import the migration token on the new device.",
 		    errorMigrationExportSealed: "Selection contains sealed account(s): migration export is not allowed.",
 		    toastBatchOpenSkippedSealed: "Skipped {count} sealed account(s) (cannot be opened on this machine).",
@@ -1197,6 +1205,7 @@ export default function WorkspaceShell() {
   const [downloadToasts, setDownloadToasts] = useState<DownloadToastState[]>([]);
   const [updaterStatus, setUpdaterStatus] = useState<UpdaterStatus | null>(null);
   const [updaterRunning, setUpdaterRunning] = useState(false);
+  const notifiedUpdateVersionRef = useRef<string | null>(null);
 
   const [accountInfoById, setAccountInfoById] = useState<Record<string, AccountInfoEntry>>(() => loadAccountInfoCache());
   const [lastUsedAtByAccountId, setLastUsedAtByAccountId] = useState<Record<string, number>>(() => loadAccountLastUsedCache());
@@ -1977,6 +1986,17 @@ export default function WorkspaceShell() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const s = updaterStatus;
+    if (!s || !s.supported) return;
+    if (s.state !== "available") return;
+    const version = (s.availableVersion ?? "").trim();
+    if (!version) return;
+    if (notifiedUpdateVersionRef.current === version) return;
+    notifiedUpdateVersionRef.current = version;
+    pushUiToast("info", format(t("toastUpdateAvailable"), { version }), { autoDismissMs: 9000 });
+  }, [pushUiToast, t, updaterStatus]);
 
   useEffect(() => {
     let unsubscribe: (() => void) | null = null;
@@ -2936,7 +2956,7 @@ export default function WorkspaceShell() {
 	      if (sealedAccountIds.has(id)) continue;
 	      await openTab(id);
 	    }
-	  }, [format, openTab, pushUiToast, sealedAccountIds, selected, t]);
+	  }, [openTab, pushUiToast, sealedAccountIds, selected, t]);
 
   const batchCloseTabs = useCallback(async () => {
     for (const id of selected) {
@@ -5323,7 +5343,11 @@ export default function WorkspaceShell() {
             </div>
 
             <div className="danger-note">
-              {exportDialog.mode === "migration" ? t("exportMigrationDanger") : t("exportDanger")}
+              {exportDialog.mode === "migration"
+                ? tokenEncryptionAvailable === false
+                  ? t("exportMigrationDangerNoVault")
+                  : t("exportMigrationDanger")
+                : t("exportDanger")}
             </div>
 
             <div className="modal-grid">

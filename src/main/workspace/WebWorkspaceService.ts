@@ -33,6 +33,7 @@ export class WebWorkspaceService {
   private lastAppliedBounds: Rect | null = null;
   private boundsRetryTimer: ReturnType<typeof setTimeout> | null = null;
   private windowShortcutsAttached = false;
+  private windowZoomListenerAttached = false;
   private readonly handleWindowBeforeInputEvent = (event: Electron.Event, input: Electron.Input) => {
     if (input.type !== "keyDown") return;
 
@@ -53,16 +54,23 @@ export class WebWorkspaceService {
       this.reloadActive();
     }
   };
+  private readonly handleWindowZoomChanged = () => {
+    if (!this.activeAccountId) return;
+    this.applyBounds(this.activeAccountId);
+  };
 
   constructor(window: BrowserWindow) {
     this.window = window;
     this.attachWindowShortcuts();
+    this.attachWindowZoomListener();
   }
 
   setWindow(window: BrowserWindow) {
     this.detachWindowShortcuts();
+    this.detachWindowZoomListener();
     this.window = window;
     this.attachWindowShortcuts();
+    this.attachWindowZoomListener();
     if (this.activeAccountId) {
       this.attach(this.activeAccountId);
     }
@@ -199,6 +207,36 @@ export class WebWorkspaceService {
     }
   }
 
+  private attachWindowZoomListener() {
+    if (this.windowZoomListenerAttached) return;
+    this.windowZoomListenerAttached = true;
+    try {
+      this.window.webContents.on("zoom-changed", this.handleWindowZoomChanged);
+    } catch {
+      // ignore
+    }
+  }
+
+  private detachWindowZoomListener() {
+    if (!this.windowZoomListenerAttached) return;
+    this.windowZoomListenerAttached = false;
+    try {
+      this.window.webContents.removeListener("zoom-changed", this.handleWindowZoomChanged);
+    } catch {
+      // ignore
+    }
+  }
+
+  private getRendererZoomFactor(): number {
+    try {
+      const factor = this.window.webContents.getZoomFactor();
+      if (typeof factor === "number" && Number.isFinite(factor) && factor > 0) return factor;
+    } catch {
+      // ignore
+    }
+    return 1;
+  }
+
   private hardenShortcuts(view: WebContentsView) {
     try {
       view.webContents.on("before-input-event", (event, input) => {
@@ -333,12 +371,13 @@ export class WebWorkspaceService {
     if (!view) return;
 
     const bounds = this.viewportBounds ?? { x: 0, y: 0, width: 0, height: 0 };
+    const zoom = this.getRendererZoomFactor();
 
     const nextBounds = {
-      x: Math.round(bounds.x),
-      y: Math.round(bounds.y),
-      width: Math.round(bounds.width),
-      height: Math.round(bounds.height),
+      x: Math.round(bounds.x * zoom),
+      y: Math.round(bounds.y * zoom),
+      width: Math.round(bounds.width * zoom),
+      height: Math.round(bounds.height * zoom),
     };
 
     view.setBounds(nextBounds);

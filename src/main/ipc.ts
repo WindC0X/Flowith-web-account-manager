@@ -15,7 +15,6 @@ import {
 import { importRefreshTokens } from "./accounts/import";
 import { normalizeAccountMetaPatch } from "./accounts/normalize";
 import {
-  clearRefreshToken,
   deleteAccount,
   getAccount,
   getRefreshToken,

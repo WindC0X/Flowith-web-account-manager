@@ -2,7 +2,7 @@ import { app, BrowserWindow, nativeImage, nativeTheme } from "electron";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { registerIpcHandlers } from "./ipc";
-import { initUpdater } from "./updater/service";
+import { checkForUpdates, initUpdater } from "./updater/service";
 import { FlowithLoginBootstrapService } from "./workspace/FlowithLoginBootstrapService";
 import { WebWorkspaceService } from "./workspace/WebWorkspaceService";
 
@@ -100,6 +100,15 @@ app.whenReady().then(() => {
   const workspace = new WebWorkspaceService(mainWindow);
   const loginBootstrap = new FlowithLoginBootstrapService(workspace);
   registerIpcHandlers({ workspace, loginBootstrap });
+
+  // Auto check updates once on startup (packaged builds only).
+  try {
+    mainWindow.once("ready-to-show", () => {
+      void checkForUpdates();
+    });
+  } catch {
+    // ignore
+  }
 
   let flushingBeforeQuit = false;
   app.on("before-quit", (event) => {
