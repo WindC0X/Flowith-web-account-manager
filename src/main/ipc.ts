@@ -1,4 +1,4 @@
-import { BrowserWindow, ipcMain, session } from "electron";
+import { BrowserWindow, clipboard, ipcMain, session } from "electron";
 import {
   IPC_CHANNELS,
   IPC_EVENTS,
@@ -17,9 +17,12 @@ import { normalizeAccountMetaPatch } from "./accounts/normalize";
 import {
   clearRefreshToken,
   deleteAccount,
+  getAccount,
   getRefreshToken,
+  isAccountSealed,
   isTokenEncryptionAvailable,
   listAccounts,
+  setAccountSealed,
   setRefreshToken,
   upsertAccountMeta,
 } from "./accounts/vault";
@@ -104,6 +107,10 @@ export function registerIpcHandlers(deps: IpcDeps) {
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_OPEN_TAB, async (_event, accountId: unknown) => {
     try {
       assertString(accountId, "accountId");
+      const account = getAccount(accountId);
+      if (account?.sealed) {
+        throw new Error("该账号已封存（迁移后不可在本机打开）。如需换机，请在新设备导入迁移 token。");
+      }
       deps.workspace.openTab(accountId);
       await deps.loginBootstrap.bootstrap(accountId);
     } catch (e) {
@@ -283,6 +290,15 @@ export function registerIpcHandlers(deps: IpcDeps) {
     win?.close();
   });
 
+  ipcMain.handle(IPC_CHANNELS.CLIPBOARD_WRITE_TEXT, async (_event, text: unknown) => {
+    try {
+      assertString(text, "text");
+      clipboard.writeText(text);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
   ipcMain.handle(IPC_CHANNELS.ACCOUNTS_LIST, async () => {
     return listAccounts();
   });
@@ -438,8 +454,12 @@ export function registerIpcHandlers(deps: IpcDeps) {
               // ignore
             }
           } else {
-            missingTabs.push(id);
-            continue;
+            if (isAccountSealed(id)) {
+              token = getRefreshToken(id);
+            } else {
+              missingTabs.push(id);
+              continue;
+            }
           }
 
           if (!token) {
@@ -527,6 +547,11 @@ export function registerIpcHandlers(deps: IpcDeps) {
             // ignore
           }
           try {
+            setAccountSealed(accountId, true);
+          } catch {
+            // ignore
+          }
+          try {
             deps.workspace.closeTab(accountId);
           } catch {
             // ignore
@@ -534,11 +559,6 @@ export function registerIpcHandlers(deps: IpcDeps) {
           try {
             const ses = session.fromPartition(partitionForAccount(accountId));
             await ses.clearStorageData();
-          } catch {
-            // ignore
-          }
-          try {
-            clearRefreshToken(accountId);
           } catch {
             // ignore
           }

@@ -33,6 +33,7 @@ export type AccountSummary = {
   displayName: string;
   pinned: boolean;
   tags: string[];
+  sealed: boolean;
   net: {
     proxy: ProxyConfig;
   };
@@ -248,6 +249,9 @@ export type DesktopApi = {
     isMaximized(): Promise<boolean>;
     close(): Promise<void>;
   };
+  clipboard: {
+    writeText(text: string): Promise<void>;
+  };
   accounts: {
     list(): Promise<AccountSummary[]>;
     subscribeImportProgress(listener: (event: AccountsImportProgressEvent) => void): () => void;
@@ -298,6 +302,8 @@ export const IPC_CHANNELS = {
   WINDOW_TOGGLE_MAXIMIZE: "window:toggleMaximize",
   WINDOW_IS_MAXIMIZED: "window:isMaximized",
   WINDOW_CLOSE: "window:close",
+
+  CLIPBOARD_WRITE_TEXT: "clipboard:writeText",
 
   ACCOUNTS_LIST: "accounts:list",
   ACCOUNTS_IMPORT_REFRESH_TOKENS: "accounts:importRefreshTokens",
@@ -357,6 +363,8 @@ export type IpcInvokeMap = {
   [IPC_CHANNELS.WINDOW_TOGGLE_MAXIMIZE]: { args: []; result: void };
   [IPC_CHANNELS.WINDOW_IS_MAXIMIZED]: { args: []; result: boolean };
   [IPC_CHANNELS.WINDOW_CLOSE]: { args: []; result: void };
+
+  [IPC_CHANNELS.CLIPBOARD_WRITE_TEXT]: { args: [text: string]; result: void };
 
   [IPC_CHANNELS.ACCOUNTS_LIST]: { args: []; result: AccountSummary[] };
   [IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS]: {

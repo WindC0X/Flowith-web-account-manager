@@ -336,20 +336,28 @@ const UI_STRINGS = {
     cancel: "取消",
     confirmImport: "导入",
 
-    exportDialogTitle: "导出 refresh_token",
-    exportDialogNote: "将导出当前勾选账号的 refresh_token（每行一个）。",
-    exportRequiresOpenTab: "导出/迁移导出前请先打开所选账号 Tab（还缺 {count} 个）。",
-    exportMigration: "迁移导出",
-    exportMigrationDialogTitle: "迁移导出（换机）",
-    exportMigrationDialogNote:
-      "将为所选账号执行一次刷新以生成全新 refresh_token（每行一个），用于在新设备导入。",
-    exportMigrationDanger:
-      "注意：为避免导出的 refresh_token 在本机被再次使用导致新设备导入报 already used，导出后将自动封存本机该账号（关闭 Tab 并清理本机登录态）。",
-	    exportDanger: "注意：导出内容属于敏感凭据。UI 与日志中必须始终脱敏；请勿分享或粘贴到日志/工单中。",
-	    exportHint: "已导出 {count} 个账号的 token。默认不自动复制。",
-	    done: "完成",
-	    deleteAccountTitle: "删除账号",
-	    deleteAccountNote: "将移除本地保存的账号信息与登录态，并关闭对应 Tab。此操作不可撤销。",
+	    exportDialogTitle: "导出 refresh_token",
+	    exportDialogNote: "将导出当前勾选账号的 refresh_token（每行一个）。",
+	    exportRequiresOpenTab: "导出/迁移导出前请先打开所选账号 Tab（还缺 {count} 个）。",
+	    exportMigration: "迁移导出",
+	    exportMigrationDialogTitle: "迁移导出（换机）",
+	    exportMigrationDialogNote:
+	      "将为所选账号执行一次刷新以生成全新 refresh_token（每行一个），用于在新设备导入。",
+	    exportMigrationDanger:
+	      "注意：迁移导出会封存本机该账号（本机将退出且不可再打开）。迁移 token 会保留在本地（如系统支持加密存储）以便你忘记复制时可再次导出；请尽快复制并在新设备导入。",
+		    exportDanger: "注意：导出内容属于敏感凭据。UI 与日志中必须始终脱敏；请勿分享或粘贴到日志/工单中。",
+		    exportHint: "已导出 {count} 个账号的 token。默认不自动复制。",
+		    exportMigrationCloseConfirm: "你还没有复制迁移 token。确定关闭？",
+		    copyToClipboard: "复制到剪贴板",
+		    toastCopiedToClipboard: "已复制到剪贴板",
+		    sealedBadge: "已封存",
+		    sealedHint: "该账号已迁移封存：本机不可打开，避免 refresh_token 被再次使用。",
+		    errorAccountSealed: "该账号已封存，不能在本机打开。请在新设备导入迁移 token。",
+		    errorMigrationExportSealed: "所选账号包含已封存账号：无法再次迁移导出。",
+		    toastBatchOpenSkippedSealed: "已跳过 {count} 个封存账号（不可在本机打开）。",
+		    done: "完成",
+		    deleteAccountTitle: "删除账号",
+		    deleteAccountNote: "将移除本地保存的账号信息与登录态，并关闭对应 Tab。此操作不可撤销。",
 	    confirmDelete: "确认删除",
     closeTabTitle: "关闭 Tab",
 
@@ -582,21 +590,29 @@ const UI_STRINGS = {
     cancel: "Cancel",
     confirmImport: "Import",
 
-    exportDialogTitle: "Export refresh_token",
-    exportDialogNote: "Exports refresh_token for selected accounts (one per line).",
-    exportRequiresOpenTab: "Open selected tabs before exporting (missing {count}).",
-    exportMigration: "Migration export",
-    exportMigrationDialogTitle: "Migration export",
-    exportMigrationDialogNote:
-      "Refreshes once to generate a new refresh_token (one per line) for importing on a new device.",
-    exportMigrationDanger:
-      "Note: To avoid the exported refresh_token being reused on this machine (leading to 'already used' on the new device), the app will seal local state after export (close tab + clear local login state).",
-	    exportDanger:
-	      "Sensitive: export contains credentials. Never paste into logs or tickets. UI/logs must remain redacted.",
-	    exportHint: "Exported token(s) for {count} account(s). Nothing is auto-copied.",
-	    done: "Done",
-	    deleteAccountTitle: "Delete account",
-	    deleteAccountNote: "Removes local account data and closes its tab. This cannot be undone.",
+	    exportDialogTitle: "Export refresh_token",
+	    exportDialogNote: "Exports refresh_token for selected accounts (one per line).",
+	    exportRequiresOpenTab: "Open selected tabs before exporting (missing {count}).",
+	    exportMigration: "Migration export",
+	    exportMigrationDialogTitle: "Migration export",
+	    exportMigrationDialogNote:
+	      "Refreshes once to generate a new refresh_token (one per line) for importing on a new device.",
+	    exportMigrationDanger:
+	      "Note: Migration export seals this account on this machine (it will be signed out and cannot be opened). Tokens are kept locally (when encrypted storage is available) so you can re-copy if needed; import on the new device ASAP.",
+		    exportDanger:
+		      "Sensitive: export contains credentials. Never paste into logs or tickets. UI/logs must remain redacted.",
+		    exportHint: "Exported token(s) for {count} account(s). Nothing is auto-copied.",
+		    exportMigrationCloseConfirm: "You haven't copied the migration token yet. Close anyway?",
+		    copyToClipboard: "Copy to clipboard",
+		    toastCopiedToClipboard: "Copied to clipboard",
+		    sealedBadge: "Sealed",
+		    sealedHint: "This account is sealed after migration export to prevent refresh_token reuse.",
+		    errorAccountSealed: "This account is sealed and cannot be opened on this machine. Import the migration token on the new device.",
+		    errorMigrationExportSealed: "Selection contains sealed account(s): migration export is not allowed.",
+		    toastBatchOpenSkippedSealed: "Skipped {count} sealed account(s) (cannot be opened on this machine).",
+		    done: "Done",
+		    deleteAccountTitle: "Delete account",
+		    deleteAccountNote: "Removes local account data and closes its tab. This cannot be undone.",
 	    confirmDelete: "Delete",
     closeTabTitle: "Close tab",
 
@@ -1139,8 +1155,9 @@ export default function WorkspaceShell() {
   const [importUaValue, setImportUaValue] = useState("");
   const [importUaInlineError, setImportUaInlineError] = useState<string | null>(null);
 
-  const [exportDialog, setExportDialog] = useState<ExportDialogState>({ open: false });
-  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
+	  const [exportDialog, setExportDialog] = useState<ExportDialogState>({ open: false });
+	  const [exportCopied, setExportCopied] = useState(false);
+	  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
   const [batchTagsDialog, setBatchTagsDialog] = useState<BatchTagsDialogState>({ open: false });
   const [batchTagsDraft, setBatchTagsDraft] = useState("");
   const [batchProxyDialog, setBatchProxyDialog] = useState<BatchProxyDialogState>({ open: false });
@@ -1152,7 +1169,11 @@ export default function WorkspaceShell() {
   const [batchUaValue, setBatchUaValue] = useState("");
   const [batchUaInlineError, setBatchUaInlineError] = useState<string | null>(null);
   const [batchDeleteDialog, setBatchDeleteDialog] = useState<BatchDeleteDialogState>({ open: false });
-  const [authDebug, setAuthDebug] = useState<AccountAuthDiagnostics | null>(null);
+	  const [authDebug, setAuthDebug] = useState<AccountAuthDiagnostics | null>(null);
+
+	  const sealedAccountIds = useMemo(() => {
+	    return new Set(accounts.filter((a) => a.sealed).map((a) => a.id));
+	  }, [accounts]);
 
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [displayNameInlineError, setDisplayNameInlineError] = useState<string | null>(null);
@@ -2317,48 +2338,90 @@ export default function WorkspaceShell() {
     t,
   ]);
 
-  const runExport = useCallback(async () => {
-    const missingTabs = selected.filter((id) => !openTabIds.includes(id));
-    if (missingTabs.length > 0) {
-      const message = format(t("exportRequiresOpenTab"), { count: missingTabs.length });
-      setError(message);
-      pushUiToast("error", message);
-      return;
-    }
-    setError(null);
-    setBusy(true);
-    try {
-      const text = await window.desktop.accounts.exportRefreshTokens(selected);
-      setExportDialog({ open: true, tokenText: text, selectedCount: selected.length, mode: "standard" });
-    } catch (e) {
-      setError(formatErrorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  }, [formatErrorMessage, openTabIds, pushUiToast, selected, t]);
+	  const runExport = useCallback(async () => {
+	    const missingTabs = selected.filter((id) => !openTabIds.includes(id) && !sealedAccountIds.has(id));
+	    if (missingTabs.length > 0) {
+	      const message = format(t("exportRequiresOpenTab"), { count: missingTabs.length });
+	      setError(message);
+	      pushUiToast("error", message);
+	      return;
+	    }
+	    setError(null);
+	    setBusy(true);
+	    try {
+	      const text = await window.desktop.accounts.exportRefreshTokens(selected);
+	      setExportCopied(false);
+	      setExportDialog({ open: true, tokenText: text, selectedCount: selected.length, mode: "standard" });
+	    } catch (e) {
+	      setError(formatErrorMessage(e));
+	    } finally {
+	      setBusy(false);
+	    }
+	  }, [formatErrorMessage, openTabIds, pushUiToast, sealedAccountIds, selected, t]);
 
-  const runMigrationExport = useCallback(async () => {
-    const missingTabs = selected.filter((id) => !openTabIds.includes(id));
-    if (missingTabs.length > 0) {
-      const message = format(t("exportRequiresOpenTab"), { count: missingTabs.length });
-      setError(message);
+	  const copyExportTokens = useCallback(async () => {
+	    if (!exportDialog.open) return;
+	    try {
+	      await window.desktop.clipboard.writeText(exportDialog.tokenText);
+	      setExportCopied(true);
+	      pushUiToast("success", t("toastCopiedToClipboard"));
+	    } catch (e) {
+	      const message = formatErrorMessage(e);
+	      setError(message);
+	      pushUiToast("error", message);
+	    }
+	  }, [exportDialog, formatErrorMessage, pushUiToast, t]);
+
+	  const requestCloseExportDialog = useCallback(() => {
+	    if (!exportDialog.open) {
+	      setExportDialog({ open: false });
+	      setExportCopied(false);
+	      return;
+	    }
+	    if (exportDialog.mode === "migration" && !exportCopied) {
+	      const ok = window.confirm(t("exportMigrationCloseConfirm"));
+	      if (!ok) return;
+	    }
+	    setExportDialog({ open: false });
+	    setExportCopied(false);
+	  }, [exportCopied, exportDialog, t]);
+
+	  const runMigrationExport = useCallback(async () => {
+	    if (selected.some((id) => sealedAccountIds.has(id))) {
+	      const message = t("errorMigrationExportSealed");
+	      setError(message);
+	      pushUiToast("error", message);
+	      return;
+	    }
+	    const missingTabs = selected.filter((id) => !openTabIds.includes(id));
+	    if (missingTabs.length > 0) {
+	      const message = format(t("exportRequiresOpenTab"), { count: missingTabs.length });
+	      setError(message);
       pushUiToast("error", message);
       return;
     }
     setError(null);
-    setBusy(true);
-    try {
-      const text = await window.desktop.accounts.exportMigrationRefreshTokens(selected);
-      setExportDialog({ open: true, tokenText: text, selectedCount: selected.length, mode: "migration" });
-      await refreshAccounts();
-    } catch (e) {
-      const message = formatErrorMessage(e);
-      setError(message);
+	    setBusy(true);
+	    try {
+	      const text = await window.desktop.accounts.exportMigrationRefreshTokens(selected);
+	      setExportCopied(false);
+	      setExportDialog({ open: true, tokenText: text, selectedCount: selected.length, mode: "migration" });
+	      try {
+	        await window.desktop.clipboard.writeText(text);
+	        setExportCopied(true);
+	        pushUiToast("success", t("toastCopiedToClipboard"));
+	      } catch {
+	        // ignore
+	      }
+	      await refreshAccounts();
+	    } catch (e) {
+	      const message = formatErrorMessage(e);
+	      setError(message);
       pushUiToast("error", message);
-    } finally {
-      setBusy(false);
-    }
-  }, [formatErrorMessage, openTabIds, pushUiToast, refreshAccounts, selected, t]);
+	    } finally {
+	      setBusy(false);
+	    }
+	  }, [formatErrorMessage, openTabIds, pushUiToast, refreshAccounts, sealedAccountIds, selected, t]);
 
   const openDeleteDialog = useCallback(() => {
     if (!focusedAccount) return;
@@ -2736,13 +2799,20 @@ export default function WorkspaceShell() {
     }
   }, [focusedAccount, focusedAccountId, formatErrorMessage, proxyMode, proxyRules, t]);
 
-  const openTab = useCallback(
-    async (accountId: string): Promise<boolean> => {
-      setError(null);
-      setBusy(true);
-      try {
-        await pushViewportBounds();
-        await window.desktop.workspace.openTab(accountId);
+	  const openTab = useCallback(
+	    async (accountId: string): Promise<boolean> => {
+	      const account = accounts.find((a) => a.id === accountId) ?? null;
+	      if (account?.sealed) {
+	        const message = t("errorAccountSealed");
+	        setError(message);
+	        pushUiToast("error", message);
+	        return false;
+	      }
+	      setError(null);
+	      setBusy(true);
+	      try {
+	        await pushViewportBounds();
+	        await window.desktop.workspace.openTab(accountId);
         setOpenTabIds((prev) => (prev.includes(accountId) ? prev : [...prev, accountId]));
         setActiveTabId(accountId);
         recordAccountUsed(accountId);
@@ -2757,9 +2827,9 @@ export default function WorkspaceShell() {
       } finally {
         setBusy(false);
       }
-    },
-    [formatErrorMessage, pushUiToast, pushViewportBounds, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
-  );
+	    },
+	    [accounts, formatErrorMessage, pushUiToast, pushViewportBounds, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
+	  );
 
   const closeTab = useCallback(
     async (accountId: string) => {
@@ -2857,11 +2927,16 @@ export default function WorkspaceShell() {
     }
   }, [focusedAccountId, formatErrorMessage, pushUiToast]);
 
-  const batchOpenTabs = useCallback(async () => {
-    for (const id of selected) {
-      await openTab(id);
-    }
-  }, [openTab, selected]);
+	  const batchOpenTabs = useCallback(async () => {
+	    const sealedCount = selected.filter((id) => sealedAccountIds.has(id)).length;
+	    if (sealedCount > 0) {
+	      pushUiToast("info", format(t("toastBatchOpenSkippedSealed"), { count: sealedCount }));
+	    }
+	    for (const id of selected) {
+	      if (sealedAccountIds.has(id)) continue;
+	      await openTab(id);
+	    }
+	  }, [format, openTab, pushUiToast, sealedAccountIds, selected, t]);
 
   const batchCloseTabs = useCallback(async () => {
     for (const id of selected) {
@@ -3980,29 +4055,35 @@ export default function WorkspaceShell() {
 	                        />
 	                      </label>
 	                      <div className="account-head-main">
-	                        <div className="account-name-row">
-	                          <div className="account-name" title={a.displayName}>
-	                            {a.displayName}
-	                          </div>
-	                          {info.subscription ? (
-	                            <span
-	                              className="account-plan-badge"
-	                              title={`${t("subscriptionLabel")}: ${info.subscription}`}
-	                            >
+		                        <div className="account-name-row">
+		                          <div className="account-name" title={a.displayName}>
+		                            {a.displayName}
+		                          </div>
+		                          {a.sealed ? (
+		                            <span className="chip" title={t("sealedHint")}>
+		                              <span className="dot dot-bad" />
+		                              <span>{t("sealedBadge")}</span>
+		                            </span>
+		                          ) : null}
+		                          {info.subscription ? (
+		                            <span
+		                              className="account-plan-badge"
+		                              title={`${t("subscriptionLabel")}: ${info.subscription}`}
+		                            >
 	                              {info.subscription}
 	                            </span>
 	                          ) : null}
 	                        </div>
 	                      </div>
-	                      <div className="account-header-actions" onClick={(e) => e.stopPropagation()}>
-	                        <button
-	                          className="btn btn-ghost btn-icon"
-	                          title={tabOpen ? t("activateTab") : t("openTab")}
-	                          onClick={() => void (tabOpen ? activateTab(a.id) : openTab(a.id))}
-	                          disabled={busy}
-	                        >
-	                          ↗
-	                        </button>
+		                      <div className="account-header-actions" onClick={(e) => e.stopPropagation()}>
+		                        <button
+		                          className="btn btn-ghost btn-icon"
+		                          title={a.sealed ? t("sealedHint") : (tabOpen ? t("activateTab") : t("openTab"))}
+		                          onClick={() => void (tabOpen ? activateTab(a.id) : openTab(a.id))}
+		                          disabled={busy || a.sealed}
+		                        >
+		                          ↗
+		                        </button>
 	                        <button
 	                          className="btn btn-ghost btn-icon"
 	                          title={a.pinned ? t("unpin") : t("pin")}
@@ -4163,12 +4244,17 @@ export default function WorkspaceShell() {
 	                          >
 	                            {formatProxyModeShort(a.net.proxy.mode)}
 	                          </span>
-	                          <span className="account-table-badge" title={`UA: ${formatUaModeLabel(a.ua.mode, t)}`}>
-	                            UA:{formatUaModeShort(a.ua.mode)}
-	                          </span>
-	                          {updatedAt && updatedAge ? (
-	                            <span
-	                              className="account-table-metric muted mono"
+		                          <span className="account-table-badge" title={`UA: ${formatUaModeLabel(a.ua.mode, t)}`}>
+		                            UA:{formatUaModeShort(a.ua.mode)}
+		                          </span>
+		                          {a.sealed ? (
+		                            <span className="account-table-badge" title={t("sealedHint")}>
+		                              {t("sealedBadge")}
+		                            </span>
+		                          ) : null}
+		                          {updatedAt && updatedAge ? (
+		                            <span
+		                              className="account-table-metric muted mono"
 	                              title={`${t("updatedAtLabel")}: ${updatedAt}`}
 	                            >
 	                              {updatedAge}
@@ -4176,15 +4262,17 @@ export default function WorkspaceShell() {
 	                          ) : null}
 	                        </div>
 	                      </div>
-	                      <div className="account-table-actions" onClick={(e) => e.stopPropagation()}>
-	                        <button
-	                          className="btn btn-ghost btn-icon"
-	                          title={openTabIds.includes(a.id) ? t("activateTab") : t("openTab")}
-	                          onClick={() => void (openTabIds.includes(a.id) ? activateTab(a.id) : openTab(a.id))}
-	                          disabled={busy}
-	                        >
-	                          ↗
-	                        </button>
+		                      <div className="account-table-actions" onClick={(e) => e.stopPropagation()}>
+		                        <button
+		                          className="btn btn-ghost btn-icon"
+		                          title={
+		                            a.sealed ? t("sealedHint") : (openTabIds.includes(a.id) ? t("activateTab") : t("openTab"))
+		                          }
+		                          onClick={() => void (openTabIds.includes(a.id) ? activateTab(a.id) : openTab(a.id))}
+		                          disabled={busy || a.sealed}
+		                        >
+		                          ↗
+		                        </button>
 	                        <button
 	                          className="btn btn-ghost btn-icon"
 	                          title={a.pinned ? t("unpin") : t("pin")}
@@ -4233,9 +4321,13 @@ export default function WorkspaceShell() {
 				                <button className="btn" onClick={runExport} disabled={busy}>
 				                  {t("export")}
 				                </button>
-                        <button className="btn" onClick={runMigrationExport} disabled={busy}>
-                          {t("exportMigration")}
-                        </button>
+	                        <button
+	                          className="btn"
+	                          onClick={runMigrationExport}
+	                          disabled={busy || selected.some((id) => sealedAccountIds.has(id))}
+	                        >
+	                          {t("exportMigration")}
+	                        </button>
 			                <button
 	                      className="btn btn-danger"
 	                      onClick={openBatchDeleteDialog}
@@ -5197,17 +5289,20 @@ export default function WorkspaceShell() {
           ) : null}
         </dialog>
 
-      <dialog
-	        ref={exportDialogRef}
-	        onCancel={(e) => {
-	          e.preventDefault();
-          setExportDialog({ open: false });
-        }}
-        onClose={() => setExportDialog({ open: false })}
-        aria-label={exportDialog.open && exportDialog.mode === "migration" ? t("exportMigrationDialogTitle") : t("exportDialogTitle")}
-      >
-        {exportDialog.open ? (
-          <div className="modal">
+	      <dialog
+		        ref={exportDialogRef}
+		        onCancel={(e) => {
+		          e.preventDefault();
+	          requestCloseExportDialog();
+	        }}
+	        onClose={() => {
+	          setExportDialog({ open: false });
+	          setExportCopied(false);
+	        }}
+	        aria-label={exportDialog.open && exportDialog.mode === "migration" ? t("exportMigrationDialogTitle") : t("exportDialogTitle")}
+	      >
+	        {exportDialog.open ? (
+	          <div className="modal">
             <div className="modal-header">
               <div>
                 <div className="modal-title">
@@ -5217,14 +5312,14 @@ export default function WorkspaceShell() {
                   {exportDialog.mode === "migration" ? t("exportMigrationDialogNote") : t("exportDialogNote")}
                 </div>
               </div>
-              <button
-                className="btn btn-icon"
-                title={t("close")}
-                onClick={() => setExportDialog({ open: false })}
-                disabled={busy}
-              >
-                ×
-              </button>
+	              <button
+	                className="btn btn-icon"
+	                title={t("close")}
+	                onClick={requestCloseExportDialog}
+	                disabled={busy}
+	              >
+	                ×
+	              </button>
             </div>
 
             <div className="danger-note">
@@ -5238,14 +5333,17 @@ export default function WorkspaceShell() {
               </div>
             </div>
 
-            <div className="modal-actions">
-              <button className="btn btn-primary" onClick={() => setExportDialog({ open: false })}>
-                {t("done")}
-              </button>
-            </div>
-          </div>
-        ) : null}
-      </dialog>
+	            <div className="modal-actions">
+	              <button className="btn" onClick={() => void copyExportTokens()} disabled={busy || !exportDialog.tokenText.trim()}>
+	                {t("copyToClipboard")}
+	              </button>
+	              <button className="btn btn-primary" onClick={requestCloseExportDialog} disabled={busy}>
+	                {t("done")}
+	              </button>
+	            </div>
+	          </div>
+	        ) : null}
+	      </dialog>
 
       <dialog
         ref={deleteDialogRef}

@@ -12,6 +12,8 @@ type StoredAccountV1 = {
   tags?: string[];
   net?: AccountSummary["net"];
   ua?: AccountSummary["ua"];
+  sealed?: boolean;
+  sealedAt?: number;
   refreshTokenEnc?: string | null;
 };
 
@@ -51,6 +53,27 @@ export function getAccount(accountId: string): AccountSummary | null {
   const account = vault.accounts[accountId];
   if (!account) return null;
   return toAccountSummary(account);
+}
+
+export function isAccountSealed(accountId: string): boolean {
+  const vault = getVault();
+  const account = vault.accounts[accountId];
+  return Boolean(account?.sealed);
+}
+
+export function setAccountSealed(accountId: string, sealed: boolean): AccountSummary {
+  const vault = getVault();
+  const current = vault.accounts[accountId] ?? { id: accountId };
+  const now = Date.now();
+  const next: StoredAccountV1 = { ...current, sealed };
+  if (sealed) {
+    next.sealedAt = now;
+  } else if (next.sealedAt !== undefined) {
+    delete next.sealedAt;
+  }
+  vault.accounts[accountId] = next;
+  setVault(vault);
+  return toAccountSummary(next);
 }
 
 export function upsertAccountMeta(accountId: string, patch: AccountMetaPatch): AccountSummary {
@@ -180,6 +203,7 @@ function toAccountSummary(account: StoredAccountV1): AccountSummary {
     displayName: account.displayName ?? "Account",
     pinned: account.pinned ?? false,
     tags: account.tags ?? [],
+    sealed: account.sealed ?? false,
     net: account.net ?? { proxy: { mode: "system" } },
     ua: account.ua ?? { mode: "default" },
   };
@@ -199,6 +223,8 @@ function applyPatch(current: StoredAccountV1, patch: AccountMetaPatch): StoredAc
   if (tags !== undefined) next.tags = tags;
   if (net !== undefined) next.net = net;
   if (ua !== undefined) next.ua = ua;
+  if (current.sealed !== undefined) next.sealed = current.sealed;
+  if (current.sealedAt !== undefined) next.sealedAt = current.sealedAt;
   if (current.refreshTokenEnc !== undefined) next.refreshTokenEnc = current.refreshTokenEnc;
   return next;
 }

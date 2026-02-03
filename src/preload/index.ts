@@ -66,6 +66,9 @@ const api: DesktopApi = {
     isMaximized: () => invoke(IPC_CHANNELS.WINDOW_IS_MAXIMIZED),
     close: () => invoke(IPC_CHANNELS.WINDOW_CLOSE),
   },
+  clipboard: {
+    writeText: (text) => invoke(IPC_CHANNELS.CLIPBOARD_WRITE_TEXT, text),
+  },
   accounts: {
     list: () => invoke(IPC_CHANNELS.ACCOUNTS_LIST),
     subscribeImportProgress: (listener) => {
