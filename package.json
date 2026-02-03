@@ -1,7 +1,7 @@
 {
   "name": "flowith-web-account-manager",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.8",
   "main": "out/main/index.js",
   "build": {
     "appId": "io.flowith.web.account-manager",

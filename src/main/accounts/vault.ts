@@ -134,6 +134,16 @@ export function getRefreshToken(accountId: string): string | null {
   return runtimeTokens.get(accountId) ?? null;
 }
 
+export function clearRefreshToken(accountId: string) {
+  const vault = getVault();
+  const account = vault.accounts[accountId];
+  if (!account) return;
+  account.refreshTokenEnc = null;
+  vault.accounts[accountId] = account;
+  setVault(vault);
+  runtimeTokens.delete(accountId);
+}
+
 function getStore(): VaultStore {
   if (!store) {
     const StoreCtor = (StoreImport as unknown as { default?: typeof StoreImport }).default ?? StoreImport;

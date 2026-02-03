@@ -79,7 +79,10 @@ const api: DesktopApi = {
     },
     importRefreshTokens: (text, options) => invoke(IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS, text, options),
     exportRefreshTokens: (accountIds) => invoke(IPC_CHANNELS.ACCOUNTS_EXPORT_REFRESH_TOKENS, accountIds),
+    exportMigrationRefreshTokens: (accountIds) =>
+      invoke(IPC_CHANNELS.ACCOUNTS_EXPORT_MIGRATION_REFRESH_TOKENS, accountIds),
     syncCreditsFromOpenTab: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB, accountId),
+    debugAuthSources: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_DEBUG_AUTH_SOURCES, accountId),
     isTokenEncryptionAvailable: () => invoke(IPC_CHANNELS.ACCOUNTS_IS_TOKEN_ENCRYPTION_AVAILABLE),
     delete: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_DELETE, accountId),
     testConnectivity: (accountId) => invoke(IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY, accountId),

@@ -91,3 +91,41 @@ export async function refreshFlowithSessionForAccount(
     inFlightByAccountId.delete(accountId);
   }
 }
+
+export async function refreshFlowithSessionWithRefreshToken(
+  accountId: string,
+  refreshToken: string,
+  options?: { onAlreadyUsed?: () => Promise<void> }
+): Promise<SupabaseSession> {
+  const normalized = refreshToken.trim();
+  if (!normalized) {
+    throw new Error("Missing refresh_token.");
+  }
+
+  const existing = inFlightByAccountId.get(accountId);
+  if (existing) return existing;
+
+  const task = (async () => {
+    try {
+      return await refreshWithToken(accountId, normalized);
+    } catch (e) {
+      if (!isAlreadyUsedError(e)) throw e;
+      markRefreshTokenUsed(accountId, normalized);
+
+      try {
+        await options?.onAlreadyUsed?.();
+      } catch {
+        // best-effort
+      }
+
+      throw e;
+    }
+  })();
+
+  inFlightByAccountId.set(accountId, task);
+  try {
+    return await task;
+  } finally {
+    inFlightByAccountId.delete(accountId);
+  }
+}

@@ -13,8 +13,10 @@ import { isKnownUsedRefreshToken, refreshFlowithSessionForAccount } from "../flo
 import { redactSensitive } from "../security/redact";
 import type { WebWorkspaceService } from "./WebWorkspaceService";
 import { extractSupabaseSessionSnapshotFromStorageValue, type SupabaseSessionSnapshot } from "./supabaseAuthStorage";
+import crypto from "node:crypto";
 
 const FLOWITH_WEB_TARGET_HOSTS = ["flowith.io", "flowith.net", "flo.ing"] as const;
+const FLOWITH_EDGE_HOST = "edge.flowith.net";
 
 function isFlowithUrl(rawUrl: string): boolean {
   try {
@@ -31,9 +33,25 @@ function storageKeysFromSupabaseUrl(): string[] {
   return [
     `sb-${projectRef}-auth-token`,
     `sb-${projectRef}-all-auth-token`,
-    "sb-server-auth-token",
     "supabase.auth.token",
   ];
+}
+
+function storageKeysForInjection(): string[] {
+  // Prefer canonical supabase-js storage keys only.
+  // Avoid writing into non-standard keys like "sb-server-auth-token" to reduce the chance of polluting
+  // app-internal sessions and accidentally exporting stale tokens.
+  return storageKeysFromSupabaseUrl();
+}
+
+function isStandardSupabaseAuthKey(key: string): boolean {
+  const { projectRef } = resolveFlowithSupabaseConfig();
+  const normalized = key.trim();
+  return (
+    normalized === `sb-${projectRef}-auth-token` ||
+    normalized === `sb-${projectRef}-all-auth-token` ||
+    normalized === "supabase.auth.token"
+  );
 }
 
 const JWT_PATTERN = /^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
@@ -50,10 +68,28 @@ function safeDecodeCookieValue(raw: string): string[] {
     // ignore
   }
 
+  const pushDecoded = (decoded: string) => {
+    const value = decoded.trim();
+    if (!value) return;
+    if (value.startsWith("{") || value.startsWith("[") || value.includes("access_token") || value.includes("refresh_token")) {
+      candidates.push(value);
+    }
+  };
+
   if (/^[A-Za-z0-9+/=]{32,}$/.test(trimmed)) {
     try {
-      const decoded = Buffer.from(trimmed, "base64").toString("utf-8").trim();
-      if (decoded) candidates.push(decoded);
+      pushDecoded(Buffer.from(trimmed, "base64").toString("utf-8"));
+    } catch {
+      // ignore
+    }
+  }
+
+  if (/^[A-Za-z0-9_-]{32,}$/.test(trimmed) && !trimmed.includes(".")) {
+    const normalized = trimmed.replace(/-/g, "+").replace(/_/g, "/");
+    const padLength = (4 - (normalized.length % 4)) % 4;
+    const padded = normalized + "=".repeat(padLength);
+    try {
+      pushDecoded(Buffer.from(padded, "base64").toString("utf-8"));
     } catch {
       // ignore
     }
@@ -108,7 +144,7 @@ async function waitForFlowithReady(webContents: WebContents, timeoutMs: number) 
 }
 
 async function injectSupabaseSession(webContents: WebContents, session: Session) {
-  const keys = storageKeysFromSupabaseUrl();
+  const keys = storageKeysForInjection();
   const value = JSON.stringify(session);
 
   const script = `
@@ -197,6 +233,180 @@ export class FlowithLoginBootstrapService {
     this.workspace = workspace;
   }
 
+  private fingerprintToken(token: string): string {
+    return crypto.createHash("sha256").update(token).digest("hex").slice(0, 12);
+  }
+
+  private async collectAuthValues(
+    webContents: WebContents,
+    options?: { includeIndexedDb?: boolean }
+  ): Promise<Array<{ storage: "local" | "session" | "cookie" | "idb"; key: string; value: string }>> {
+    const storageValues = (await this.readSupabaseAuthStorageValues(webContents)) ?? [];
+    const cookieValues = (await this.readSupabaseAuthCookieValues(webContents.session)) ?? [];
+    const indexedDbValues = options?.includeIndexedDb ? (await this.readSupabaseAuthIndexedDbValues(webContents)) ?? [] : [];
+    return [...storageValues, ...cookieValues, ...indexedDbValues];
+  }
+
+  private async readSupabaseAuthIndexedDbValues(
+    webContents: WebContents
+  ): Promise<Array<{ storage: "idb"; key: string; value: string }> | null> {
+    if (webContents.isDestroyed()) return null;
+
+    let href: unknown;
+    try {
+      href = await webContents.executeJavaScript("location.href", true);
+    } catch {
+      return null;
+    }
+    if (typeof href !== "string" || !isFlowithUrl(href)) return null;
+
+    const script = `
+      (async () => {
+        const deadline = Date.now() + 1200;
+        const maxValues = 80;
+        const maxValueLength = 24_000;
+        const results = [];
+
+        const push = (key, raw) => {
+          if (results.length >= maxValues) return;
+          try {
+            if (typeof raw === "string") {
+              const value = raw.length > maxValueLength ? raw.slice(0, maxValueLength) : raw;
+              results.push({ storage: "idb", key, value });
+              return;
+            }
+            if (raw && typeof raw === "object") {
+              const json = JSON.stringify(raw);
+              if (typeof json !== "string" || !json) return;
+              const value = json.length > maxValueLength ? json.slice(0, maxValueLength) : json;
+              results.push({ storage: "idb", key, value });
+            }
+          } catch {
+            // ignore
+          }
+        };
+
+        const openDb = (name) => new Promise((resolve, reject) => {
+          try {
+            const req = indexedDB.open(name);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error || new Error("open failed"));
+            req.onblocked = () => reject(new Error("blocked"));
+          } catch (e) {
+            reject(e);
+          }
+        });
+
+        let dbNames = [];
+        try {
+          if (typeof indexedDB.databases === "function") {
+            const dbs = await indexedDB.databases();
+            if (Array.isArray(dbs)) {
+              for (const entry of dbs) {
+                if (!entry || typeof entry !== "object") continue;
+                const name = entry.name;
+                if (typeof name === "string" && name.trim()) dbNames.push(name.trim());
+              }
+            }
+          }
+        } catch {
+          // ignore
+        }
+
+        const fallbackNames = [
+          "localforage",
+          "keyval-store",
+          "keyval",
+          "localforage2",
+          "firebaseLocalStorageDb",
+          "supabase",
+          "supabase-auth",
+          "supabase-auth-token",
+        ];
+        for (const name of fallbackNames) if (!dbNames.includes(name)) dbNames.push(name);
+
+        dbNames = [...new Set(dbNames)].filter(Boolean).slice(0, 12);
+
+        for (const name of dbNames) {
+          if (Date.now() > deadline || results.length >= maxValues) break;
+          let db;
+          try {
+            db = await openDb(name);
+          } catch {
+            continue;
+          }
+
+          try {
+            const storeNames = Array.from(db.objectStoreNames || []).slice(0, 20);
+            for (const storeName of storeNames) {
+              if (Date.now() > deadline || results.length >= maxValues) break;
+              let tx;
+              try {
+                tx = db.transaction(storeName, "readonly");
+              } catch {
+                continue;
+              }
+              let store;
+              try {
+                store = tx.objectStore(storeName);
+              } catch {
+                continue;
+              }
+
+              const request = store.openCursor();
+              await new Promise((resolve) => {
+                request.onsuccess = () => {
+                  const cursor = request.result;
+                  if (!cursor) {
+                    resolve();
+                    return;
+                  }
+
+                  let keyStr = "";
+                  try {
+                    const k = cursor.key;
+                    if (typeof k === "string") keyStr = k;
+                    else keyStr = JSON.stringify(k);
+                  } catch {
+                    keyStr = String(cursor.key);
+                  }
+
+                  push(name + "/" + storeName + "/" + keyStr, cursor.value);
+                  if (Date.now() > deadline || results.length >= maxValues) {
+                    resolve();
+                    return;
+                  }
+                  try {
+                    cursor.continue();
+                  } catch {
+                    resolve();
+                  }
+                };
+                request.onerror = () => resolve();
+              });
+            }
+          } finally {
+            try {
+              db.close();
+            } catch {
+              // ignore
+            }
+          }
+        }
+
+        return { ok: true, values: results };
+      })();
+    `;
+
+    const result = (await webContents.executeJavaScript(script, true)) as
+      | { ok: true; values?: Array<{ storage: "idb"; key: string; value: string }> }
+      | { ok: false; error?: string }
+      | undefined;
+
+    if (!result || result.ok !== true || !Array.isArray(result.values)) return null;
+    return result.values;
+  }
+
 	  private async readSupabaseAuthStorageValues(
 	    webContents: WebContents
 	  ): Promise<Array<{ storage: "local" | "session"; key: string; value: string }> | null> {
@@ -211,22 +421,94 @@ export class FlowithLoginBootstrapService {
     if (typeof href !== "string" || !isFlowithUrl(href)) return null;
 
     const keys = storageKeysFromSupabaseUrl();
+    const { projectRef } = resolveFlowithSupabaseConfig();
     const script = `
 		  (() => {
 		    const keys = ${JSON.stringify(keys)};
+        const projectRefLower = ${JSON.stringify(projectRef.toLowerCase())};
 		    const values = [];
+        const seen = new Set();
+        const push = (storageName, key, value) => {
+          const sig = storageName + ":" + key;
+          if (seen.has(sig)) return;
+          seen.add(sig);
+          values.push({ storage: storageName, key, value });
+        };
+        const looksRelevantKey = (rawKey) => {
+          if (!rawKey || typeof rawKey !== "string") return false;
+          const lower = rawKey.toLowerCase();
+          return (
+            keys.includes(rawKey) ||
+            lower.includes(projectRefLower) ||
+            lower.startsWith("sb-") ||
+            lower.includes("supabase")
+          );
+        };
+        const looksLikeAuthPayload = (rawValue) => {
+          if (!rawValue || typeof rawValue !== "string") return false;
+          const value = rawValue.trim();
+          if (!value) return false;
+          if (value.includes("refresh_token") || value.includes("access_token")) return true;
+          if (value.includes("refreshToken") || value.includes("accessToken")) return true;
+          return false;
+        };
 		    const read = (storage, name) => {
 		      for (const k of keys) {
 		        try {
 		          const v = storage.getItem(k);
-		          if (typeof v === "string" && v.trim()) values.push({ storage: name, key: k, value: v });
+		          if (typeof v === "string" && v.trim()) push(name, k, v);
 		        } catch {
 		          // ignore
 		        }
 		      }
 		    };
+        const readAll = (storage, name) => {
+          try {
+            const chunkGroups = new Map();
+            for (let i = 0; i < storage.length; i++) {
+              const k = storage.key(i);
+              if (!k) continue;
+              let v = "";
+              try {
+                v = storage.getItem(k) || "";
+              } catch {
+                continue;
+              }
+              if (!v || !v.trim()) continue;
+              const relevantKey = looksRelevantKey(k);
+              // Always keep potentially relevant keys; additionally allow unknown keys if they look like auth payloads.
+              if (!relevantKey && !looksLikeAuthPayload(v)) continue;
+              push(name, k, v);
+
+              const match = k.match(/^(.*)\\.(\\d{1,4})$/);
+              if (!match) continue;
+              const base = match[1];
+              const index = Number.parseInt(match[2], 10);
+              if (!base || !Number.isFinite(index)) continue;
+
+              const groupKey = name + ":" + base;
+              const existing = chunkGroups.get(groupKey) || [];
+              existing.push({ index, value: v });
+              chunkGroups.set(groupKey, existing);
+            }
+
+            for (const [groupKey, parts] of chunkGroups.entries()) {
+              if (!Array.isArray(parts) || parts.length < 2) continue;
+              parts.sort((a, b) => a.index - b.index);
+              const joined = parts.map((p) => p.value || "").join("");
+              if (!joined || !joined.trim()) continue;
+              const base = groupKey.slice(groupKey.indexOf(":") + 1);
+              // Mark as synthetic so we don't collide with a real key.
+              push(name, base + ".__joined__", joined);
+            }
+          } catch {
+            // ignore
+          }
+        };
 		    try { read(localStorage, "local"); } catch {}
+        try { readAll(localStorage, "local"); } catch {}
 		    try { read(sessionStorage, "session"); } catch {}
+        try { readAll(sessionStorage, "session"); } catch {}
 		    return { ok: true, values };
 		  })();
 		`;
@@ -245,18 +527,42 @@ export class FlowithLoginBootstrapService {
   ): Promise<Array<{ storage: "cookie"; key: string; value: string }> | null> {
     const keys = storageKeysFromSupabaseUrl();
     const { projectRef } = resolveFlowithSupabaseConfig();
+    let supabaseHost = "";
+    try {
+      supabaseHost = supabaseHostFromConfig().toLowerCase();
+    } catch {
+      supabaseHost = "";
+    }
 
     let all: Cookie[] = [];
     try {
-      all = await session.cookies.get({});
+      const byUrl: Cookie[] = [];
+      const hosts = [
+        ...FLOWITH_WEB_TARGET_HOSTS,
+        FLOWITH_EDGE_HOST,
+        ...(supabaseHost ? [supabaseHost] : []),
+      ];
+      for (const host of hosts) {
+        try {
+          byUrl.push(...(await session.cookies.get({ url: `https://${host}` })));
+        } catch {
+          // ignore
+        }
+      }
+      all = byUrl;
     } catch {
       return null;
     }
 
     if (!Array.isArray(all) || all.length === 0) return null;
 
-    const acceptedDomains = FLOWITH_WEB_TARGET_HOSTS;
+    const acceptedDomains = [
+      ...FLOWITH_WEB_TARGET_HOSTS,
+      FLOWITH_EDGE_HOST,
+      ...(supabaseHost ? [supabaseHost] : []),
+    ] as readonly string[];
     const values: Array<{ storage: "cookie"; key: string; value: string }> = [];
+    const chunked = new Map<string, Array<{ index: number; value: string }>>();
 
     for (const cookie of all) {
       const domain = typeof cookie.domain === "string" ? cookie.domain.toLowerCase() : "";
@@ -269,16 +575,69 @@ export class FlowithLoginBootstrapService {
 
       const lowerName = name.toLowerCase();
       const projectRefLower = projectRef.toLowerCase();
+      const chunkMatch = name.match(/^(.*)\.(\d{1,4})$/);
+      if (chunkMatch) {
+        const base = chunkMatch[1];
+        const rawIndex = chunkMatch[2] ?? "";
+        const index = Number.parseInt(rawIndex, 10);
+        if (base && Number.isFinite(index)) {
+          const existing = chunked.get(base) ?? [];
+          existing.push({ index, value });
+          chunked.set(base, existing);
+          continue;
+        }
+      }
+
+      const decodedCandidates = safeDecodeCookieValue(value);
       const looksRelevant =
         keys.includes(name) ||
         lowerName.includes(projectRefLower) ||
         lowerName.startsWith("sb-") ||
         lowerName.includes("supabase");
 
-      if (!looksRelevant) continue;
+      if (looksRelevant) {
+        for (const decoded of decodedCandidates) values.push({ storage: "cookie", key: name, value: decoded });
+        continue;
+      }
 
-      for (const decoded of safeDecodeCookieValue(value)) {
-        values.push({ storage: "cookie", key: name, value: decoded });
+      // Some deployments store auth JSON under generic cookie names. Only keep those that can be parsed.
+      for (const decoded of decodedCandidates) {
+        const snapshot = extractSupabaseSessionSnapshotFromStorageValue(decoded);
+        if (snapshot?.accessToken || snapshot?.refreshToken) {
+          values.push({ storage: "cookie", key: name, value: decoded });
+          break;
+        }
+      }
+    }
+
+    // Join chunked cookies (e.g. sb-xxx-auth-token.0/.1) before decoding/parsing.
+    for (const [base, parts] of chunked.entries()) {
+      if (!Array.isArray(parts) || parts.length === 0) continue;
+      parts.sort((a, b) => a.index - b.index);
+      const joined = parts.map((p) => p.value || "").join("");
+      if (!joined || !joined.trim()) continue;
+      const decodedCandidates = safeDecodeCookieValue(joined);
+      const lowerBase = base.toLowerCase();
+      const projectRefLower = projectRef.toLowerCase();
+      const looksRelevant =
+        keys.includes(base) ||
+        lowerBase.includes(projectRefLower) ||
+        lowerBase.startsWith("sb-") ||
+        lowerBase.includes("supabase");
+
+      if (looksRelevant) {
+        for (const decoded of decodedCandidates) {
+          values.push({ storage: "cookie", key: `${base}.__joined__`, value: decoded });
+        }
+        continue;
+      }
+
+      for (const decoded of decodedCandidates) {
+        const snapshot = extractSupabaseSessionSnapshotFromStorageValue(decoded);
+        if (snapshot?.accessToken || snapshot?.refreshToken) {
+          values.push({ storage: "cookie", key: `${base}.__joined__`, value: decoded });
+          break;
+        }
       }
     }
 
@@ -303,35 +662,248 @@ export class FlowithLoginBootstrapService {
     return values;
   }
 
-	  private pickBestSupabaseSnapshot(values: Array<{ value: string }>): SupabaseSessionSnapshot | null {
-	    const candidates: SupabaseSessionSnapshot[] = [];
-	    for (const entry of values) {
-	      const extracted = extractSupabaseSessionSnapshotFromStorageValue(entry.value);
+		  private pickBestSupabaseSnapshot(
+		    values: Array<{ storage?: "local" | "session" | "cookie" | "idb"; key?: string; value: string }>
+		  ): SupabaseSessionSnapshot | null {
+    const { projectRef } = resolveFlowithSupabaseConfig();
+    const preferredKeys = [
+      `sb-${projectRef}-auth-token`,
+      `sb-${projectRef}-all-auth-token`,
+      "supabase.auth.token",
+    ] as const;
+
+    type Candidate = {
+      snapshot: SupabaseSessionSnapshot;
+      storage: "local" | "session" | "cookie" | "idb" | "unknown";
+      key: string;
+    };
+
+    const candidates: Candidate[] = [];
+    for (const entry of values) {
+      const extracted = extractSupabaseSessionSnapshotFromStorageValue(entry.value);
       if (!extracted) continue;
       if (!extracted.accessToken && !extracted.refreshToken) continue;
-      candidates.push(extracted);
+      candidates.push({
+        snapshot: extracted,
+        storage: entry.storage ?? "unknown",
+        key: entry.key ?? "",
+      });
     }
     if (candidates.length === 0) return null;
 
-    const rank = (snapshot: SupabaseSessionSnapshot): number => {
+    const tokenRank = (snapshot: SupabaseSessionSnapshot): number => {
       if (snapshot.accessToken && snapshot.refreshToken) return 3;
-      if (snapshot.refreshToken) return 2;
-      if (snapshot.accessToken) return 1;
+      if (snapshot.accessToken) return 2;
+      if (snapshot.refreshToken) return 1;
       return 0;
     };
 
-    candidates.sort((a, b) => {
-      const ar = rank(a);
-      const br = rank(b);
-      if (ar !== br) return br - ar;
-      const ae = a.expiresAt ?? 0;
-      const be = b.expiresAt ?? 0;
+    const storageRank = (storage: Candidate["storage"]): number => {
+      if (storage === "local") return 4;
+      if (storage === "session") return 3;
+      if (storage === "idb") return 2;
+      if (storage === "cookie") return 1;
+      return 0;
+    };
+
+    const keyRank = (key: string): number => {
+      const normalized = key.trim();
+      if (normalized === `sb-${projectRef}-auth-token`) return 4;
+      if (normalized === `sb-${projectRef}-all-auth-token`) return 3;
+      if (normalized === "supabase.auth.token") return 2;
+      if (normalized === "sb-server-auth-token") return 0;
+      return normalized.includes("auth-token") ? 1 : 0;
+    };
+
+    const isActiveAccess = (snapshot: SupabaseSessionSnapshot): boolean => {
+      if (!snapshot.accessToken) return false;
+      return this.isLikelyActiveAccessToken(snapshot.expiresAt);
+    };
+
+    const compare = (a: Candidate, b: Candidate): number => {
+      const aa = isActiveAccess(a.snapshot) ? 1 : 0;
+      const ba = isActiveAccess(b.snapshot) ? 1 : 0;
+      if (aa !== ba) return ba - aa;
+
+      const ae = a.snapshot.expiresAt ?? 0;
+      const be = b.snapshot.expiresAt ?? 0;
       if (ae !== be) return be - ae;
+
+      const ar = tokenRank(a.snapshot);
+      const br = tokenRank(b.snapshot);
+      if (ar !== br) return br - ar;
+
+      const ak = keyRank(a.key);
+      const bk = keyRank(b.key);
+      if (ak !== bk) return bk - ak;
+
+      const as = storageRank(a.storage);
+      const bs = storageRank(b.storage);
+      if (as !== bs) return bs - as;
+
+      return 0;
+    };
+
+	    // Prefer active access tokens from canonical supabase-js keys first.
+	    const activeAccessCandidates = candidates.filter((c) => c.snapshot.accessToken && isActiveAccess(c.snapshot));
+	    // Flowith Web keeps its live session under "sb-server-auth-token" in some builds.
+	    // Prefer that snapshot when it has an active access token to avoid exporting stale refresh tokens
+	    // from duplicated canonical keys.
+	    const activeAccessFromServerKey = activeAccessCandidates.filter((c) => c.key.trim() === "sb-server-auth-token");
+	    if (activeAccessFromServerKey.length > 0) {
+	      activeAccessFromServerKey.sort(compare);
+	      return activeAccessFromServerKey[0]?.snapshot ?? null;
+	    }
+	    const activeAccessFromPreferred = activeAccessCandidates.filter((c) => preferredKeys.includes(c.key as any));
+	    if (activeAccessFromPreferred.length > 0) {
+	      activeAccessFromPreferred.sort(compare);
+	      return activeAccessFromPreferred[0]?.snapshot ?? null;
+	    }
+    if (activeAccessCandidates.length > 0) {
+      activeAccessCandidates.sort(compare);
+      return activeAccessCandidates[0]?.snapshot ?? null;
+    }
+
+    // If we can't find an active access token, prefer canonical supabase-js keys next.
+    for (const key of preferredKeys) {
+      const sameKey = candidates.filter((c) => c.key === key);
+      if (sameKey.length === 0) continue;
+      sameKey.sort(compare);
+      return sameKey[0]?.snapshot ?? null;
+    }
+
+    // Final fallback: best overall snapshot.
+    candidates.sort(compare);
+    return candidates[0]?.snapshot ?? null;
+	  }
+
+  private pickBestRefreshTokenCandidate(
+    values: Array<{ storage?: "local" | "session" | "cookie" | "idb"; key?: string; value: string }>
+  ): { refreshToken: string; expiresAt: number | null; source: string; key: string } | null {
+    const { projectRef } = resolveFlowithSupabaseConfig();
+    const preferredKeys = new Set([
+      `sb-${projectRef}-auth-token`,
+      `sb-${projectRef}-all-auth-token`,
+      "sb-server-auth-token",
+      "supabase.auth.token",
+    ]);
+
+    type Candidate = { refreshToken: string; expiresAt: number | null; source: string; key: string };
+
+    const normalizeKey = (key: string) => key.trim();
+    const normalizeSource = (source: string) => source.trim();
+    const keyRank = (key: string): number => {
+      const k = normalizeKey(key);
+      if (k === `sb-${projectRef}-auth-token`) return 4;
+      if (k === `sb-${projectRef}-all-auth-token`) return 3;
+      if (k === "supabase.auth.token") return 2;
+      if (k === "sb-server-auth-token") return 0;
+      if (preferredKeys.has(k)) return 1;
+      return k.includes("auth-token") ? 1 : 0;
+    };
+    const isStandardKey = (key: string): boolean => {
+      const k = normalizeKey(key);
+      return (
+        k === `sb-${projectRef}-auth-token` ||
+        k === `sb-${projectRef}-all-auth-token` ||
+        k === "supabase.auth.token"
+      );
+    };
+    const sourceRank = (source: string): number => {
+      const s = normalizeSource(source);
+      if (s === "local") return 4;
+      if (s === "session") return 3;
+      if (s === "idb") return 2;
+      if (s === "cookie") return 1;
+      return 0;
+    };
+
+    type Group = {
+      refreshToken: string;
+      count: number;
+      standardCount: number;
+      maxExpiresAt: number;
+      bestKeyRank: number;
+      bestSourceRank: number;
+      bestCandidate: Candidate;
+    };
+    const byToken = new Map<string, Group>();
+
+    for (const entry of values) {
+      const snapshot = extractSupabaseSessionSnapshotFromStorageValue(entry.value);
+      const refreshToken = snapshot?.refreshToken ?? null;
+      if (!refreshToken) continue;
+      const candidate: Candidate = {
+        refreshToken,
+        expiresAt: snapshot?.expiresAt ?? null,
+        source: entry.storage ?? "unknown",
+        key: entry.key ?? "",
+      };
+      const tokenKey = refreshToken.trim();
+      if (!tokenKey) continue;
+      const existing = byToken.get(tokenKey);
+      if (!existing) {
+        byToken.set(tokenKey, {
+          refreshToken: tokenKey,
+          count: 1,
+          standardCount: isStandardKey(candidate.key) ? 1 : 0,
+          maxExpiresAt: candidate.expiresAt ?? -1,
+          bestKeyRank: keyRank(candidate.key),
+          bestSourceRank: sourceRank(candidate.source),
+          bestCandidate: candidate,
+        });
+        continue;
+      }
+
+      existing.count += 1;
+      if (isStandardKey(candidate.key)) existing.standardCount += 1;
+      const expiresAt = candidate.expiresAt ?? -1;
+      if (expiresAt > existing.maxExpiresAt) existing.maxExpiresAt = expiresAt;
+
+      const nextKeyRank = keyRank(candidate.key);
+      const nextSourceRank = sourceRank(candidate.source);
+      const currentKeyRank = keyRank(existing.bestCandidate.key);
+      const currentExpiresAt = existing.bestCandidate.expiresAt ?? -1;
+      const currentSourceRank = sourceRank(existing.bestCandidate.source);
+
+      const better =
+        nextKeyRank > currentKeyRank ||
+        (nextKeyRank === currentKeyRank && expiresAt > currentExpiresAt) ||
+        (nextKeyRank === currentKeyRank && expiresAt === currentExpiresAt && nextSourceRank > currentSourceRank);
+
+      if (better) existing.bestCandidate = candidate;
+      if (nextKeyRank > existing.bestKeyRank) existing.bestKeyRank = nextKeyRank;
+      if (nextSourceRank > existing.bestSourceRank) existing.bestSourceRank = nextSourceRank;
+    }
+
+    if (byToken.size === 0) return null;
+
+	    const groups = [...byToken.values()];
+	    const hasStandard = groups.some((g) => g.standardCount > 0);
+	    groups.sort((a, b) => {
+	      const aa = this.isLikelyActiveAccessToken(a.maxExpiresAt > 0 ? a.maxExpiresAt : null) ? 1 : 0;
+	      const ba = this.isLikelyActiveAccessToken(b.maxExpiresAt > 0 ? b.maxExpiresAt : null) ? 1 : 0;
+	      if (aa !== ba) return ba - aa;
+
+	      // Prefer fresher expiry when comparing the same "activeness".
+	      if (a.maxExpiresAt !== b.maxExpiresAt) return b.maxExpiresAt - a.maxExpiresAt;
+
+	      // If both appear active, prefer standard supabase-js keys.
+	      if (hasStandard && aa === 1) {
+	        const aStd = a.standardCount > 0 ? 1 : 0;
+	        const bStd = b.standardCount > 0 ? 1 : 0;
+	        if (aStd !== bStd) return bStd - aStd;
+	      }
+
+	      if (a.standardCount !== b.standardCount) return b.standardCount - a.standardCount;
+	      if (a.count !== b.count) return b.count - a.count;
+	      if (a.bestKeyRank !== b.bestKeyRank) return b.bestKeyRank - a.bestKeyRank;
+	      if (a.bestSourceRank !== b.bestSourceRank) return b.bestSourceRank - a.bestSourceRank;
       return 0;
     });
 
-	    return candidates[0] ?? null;
-	  }
+    return groups[0]?.bestCandidate ?? null;
+  }
 
   private async readBestSupabaseSnapshotFromCookies(session: ElectronSession): Promise<SupabaseSessionSnapshot | null> {
     const values = await this.readSupabaseAuthCookieValues(session);
@@ -339,26 +911,81 @@ export class FlowithLoginBootstrapService {
     return this.pickBestSupabaseSnapshot(values);
   }
 
-	  private async readBestSupabaseSnapshotFromWebContents(webContents: WebContents): Promise<SupabaseSessionSnapshot | null> {
-	    const values = await this.readSupabaseAuthStorageValues(webContents);
-      const snapshotFromStorage = values ? this.pickBestSupabaseSnapshot(values) : null;
-      if (snapshotFromStorage) return snapshotFromStorage;
-      return await this.readBestSupabaseSnapshotFromCookies(webContents.session);
+	  private async readBestSupabaseSnapshotFromWebContents(
+	    webContents: WebContents,
+	    options?: { includeIndexedDb?: boolean }
+	  ): Promise<SupabaseSessionSnapshot | null> {
+	    const values = await this.collectAuthValues(webContents, options);
+      if (values.length === 0) return null;
+      return this.pickBestSupabaseSnapshot(values);
+	  }
+
+  private async readBestRefreshTokenCandidateFromWebContents(
+    webContents: WebContents,
+    options?: { includeIndexedDb?: boolean }
+  ): Promise<{ refreshToken: string; expiresAt: number | null; source: string; key: string } | null> {
+    const values = await this.collectAuthValues(webContents, options);
+    if (values.length === 0) return null;
+    return this.pickBestRefreshTokenCandidate(values);
+  }
+
+	  private async readBestRefreshTokenFromWebContents(
+	    webContents: WebContents,
+	    options?: { includeIndexedDb?: boolean }
+	  ): Promise<string | null> {
+    const best = await this.readBestRefreshTokenCandidateFromWebContents(webContents, options);
+    return best?.refreshToken ?? null;
+	  }
+
+  private async waitForRefreshTokenCandidateFromWebContents(
+    webContents: WebContents,
+    timeoutMs: number
+  ): Promise<{ refreshToken: string; expiresAt: number | null; source: string; key: string } | null> {
+	    const budget = Math.max(0, timeoutMs);
+    if (budget <= 0) return await this.readBestRefreshTokenCandidateFromWebContents(webContents, { includeIndexedDb: true });
+
+	    const deadline = Date.now() + budget;
+	    while (Date.now() <= deadline) {
+	      if (webContents.isDestroyed()) return null;
+	      try {
+        const candidate = await this.readBestRefreshTokenCandidateFromWebContents(webContents, { includeIndexedDb: true });
+        if (candidate?.refreshToken) return candidate;
+	      } catch {
+	        // ignore
+	      }
+
+      if (Date.now() >= deadline) break;
+      await new Promise<void>((resolve) => setTimeout(resolve, 250));
+    }
+
+	    return null;
+	  }
+
+	  private async waitForRefreshTokenFromWebContents(webContents: WebContents, timeoutMs: number): Promise<string | null> {
+    const candidate = await this.waitForRefreshTokenCandidateFromWebContents(webContents, timeoutMs);
+    return candidate?.refreshToken ?? null;
 	  }
 
   private async waitForSupabaseSnapshotFromWebContents(
     webContents: WebContents,
-    options?: { timeoutMs?: number }
+    options?: { timeoutMs?: number; require?: "any" | "refreshToken" }
   ): Promise<SupabaseSessionSnapshot | null> {
     const timeoutMs = Math.max(0, options?.timeoutMs ?? 0);
     if (timeoutMs <= 0) return await this.readBestSupabaseSnapshotFromWebContents(webContents);
+    const require = options?.require ?? "any";
 
     const deadline = Date.now() + timeoutMs;
     while (Date.now() <= deadline) {
       if (webContents.isDestroyed()) return null;
       try {
         const snapshot = await this.readBestSupabaseSnapshotFromWebContents(webContents);
-        if (snapshot?.accessToken || snapshot?.refreshToken) return snapshot;
+        if (!snapshot) {
+          // ignore
+        } else if (require === "refreshToken") {
+          if (snapshot.refreshToken) return snapshot;
+        } else {
+          if (snapshot.accessToken || snapshot.refreshToken) return snapshot;
+        }
       } catch {
         // ignore
       }
@@ -436,8 +1063,7 @@ export class FlowithLoginBootstrapService {
     const timeoutMs = options?.timeoutMs ?? 0;
     const task = (async () => {
       try {
-        const snapshot = await this.readBestSupabaseSnapshotFromWebContents(webContents);
-        return snapshot?.refreshToken ?? null;
+        return await this.readBestRefreshTokenFromWebContents(webContents, { includeIndexedDb: true });
       } catch {
         return null;
       }
@@ -463,16 +1089,28 @@ export class FlowithLoginBootstrapService {
     }
   }
 
-  async waitForRefreshTokenFromOpenTab(accountId: string, options?: { timeoutMs?: number }): Promise<string | null> {
-    const webContents = this.workspace.getWebContents(accountId);
-    if (!webContents) return null;
-    try {
-      const snapshot = await this.waitForSupabaseSnapshotFromWebContents(webContents, options);
-      return snapshot?.refreshToken ?? null;
-    } catch {
-      return null;
-    }
-  }
+	  async waitForRefreshTokenFromOpenTab(
+      accountId: string,
+      options?: { timeoutMs?: number; requireActiveAccess?: boolean }
+    ): Promise<string | null> {
+	    const webContents = this.workspace.getWebContents(accountId);
+	    if (!webContents) return null;
+	    try {
+	      const timeoutMs = Math.max(0, options?.timeoutMs ?? 0);
+        const snapshot = await this.waitForSupabaseSnapshotFromWebContents(webContents, {
+          timeoutMs,
+          require: "refreshToken",
+        });
+        if (!snapshot?.refreshToken) return null;
+        if (options?.requireActiveAccess) {
+          if (!snapshot.accessToken) return null;
+          if (!this.isLikelyActiveAccessToken(snapshot.expiresAt)) return null;
+        }
+        return snapshot.refreshToken;
+	    } catch {
+	      return null;
+	    }
+	  }
 
   async reconcileSessionForOpenTab(
     accountId: string,
@@ -533,17 +1171,35 @@ export class FlowithLoginBootstrapService {
       (options?.forceRefreshTokenWrite && canOverwriteVaultRefreshToken) ||
       canOverwriteVaultRefreshToken;
 
-    const snapshot = await this.readBestSupabaseSnapshotFromWebContents(webContents);
-    if (!snapshot) return;
+    const deepScan =
+      (this.refreshTokenWriteDeadlines.get(accountId) ?? 0) > Date.now() || (options?.forceRefreshTokenWrite ?? false);
+    const snapshot = await this.readBestSupabaseSnapshotFromWebContents(
+      webContents,
+      deepScan ? { includeIndexedDb: true } : undefined
+    );
+    const nextAccessToken = snapshot?.accessToken ?? null;
+    const values = await this.collectAuthValues(webContents, deepScan ? { includeIndexedDb: true } : undefined);
+    const refreshCandidate = this.pickBestRefreshTokenCandidate(values);
+    const accessExpiresAt = snapshot?.expiresAt ?? null;
+    const hasActiveAccess = Boolean(nextAccessToken && this.isLikelyActiveAccessToken(accessExpiresAt));
+    const snapshotRefreshToken = snapshot?.refreshToken ?? null;
+    const nextRefreshToken = (hasActiveAccess && snapshotRefreshToken) ? snapshotRefreshToken : (refreshCandidate?.refreshToken ?? null);
+    const allowPersistNonStandardRefreshToken = Boolean(hasActiveAccess && snapshotRefreshToken);
 
-    const nextAccessToken = snapshot.accessToken ?? null;
-    const nextRefreshToken = snapshot.refreshToken ?? null;
+    if (!nextAccessToken && !nextRefreshToken) return;
 
     if (nextRefreshToken && currentVaultRefreshToken !== nextRefreshToken) {
+      // Only persist refresh_token when it comes from canonical supabase-js storage keys.
+      // Non-standard keys like "sb-server-auth-token" are prone to being stale and may cause exporting old tokens.
+      if (!allowPersistNonStandardRefreshToken && !isStandardSupabaseAuthKey(refreshCandidate?.key ?? "")) {
+        if (nextAccessToken) this.ensureAuthHeaderInjection(accountId, webContents, nextAccessToken);
+        return;
+      }
+
       const shouldWriteRefreshToken =
-        allowRefreshTokenWrite ||
-        !currentVaultRefreshToken ||
-        (nextAccessToken && this.isLikelyActiveAccessToken(snapshot.expiresAt));
+	        allowRefreshTokenWrite ||
+	        !currentVaultRefreshToken ||
+	        (nextAccessToken && this.isLikelyActiveAccessToken(accessExpiresAt));
 
       if (shouldWriteRefreshToken && !isKnownUsedRefreshToken(accountId, nextRefreshToken)) {
         setRefreshToken(accountId, nextRefreshToken);
@@ -553,24 +1209,108 @@ export class FlowithLoginBootstrapService {
     if (nextAccessToken) this.ensureAuthHeaderInjection(accountId, webContents, nextAccessToken);
   }
 
+  async debugAuthSourcesFromOpenTab(accountId: string): Promise<{
+    accountId: string;
+    hasOpenTab: boolean;
+    href: string | null;
+    selected: {
+      accessTokenFp: string | null;
+      refreshTokenFp: string | null;
+      expiresAt: number | null;
+    } | null;
+	    candidates: Array<{
+	      source: "local" | "session" | "cookie" | "idb";
+	      key: string;
+	      parsed: boolean;
+	      accessTokenFp: string | null;
+	      accessTokenLen: number | null;
+	      refreshTokenFp: string | null;
+      refreshTokenLen: number | null;
+      expiresAt: number | null;
+    }>;
+	  }> {
+    const webContents = this.workspace.getWebContents(accountId);
+    if (!webContents || webContents.isDestroyed()) {
+      return { accountId, hasOpenTab: false, href: null, selected: null, candidates: [] };
+    }
+
+    let href: string | null = null;
+    try {
+      const raw = (await webContents.executeJavaScript("location.href", true)) as unknown;
+      if (typeof raw === "string") href = raw;
+    } catch {
+      href = null;
+    }
+
+    const values = await this.collectAuthValues(webContents, { includeIndexedDb: true });
+
+    const candidates = values.map((entry) => {
+      const snapshot = extractSupabaseSessionSnapshotFromStorageValue(entry.value);
+      const accessToken = snapshot?.accessToken ?? null;
+      const refreshToken = snapshot?.refreshToken ?? null;
+      return {
+        source: entry.storage,
+        key: entry.key,
+        parsed: Boolean(snapshot),
+        accessTokenFp: accessToken ? this.fingerprintToken(accessToken) : null,
+        accessTokenLen: accessToken ? accessToken.length : null,
+        refreshTokenFp: refreshToken ? this.fingerprintToken(refreshToken) : null,
+        refreshTokenLen: refreshToken ? refreshToken.length : null,
+        expiresAt: snapshot?.expiresAt ?? null,
+      };
+    });
+
+	    const selectedSnapshot = this.pickBestSupabaseSnapshot(values);
+	    const selectedRefresh = this.pickBestRefreshTokenCandidate(values);
+
+	    const access = selectedSnapshot?.accessToken ?? null;
+	    const accessExpiresAt = selectedSnapshot?.expiresAt ?? null;
+	    const hasActiveAccess = Boolean(access && this.isLikelyActiveAccessToken(accessExpiresAt));
+	    const refresh = hasActiveAccess
+	      ? selectedSnapshot?.refreshToken ?? selectedRefresh?.refreshToken ?? null
+	      : selectedRefresh?.refreshToken ?? selectedSnapshot?.refreshToken ?? null;
+	    const expiresAt =
+	      hasActiveAccess && selectedSnapshot?.refreshToken
+	        ? accessExpiresAt
+	        : selectedRefresh?.expiresAt ?? accessExpiresAt;
+	    const selected = access || refresh
+	      ? {
+	          accessTokenFp: access ? this.fingerprintToken(access) : null,
+	          refreshTokenFp: refresh ? this.fingerprintToken(refresh) : null,
+	          expiresAt,
+	        }
+	      : null;
+
+	    return { accountId, hasOpenTab: true, href, selected, candidates };
+	  }
+
   private ensureTokenSync(accountId: string, webContents: WebContents) {
     if (this.tokenSync.has(accountId)) return;
     if (webContents.isDestroyed()) return;
 
-    let stopped = false;
-    let handle: ReturnType<typeof setTimeout> | null = null;
-    let refreshSyncDebounce: ReturnType<typeof setTimeout> | null = null;
+	    let stopped = false;
+	    let handle: ReturnType<typeof setTimeout> | null = null;
+	    let refreshSyncDebounce: ReturnType<typeof setTimeout> | null = null;
+	    let didFinishLoadListener: (() => void) | null = null;
 
-    const stop = () => {
-      stopped = true;
-      if (handle) clearTimeout(handle);
-      if (refreshSyncDebounce) clearTimeout(refreshSyncDebounce);
-      this.refreshTokenWriteDeadlines.delete(accountId);
-      try {
-        webContents.session.webRequest.onCompleted(null);
-      } catch {
-        // ignore
-      }
+	      const stop = () => {
+	      stopped = true;
+	      if (handle) clearTimeout(handle);
+	      if (refreshSyncDebounce) clearTimeout(refreshSyncDebounce);
+	      this.refreshTokenWriteDeadlines.delete(accountId);
+	      if (didFinishLoadListener) {
+	        try {
+	          webContents.removeListener("did-finish-load", didFinishLoadListener);
+	        } catch {
+	          // ignore
+	        }
+	        didFinishLoadListener = null;
+	      }
+	      try {
+	        webContents.session.webRequest.onCompleted(null);
+	      } catch {
+	        // ignore
+	      }
       this.tokenSync.delete(accountId);
     };
 
@@ -606,17 +1346,31 @@ export class FlowithLoginBootstrapService {
       }
     };
 
-    try {
-      webContents.once("destroyed", stop);
-    } catch {
-      // ignore
-    }
+	    try {
+	      webContents.once("destroyed", stop);
+	    } catch {
+	      // ignore
+	    }
 
-    try {
-      const supabaseHost = supabaseHostFromConfig();
-      const filter = {
-        urls: [`https://${supabaseHost}/auth/v1/token*`],
-      };
+	    // When the user reloads the tab (Ctrl+R/F5), sync tokens again as soon as the page finishes loading.
+	    // This helps recover from slow networks and prevents the UI from getting stuck with stale vault tokens.
+	    try {
+	      const onFinishLoad = () => {
+	        if (stopped) return;
+	        this.refreshTokenWriteDeadlines.set(accountId, Date.now() + 10_000);
+	        scheduleSyncSoon();
+	      };
+	      didFinishLoadListener = onFinishLoad;
+	      webContents.on("did-finish-load", onFinishLoad);
+	    } catch {
+	      // ignore
+	    }
+
+	    try {
+	      const supabaseHost = supabaseHostFromConfig();
+	      const filter = {
+	        urls: [`https://${supabaseHost}/auth/v1/token*`],
+	      };
 
       const listener = (details: OnCompletedListenerDetails) => {
         if (stopped) return;

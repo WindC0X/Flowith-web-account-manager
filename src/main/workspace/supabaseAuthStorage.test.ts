@@ -29,4 +29,18 @@ describe("extractSupabaseSessionSnapshotFromStorageValue", () => {
       expiresAt: 1700000000 * 1000,
     });
   });
+
+  it("extracts session from base64url-encoded JSON", () => {
+    const json = JSON.stringify({ access_token: "at", refresh_token: "rt" });
+    const base64url = Buffer.from(json, "utf-8")
+      .toString("base64")
+      .replace(/\+/g, "-")
+      .replace(/\//g, "_")
+      .replace(/=+$/g, "");
+    expect(extractSupabaseSessionSnapshotFromStorageValue(base64url)).toEqual({
+      accessToken: "at",
+      refreshToken: "rt",
+      expiresAt: null,
+    });
+  });
 });

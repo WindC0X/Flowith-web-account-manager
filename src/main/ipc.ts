@@ -15,6 +15,7 @@ import {
 import { importRefreshTokens } from "./accounts/import";
 import { normalizeAccountMetaPatch } from "./accounts/normalize";
 import {
+  clearRefreshToken,
   deleteAccount,
   getRefreshToken,
   isTokenEncryptionAvailable,
@@ -33,7 +34,7 @@ import {
   showDownloadInFolder,
 } from "./downloads/service";
 import { CreditsRateLimitedError, CreditsUnauthorizedError, fetchAccountCreditsWithAccessToken } from "./flowith/credits";
-import { isKnownUsedRefreshToken } from "./flowith/sessionRefresh";
+import { isKnownUsedRefreshToken, refreshFlowithSessionWithRefreshToken } from "./flowith/sessionRefresh";
 import { testConnectivity } from "./network/connectivity";
 import { applyProxy, validateProxyConfig } from "./network/proxy";
 import { resolveUserAgent, validateUaConfig } from "./network/userAgent";
@@ -290,6 +291,15 @@ export function registerIpcHandlers(deps: IpcDeps) {
     return isTokenEncryptionAvailable();
   });
 
+  ipcMain.handle(IPC_CHANNELS.ACCOUNTS_DEBUG_AUTH_SOURCES, async (_event, accountId: unknown) => {
+    try {
+      assertString(accountId, "accountId");
+      return await deps.loginBootstrap.debugAuthSourcesFromOpenTab(accountId);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
   ipcMain.handle(
     IPC_CHANNELS.ACCOUNTS_IMPORT_REFRESH_TOKENS,
     async (event, text: unknown, options?: unknown) => {
@@ -398,14 +408,29 @@ export function registerIpcHandlers(deps: IpcDeps) {
           await deps.loginBootstrap.syncFromOpenTab(id, { timeoutMs: Math.min(1000, remaining) });
         }
 
+        const missingTabs: string[] = [];
         const missing: string[] = [];
         const tokens: string[] = [];
 
         for (const id of ids) {
           let token: string | null = null;
 
-          const tabToken = await deps.loginBootstrap.waitForRefreshTokenFromOpenTab(id, { timeoutMs: 2500 });
-          if (tabToken && !isKnownUsedRefreshToken(id, tabToken)) {
+          const hasOpenTab = Boolean(deps.workspace.getWebContents(id));
+          if (hasOpenTab) {
+            const tabToken = await deps.loginBootstrap.waitForRefreshTokenFromOpenTab(id, {
+              timeoutMs: 2500,
+              requireActiveAccess: true,
+            });
+            if (!tabToken) {
+              throw new Error(
+                "Tab 登录态可能已失效/未就绪：读取不到活跃会话的 refresh_token。为避免导出旧 token，请在该账号 Tab 内刷新页面后重试。"
+              );
+            }
+            if (isKnownUsedRefreshToken(id, tabToken)) {
+              throw new Error(
+                "Tab refresh_token 疑似已被轮换/失效。为避免导出旧 token，请在该账号 Tab 内刷新页面后重试。"
+              );
+            }
             token = tabToken;
             try {
               setRefreshToken(id, tabToken);
@@ -413,7 +438,8 @@ export function registerIpcHandlers(deps: IpcDeps) {
               // ignore
             }
           } else {
-            token = getRefreshToken(id);
+            missingTabs.push(id);
+            continue;
           }
 
           if (!token) {
@@ -423,10 +449,99 @@ export function registerIpcHandlers(deps: IpcDeps) {
           tokens.push(token);
         }
 
+        if (missingTabs.length > 0) {
+          const preview = missingTabs.slice(0, 6);
+          const suffix = missingTabs.length > preview.length ? `…（共 ${missingTabs.length} 个）` : "";
+          throw new Error(
+            `导出需要先打开所选账号 Tab（用于读取最新登录态）。未打开 Tab：${preview.join(", ")}${suffix}`
+          );
+        }
+
         if (missing.length > 0) {
           throw new Error(
             `Token unavailable for ${missing.length} selected account(s). If safeStorage encryption is unavailable, you must re-import tokens after restart.`
           );
+        }
+
+        return tokens.join("\n");
+      } catch (e) {
+        throw new Error(safeErrorMessage(e));
+      }
+    }
+  );
+
+  ipcMain.handle(
+    IPC_CHANNELS.ACCOUNTS_EXPORT_MIGRATION_REFRESH_TOKENS,
+    async (_event, accountIds: unknown) => {
+      try {
+        assertStringArray(accountIds, "accountIds");
+        const ids = accountIds.map((id) => id.trim()).filter(Boolean);
+        if (ids.length === 0) return "";
+
+        const unique = new Set(ids);
+        if (unique.size !== ids.length) throw new Error("Invalid accountIds: duplicate ids.");
+
+        const tokens: string[] = [];
+
+        for (const accountId of ids) {
+          const hasOpenTab = Boolean(deps.workspace.getWebContents(accountId));
+          if (!hasOpenTab) {
+            throw new Error(
+              "迁移导出需要先打开该账号 Tab（用于获取最新登录态并避免导出旧 token）。请先打开 Tab 并确保页面已加载完成。"
+            );
+          }
+
+          await deps.loginBootstrap.syncFromOpenTab(accountId, { timeoutMs: 1200, forceRefreshTokenWrite: true });
+          const tabToken = await deps.loginBootstrap.waitForRefreshTokenFromOpenTab(accountId, {
+            timeoutMs: 4000,
+            requireActiveAccess: true,
+          });
+          if (!tabToken) {
+            throw new Error(
+              "迁移导出失败：读取不到 Tab 内 refresh_token。请在该账号 Tab 内刷新页面后重试。"
+            );
+          }
+          if (isKnownUsedRefreshToken(accountId, tabToken)) {
+            throw new Error(
+              "迁移导出失败：当前 Tab refresh_token 疑似已被使用/轮换。请在该账号 Tab 内刷新页面后重试。"
+            );
+          }
+
+          const supabaseSession = await refreshFlowithSessionWithRefreshToken(accountId, tabToken);
+          const nextToken = supabaseSession.refresh_token?.trim() || null;
+          if (!nextToken) throw new Error("迁移导出失败：refreshSession 未返回 refresh_token。");
+
+          // Ensure the new token is persisted to the vault (encrypted storage or runtime), then export it.
+          try {
+            setRefreshToken(accountId, nextToken);
+          } catch {
+            // ignore
+          }
+
+          tokens.push(nextToken);
+
+          // Seal local state to avoid the just-exported token being reused on this machine.
+          try {
+            await deps.loginBootstrap.syncFromOpenTab(accountId, { timeoutMs: 600 });
+          } catch {
+            // ignore
+          }
+          try {
+            deps.workspace.closeTab(accountId);
+          } catch {
+            // ignore
+          }
+          try {
+            const ses = session.fromPartition(partitionForAccount(accountId));
+            await ses.clearStorageData();
+          } catch {
+            // ignore
+          }
+          try {
+            clearRefreshToken(accountId);
+          } catch {
+            // ignore
+          }
         }
 
         return tokens.join("\n");

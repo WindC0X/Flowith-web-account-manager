@@ -37,10 +37,11 @@ export class WebWorkspaceService {
     if (input.type !== "keyDown") return;
 
     const key = typeof input.key === "string" ? input.key.toLowerCase() : "";
+    const code = typeof input.code === "string" ? input.code : "";
     const ctrlOrMeta = Boolean(input.control) || Boolean(input.meta);
 
     // Prevent reloading the renderer window which can desync UI state from BrowserViews.
-    if (ctrlOrMeta && key === "r") {
+    if (ctrlOrMeta && (key === "r" || code === "KeyR")) {
       event.preventDefault();
       this.reloadActive();
       return;
@@ -203,8 +204,9 @@ export class WebWorkspaceService {
       view.webContents.on("before-input-event", (event, input) => {
         if (input.type !== "keyDown") return;
         const key = typeof input.key === "string" ? input.key.toLowerCase() : "";
+        const code = typeof input.code === "string" ? input.code : "";
         const ctrlOrMeta = Boolean(input.control) || Boolean(input.meta);
-        if (ctrlOrMeta && key === "r") {
+        if (ctrlOrMeta && (key === "r" || code === "KeyR")) {
           event.preventDefault();
           try {
             view.webContents.reload();

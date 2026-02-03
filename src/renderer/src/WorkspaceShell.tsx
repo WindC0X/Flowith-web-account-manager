@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import type {
+  AccountAuthDiagnostics,
   AccountSummary,
   AccountsImportProgressEvent,
   ConnectivityCheck,
@@ -22,7 +23,7 @@ import logoOnLight from "./assets/logo-on-light.png";
 
 type ExportDialogState =
   | { open: false }
-  | { open: true; tokenText: string; selectedCount: number };
+  | { open: true; tokenText: string; selectedCount: number; mode: "standard" | "migration" };
 
 type DeleteDialogState =
   | { open: false }
@@ -96,6 +97,13 @@ type UiPreferencesV2 = {
   accountListView: AccountListViewMode;
   accountSort: AccountSortMode;
 };
+
+function isSameStringArray(a: string[], b: string[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;
+  return true;
+}
 
 const DOWNLOAD_HISTORY_LIMIT = 1000;
 const DOWNLOAD_POPOVER_LIMIT = 10;
@@ -248,6 +256,8 @@ const UI_STRINGS = {
 	    accountIdLabel: "账号 ID",
 	    fingerprintLabel: "指纹",
 	    advancedTechnicalIds: "高级 / 技术信息",
+	    authDebug: "会话诊断",
+	    authDebugHint: "仅显示指纹/长度，不包含明文 token。",
 	    tagsLabel: "标签",
 	    tagsPlaceholder: "tag1, tag2",
 	    saveTags: "保存标签",
@@ -328,6 +338,13 @@ const UI_STRINGS = {
 
     exportDialogTitle: "导出 refresh_token",
     exportDialogNote: "将导出当前勾选账号的 refresh_token（每行一个）。",
+    exportRequiresOpenTab: "导出/迁移导出前请先打开所选账号 Tab（还缺 {count} 个）。",
+    exportMigration: "迁移导出",
+    exportMigrationDialogTitle: "迁移导出（换机）",
+    exportMigrationDialogNote:
+      "将为所选账号执行一次刷新以生成全新 refresh_token（每行一个），用于在新设备导入。",
+    exportMigrationDanger:
+      "注意：为避免导出的 refresh_token 在本机被再次使用导致新设备导入报 already used，导出后将自动封存本机该账号（关闭 Tab 并清理本机登录态）。",
 	    exportDanger: "注意：导出内容属于敏感凭据。UI 与日志中必须始终脱敏；请勿分享或粘贴到日志/工单中。",
 	    exportHint: "已导出 {count} 个账号的 token。默认不自动复制。",
 	    done: "完成",
@@ -483,6 +500,8 @@ const UI_STRINGS = {
 	    accountIdLabel: "Account id",
 	    fingerprintLabel: "Fingerprint",
 	    advancedTechnicalIds: "Advanced / technical",
+	    authDebug: "Auth diagnostics",
+	    authDebugHint: "Fingerprints/length only; no raw tokens.",
 	    tagsLabel: "Tags",
 	    tagsPlaceholder: "tag1, tag2",
 	    saveTags: "Save tags",
@@ -565,6 +584,13 @@ const UI_STRINGS = {
 
     exportDialogTitle: "Export refresh_token",
     exportDialogNote: "Exports refresh_token for selected accounts (one per line).",
+    exportRequiresOpenTab: "Open selected tabs before exporting (missing {count}).",
+    exportMigration: "Migration export",
+    exportMigrationDialogTitle: "Migration export",
+    exportMigrationDialogNote:
+      "Refreshes once to generate a new refresh_token (one per line) for importing on a new device.",
+    exportMigrationDanger:
+      "Note: To avoid the exported refresh_token being reused on this machine (leading to 'already used' on the new device), the app will seal local state after export (close tab + clear local login state).",
 	    exportDanger:
 	      "Sensitive: export contains credentials. Never paste into logs or tickets. UI/logs must remain redacted.",
 	    exportHint: "Exported token(s) for {count} account(s). Nothing is auto-copied.",
@@ -1126,6 +1152,7 @@ export default function WorkspaceShell() {
   const [batchUaValue, setBatchUaValue] = useState("");
   const [batchUaInlineError, setBatchUaInlineError] = useState<string | null>(null);
   const [batchDeleteDialog, setBatchDeleteDialog] = useState<BatchDeleteDialogState>({ open: false });
+  const [authDebug, setAuthDebug] = useState<AccountAuthDiagnostics | null>(null);
 
   const [displayNameDraft, setDisplayNameDraft] = useState("");
   const [displayNameInlineError, setDisplayNameInlineError] = useState<string | null>(null);
@@ -1183,10 +1210,10 @@ export default function WorkspaceShell() {
   const settingsContainerRef = useRef<HTMLDivElement | null>(null);
   const downloadsPopoverRef = useRef<HTMLDivElement | null>(null);
   const downloadsPopoverContainerRef = useRef<HTMLDivElement | null>(null);
-  const uiToastTimersRef = useRef<Map<string, number>>(new Map());
-  const downloadAutoDismissTimersRef = useRef<Map<string, number>>(new Map());
-  const downloadFilenameByIdRef = useRef<Map<string, string>>(new Map());
-  const creditSyncTimersRef = useRef<Map<string, number[]>>(new Map());
+	  const uiToastTimersRef = useRef<Map<string, number>>(new Map());
+	  const downloadAutoDismissTimersRef = useRef<Map<string, number>>(new Map());
+	  const downloadFilenameByIdRef = useRef<Map<string, string>>(new Map());
+	  const creditSyncTimersRef = useRef<Map<string, number[]>>(new Map());
 
   const selected = useMemo(() => [...selectedIds], [selectedIds]);
   const proxyPresets = useMemo(() => {
@@ -1484,6 +1511,59 @@ export default function WorkspaceShell() {
   useEffect(() => {
     void refreshAccounts();
   }, [refreshAccounts]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let repairingActive = false;
+    const poll = async () => {
+      if (cancelled) return;
+      try {
+        const workspaceState = await window.desktop.workspace.getState().catch(() => null);
+        if (cancelled || !workspaceState) return;
+
+        // When the accounts list is temporarily empty (e.g. renderer reload), do not filter out open tabs.
+        // Otherwise the UI may get stuck showing "暂无 Tab" even though BrowserViews are still alive in main.
+        const allowed = accounts.length > 0 ? new Set(accounts.map((a) => a.id)) : null;
+        const nextOpenTabIds = allowed
+          ? (workspaceState.openTabIds ?? []).filter((id) => allowed.has(id))
+          : (workspaceState.openTabIds ?? []);
+        const activeFromWorkspace =
+          workspaceState.activeTabId && (!allowed || allowed.has(workspaceState.activeTabId))
+            ? workspaceState.activeTabId
+            : null;
+
+        setOpenTabIds((prev) => (isSameStringArray(prev, nextOpenTabIds) ? prev : nextOpenTabIds));
+
+        setActiveTabId((prev) => {
+          if (activeFromWorkspace) return activeFromWorkspace;
+          if (prev && nextOpenTabIds.includes(prev)) return prev;
+          return nextOpenTabIds[0] ?? null;
+        });
+
+        if (!activeFromWorkspace && nextOpenTabIds.length > 0 && !repairingActive) {
+          repairingActive = true;
+          window.desktop.workspace
+            .setActiveTab(nextOpenTabIds[0]!)
+            .catch(() => void 0)
+            .finally(() => {
+              repairingActive = false;
+            });
+        }
+      } catch {
+        // ignore
+      }
+    };
+
+    void poll();
+    const interval = window.setInterval(poll, 1500);
+    const onFocus = () => void poll();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [accounts]);
 
   useEffect(() => {
     void window.desktop.accounts
@@ -2238,17 +2318,47 @@ export default function WorkspaceShell() {
   ]);
 
   const runExport = useCallback(async () => {
+    const missingTabs = selected.filter((id) => !openTabIds.includes(id));
+    if (missingTabs.length > 0) {
+      const message = format(t("exportRequiresOpenTab"), { count: missingTabs.length });
+      setError(message);
+      pushUiToast("error", message);
+      return;
+    }
     setError(null);
     setBusy(true);
     try {
       const text = await window.desktop.accounts.exportRefreshTokens(selected);
-      setExportDialog({ open: true, tokenText: text, selectedCount: selected.length });
+      setExportDialog({ open: true, tokenText: text, selectedCount: selected.length, mode: "standard" });
     } catch (e) {
       setError(formatErrorMessage(e));
     } finally {
       setBusy(false);
     }
-  }, [formatErrorMessage, selected]);
+  }, [formatErrorMessage, openTabIds, pushUiToast, selected, t]);
+
+  const runMigrationExport = useCallback(async () => {
+    const missingTabs = selected.filter((id) => !openTabIds.includes(id));
+    if (missingTabs.length > 0) {
+      const message = format(t("exportRequiresOpenTab"), { count: missingTabs.length });
+      setError(message);
+      pushUiToast("error", message);
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const text = await window.desktop.accounts.exportMigrationRefreshTokens(selected);
+      setExportDialog({ open: true, tokenText: text, selectedCount: selected.length, mode: "migration" });
+      await refreshAccounts();
+    } catch (e) {
+      const message = formatErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [formatErrorMessage, openTabIds, pushUiToast, refreshAccounts, selected, t]);
 
   const openDeleteDialog = useCallback(() => {
     if (!focusedAccount) return;
@@ -2730,6 +2840,22 @@ export default function WorkspaceShell() {
     },
     [formatErrorMessage, pushUiToast, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
   );
+
+  const runAuthDebug = useCallback(async () => {
+    if (!focusedAccountId) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const diag = await window.desktop.accounts.debugAuthSources(focusedAccountId);
+      setAuthDebug(diag);
+    } catch (e) {
+      const message = formatErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [focusedAccountId, formatErrorMessage, pushUiToast]);
 
   const batchOpenTabs = useCallback(async () => {
     for (const id of selected) {
@@ -3225,6 +3351,9 @@ export default function WorkspaceShell() {
             </button>
             <button className="btn" onClick={runExport} disabled={busy || selected.length === 0}>
               {t("export")}
+            </button>
+            <button className="btn" onClick={runMigrationExport} disabled={busy || selected.length === 0}>
+              {t("exportMigration")}
             </button>
             <button className="btn" onClick={refreshAccounts} disabled={busy}>
               {t("refresh")}
@@ -4104,6 +4233,9 @@ export default function WorkspaceShell() {
 				                <button className="btn" onClick={runExport} disabled={busy}>
 				                  {t("export")}
 				                </button>
+                        <button className="btn" onClick={runMigrationExport} disabled={busy}>
+                          {t("exportMigration")}
+                        </button>
 			                <button
 	                      className="btn btn-danger"
 	                      onClick={openBatchDeleteDialog}
@@ -4525,17 +4657,48 @@ export default function WorkspaceShell() {
 		                  </div>
 		                </div>
 
-		                <details className="inspector-details">
-		                  <summary>{t("advancedTechnicalIds")}</summary>
-		                  <div className="field">
-		                    <div className="field-label">{t("accountIdLabel")}</div>
-		                    <div className="field-value mono">{focusedAccount.id}</div>
-		                  </div>
-		                  <div className="field" style={{ marginBottom: 0 }}>
-		                    <div className="field-label">{t("fingerprintLabel")}</div>
-		                    <div className="field-value mono">{maskFingerprint(focusedAccount.fingerprint)}</div>
-		                  </div>
-		                </details>
+			                <details className="inspector-details">
+			                  <summary>{t("advancedTechnicalIds")}</summary>
+			                  <div className="field">
+			                    <div className="field-label">{t("accountIdLabel")}</div>
+			                    <div className="field-value mono">{focusedAccount.id}</div>
+			                  </div>
+			                  <div className="field" style={{ marginBottom: 0 }}>
+			                    <div className="field-label">{t("fingerprintLabel")}</div>
+			                    <div className="field-value mono">{maskFingerprint(focusedAccount.fingerprint)}</div>
+			                  </div>
+                        <div style={{ marginTop: 10, display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <div className="muted" style={{ fontSize: 12, lineHeight: 1.35 }}>
+                            {t("authDebugHint")}
+                          </div>
+                          <button
+                            className="btn"
+                            onClick={runAuthDebug}
+                            disabled={busy || !focusedAccountId || !openTabIds.includes(focusedAccountId)}
+                          >
+                            {t("authDebug")}
+                          </button>
+                        </div>
+                        {authDebug ? (
+                          <pre
+                            className="mono"
+                            style={{
+                              marginTop: 10,
+                              padding: 10,
+                              borderRadius: 12,
+                              border: "1px solid rgba(148, 163, 184, 0.18)",
+                              background: "rgba(15, 23, 42, 0.35)",
+                              fontSize: 11,
+                              whiteSpace: "pre-wrap",
+                              wordBreak: "break-word",
+                              maxHeight: 240,
+                              overflow: "auto",
+                            }}
+                          >
+                            {JSON.stringify(authDebug, null, 2)}
+                          </pre>
+                        ) : null}
+			                </details>
 		                </>
 		              )}
             </div>
@@ -5034,21 +5197,25 @@ export default function WorkspaceShell() {
           ) : null}
         </dialog>
 
-	      <dialog
+      <dialog
 	        ref={exportDialogRef}
 	        onCancel={(e) => {
 	          e.preventDefault();
           setExportDialog({ open: false });
         }}
         onClose={() => setExportDialog({ open: false })}
-        aria-label={t("exportDialogTitle")}
+        aria-label={exportDialog.open && exportDialog.mode === "migration" ? t("exportMigrationDialogTitle") : t("exportDialogTitle")}
       >
         {exportDialog.open ? (
           <div className="modal">
             <div className="modal-header">
               <div>
-                <div className="modal-title">{t("exportDialogTitle")}</div>
-                <div className="modal-note">{t("exportDialogNote")}</div>
+                <div className="modal-title">
+                  {exportDialog.mode === "migration" ? t("exportMigrationDialogTitle") : t("exportDialogTitle")}
+                </div>
+                <div className="modal-note">
+                  {exportDialog.mode === "migration" ? t("exportMigrationDialogNote") : t("exportDialogNote")}
+                </div>
               </div>
               <button
                 className="btn btn-icon"
@@ -5060,7 +5227,9 @@ export default function WorkspaceShell() {
               </button>
             </div>
 
-            <div className="danger-note">{t("exportDanger")}</div>
+            <div className="danger-note">
+              {exportDialog.mode === "migration" ? t("exportMigrationDanger") : t("exportDanger")}
+            </div>
 
             <div className="modal-grid">
               <textarea className="mono" readOnly value={exportDialog.tokenText} />

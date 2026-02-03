@@ -151,6 +151,27 @@ export type DownloadHistoryItem = {
   updatedAt: number;
 };
 
+export type AccountAuthDiagnostics = {
+  accountId: string;
+  hasOpenTab: boolean;
+  href: string | null;
+  selected: {
+    accessTokenFp: string | null;
+    refreshTokenFp: string | null;
+    expiresAt: number | null;
+  } | null;
+  candidates: Array<{
+    source: "local" | "session" | "cookie" | "idb";
+    key: string;
+    parsed: boolean;
+    accessTokenFp: string | null;
+    accessTokenLen: number | null;
+    refreshTokenFp: string | null;
+    refreshTokenLen: number | null;
+    expiresAt: number | null;
+  }>;
+};
+
 export type UpdaterState =
   | "idle"
   | "checking"
@@ -232,7 +253,9 @@ export type DesktopApi = {
     subscribeImportProgress(listener: (event: AccountsImportProgressEvent) => void): () => void;
     importRefreshTokens(text: string, options?: ImportRefreshTokensOptions): Promise<ImportRefreshTokensResult>;
     exportRefreshTokens(accountIds: string[]): Promise<string>;
+    exportMigrationRefreshTokens(accountIds: string[]): Promise<string>;
     syncCreditsFromOpenTab(accountId: string): Promise<AccountCredits | null>;
+    debugAuthSources(accountId: string): Promise<AccountAuthDiagnostics>;
     isTokenEncryptionAvailable(): Promise<boolean>;
     delete(accountId: string): Promise<void>;
     testConnectivity(accountId: string): Promise<ConnectivityCheck[]>;
@@ -279,7 +302,9 @@ export const IPC_CHANNELS = {
   ACCOUNTS_LIST: "accounts:list",
   ACCOUNTS_IMPORT_REFRESH_TOKENS: "accounts:importRefreshTokens",
   ACCOUNTS_EXPORT_REFRESH_TOKENS: "accounts:exportRefreshTokens",
+  ACCOUNTS_EXPORT_MIGRATION_REFRESH_TOKENS: "accounts:exportMigrationRefreshTokens",
   ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB: "accounts:syncCreditsFromOpenTab",
+  ACCOUNTS_DEBUG_AUTH_SOURCES: "accounts:debugAuthSources",
   ACCOUNTS_IS_TOKEN_ENCRYPTION_AVAILABLE: "accounts:isTokenEncryptionAvailable",
   ACCOUNTS_DELETE: "accounts:delete",
   ACCOUNTS_TEST_CONNECTIVITY: "accounts:testConnectivity",
@@ -342,7 +367,12 @@ export type IpcInvokeMap = {
     args: [accountIds: string[]];
     result: string;
   };
+  [IPC_CHANNELS.ACCOUNTS_EXPORT_MIGRATION_REFRESH_TOKENS]: {
+    args: [accountIds: string[]];
+    result: string;
+  };
   [IPC_CHANNELS.ACCOUNTS_SYNC_CREDITS_FROM_OPEN_TAB]: { args: [accountId: string]; result: AccountCredits | null };
+  [IPC_CHANNELS.ACCOUNTS_DEBUG_AUTH_SOURCES]: { args: [accountId: string]; result: AccountAuthDiagnostics };
   [IPC_CHANNELS.ACCOUNTS_IS_TOKEN_ENCRYPTION_AVAILABLE]: { args: []; result: boolean };
   [IPC_CHANNELS.ACCOUNTS_DELETE]: { args: [accountId: string]; result: void };
   [IPC_CHANNELS.ACCOUNTS_TEST_CONNECTIVITY]: {
