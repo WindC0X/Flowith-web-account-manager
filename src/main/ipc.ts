@@ -139,6 +139,20 @@ export function registerIpcHandlers(deps: IpcDeps) {
     }
   );
 
+  ipcMain.handle(IPC_CHANNELS.WORKSPACE_NAVIGATE, async (_event, accountId: unknown, url: unknown) => {
+    try {
+      assertString(accountId, "accountId");
+      assertString(url, "url");
+      const account = getAccount(accountId);
+      if (account?.sealed) {
+        throw new Error("该账号已封存（迁移后不可在本机打开）。如需换机，请在新设备导入迁移 token。");
+      }
+      await deps.workspace.navigate(accountId, url);
+    } catch (e) {
+      throw new Error(safeErrorMessage(e));
+    }
+  });
+
   ipcMain.handle(
     IPC_CHANNELS.WORKSPACE_SET_VIEWPORT_BOUNDS,
     async (_event, bounds: unknown) => {

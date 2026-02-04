@@ -108,6 +108,21 @@ export class WebWorkspaceService {
     this.attach(accountId);
   }
 
+  async navigate(accountId: string, rawUrl: string): Promise<void> {
+    const view = this.views.get(accountId);
+    if (!view) throw new Error("Workspace webContents not found for account.");
+
+    const url = typeof rawUrl === "string" ? rawUrl.trim() : "";
+    if (!url) throw new Error("URL 不能为空。");
+
+    if (!isTrustedUrl(url)) {
+      void shell.openExternal(url);
+      return;
+    }
+
+    await view.webContents.loadURL(url);
+  }
+
   setViewportBounds(bounds: Rect) {
     this.viewportBounds = bounds;
     if (this.activeAccountId) this.applyBounds(this.activeAccountId);

@@ -219,6 +219,7 @@ export type DesktopApi = {
     openTab(accountId: string): Promise<void>;
     closeTab(accountId: string): Promise<void>;
     setActiveTab(accountId: string): Promise<void>;
+    navigate(accountId: string, url: string): Promise<void>;
     setViewportBounds(bounds: Rect): Promise<void>;
     setOverlayActive(active: boolean): Promise<void>;
     captureTabSnapshot(accountId: string): Promise<string | null>;
@@ -278,6 +279,7 @@ export const IPC_CHANNELS = {
   WORKSPACE_OPEN_TAB: "workspace:openTab",
   WORKSPACE_CLOSE_TAB: "workspace:closeTab",
   WORKSPACE_SET_ACTIVE_TAB: "workspace:setActiveTab",
+  WORKSPACE_NAVIGATE: "workspace:navigate",
   WORKSPACE_SET_VIEWPORT_BOUNDS: "workspace:setViewportBounds",
   WORKSPACE_SET_OVERLAY_ACTIVE: "workspace:setOverlayActive",
   WORKSPACE_CAPTURE_TAB_SNAPSHOT: "workspace:captureTabSnapshot",
@@ -334,6 +336,10 @@ export type IpcInvokeMap = {
   };
   [IPC_CHANNELS.WORKSPACE_SET_ACTIVE_TAB]: {
     args: [accountId: string];
+    result: void;
+  };
+  [IPC_CHANNELS.WORKSPACE_NAVIGATE]: {
+    args: [accountId: string, url: string];
     result: void;
   };
   [IPC_CHANNELS.WORKSPACE_SET_VIEWPORT_BOUNDS]: {

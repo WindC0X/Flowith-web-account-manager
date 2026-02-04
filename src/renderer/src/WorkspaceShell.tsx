@@ -29,6 +29,10 @@ type DeleteDialogState =
   | { open: false }
   | { open: true; accountId: string; displayName: string };
 
+type OpenLinkDialogState =
+  | { open: false }
+  | { open: true; accountId: string; url: string };
+
 type BatchTagsDialogState =
   | { open: false }
   | { open: true; accountIds: string[] };
@@ -122,6 +126,25 @@ const DEFAULT_ACCOUNT_INFO: AccountInfoEntry = {
 
 const USER_AGENT_PRESETS_VISIBLE = USER_AGENT_PRESETS.filter((p) => p.id !== "safari_ios");
 const USER_AGENT_PRESET_VISIBLE_IDS = new Set(USER_AGENT_PRESETS_VISIBLE.map((p) => p.id));
+
+const FLOWITH_WEB_TARGET_HOSTS = ["flowith.io", "flowith.net", "flo.ing"] as const;
+
+function normalizeFlowithUrl(raw: string): string | null {
+  const trimmed = typeof raw === "string" ? raw.trim() : "";
+  if (!trimmed) return null;
+
+  const withScheme = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed.replace(/^\/+/, "")}`;
+
+  try {
+    const url = new URL(withScheme);
+    if (url.protocol !== "https:") return null;
+    const okHost = FLOWITH_WEB_TARGET_HOSTS.some((host) => url.hostname === host || url.hostname.endsWith(`.${host}`));
+    if (!okHost) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
 
 const UI_STRINGS = {
   "zh-CN": {
@@ -321,6 +344,12 @@ const UI_STRINGS = {
 		    openTab: "打开 Tab",
 		    activateTab: "切换到 Tab",
 		    closeTab: "关闭 Tab",
+        openLink: "打开链接",
+        openLinkTitle: "用该账号打开链接",
+        openLinkNote: "仅支持 Flowith 分享链接（flowith.io / flo.ing）。将在该账号 Tab 内打开。",
+        openLinkPlaceholder: "粘贴 Flowith 分享链接，例如 https://flowith.io/conv/...",
+        toastLinkOpened: "已打开链接",
+        errorInvalidLink: "链接无效：仅支持 https://flowith.io / https://flo.ing 等 Flowith 链接。",
 	    saveUa: "保存 UA",
 	    toastUaSaved: "User-Agent 已保存",
 	    reload: "刷新",
@@ -579,6 +608,12 @@ const UI_STRINGS = {
 			    openTab: "Open tab",
 			    activateTab: "Activate tab",
 			    closeTab: "Close tab",
+        openLink: "Open link",
+        openLinkTitle: "Open link with this account",
+        openLinkNote: "Only Flowith share links are supported (flowith.io / flo.ing). Opens inside this account tab.",
+        openLinkPlaceholder: "Paste a Flowith share link, e.g. https://flowith.io/conv/...",
+        toastLinkOpened: "Link opened",
+        errorInvalidLink: "Invalid link: only https://flowith.io / https://flo.ing Flowith links are supported.",
 		    saveUa: "Save UA",
 		    toastUaSaved: "User-Agent saved",
 		    reload: "Reload",
@@ -1166,6 +1201,8 @@ export default function WorkspaceShell() {
 	  const [exportDialog, setExportDialog] = useState<ExportDialogState>({ open: false });
 	  const [exportCopied, setExportCopied] = useState(false);
 	  const [deleteDialog, setDeleteDialog] = useState<DeleteDialogState>({ open: false });
+    const [openLinkDialog, setOpenLinkDialog] = useState<OpenLinkDialogState>({ open: false });
+    const [openLinkInlineError, setOpenLinkInlineError] = useState<string | null>(null);
   const [batchTagsDialog, setBatchTagsDialog] = useState<BatchTagsDialogState>({ open: false });
   const [batchTagsDraft, setBatchTagsDraft] = useState("");
   const [batchProxyDialog, setBatchProxyDialog] = useState<BatchProxyDialogState>({ open: false });
@@ -1229,6 +1266,7 @@ export default function WorkspaceShell() {
   const logDialogRef = useRef<HTMLDialogElement | null>(null);
   const downloadsDialogRef = useRef<HTMLDialogElement | null>(null);
   const exportDialogRef = useRef<HTMLDialogElement | null>(null);
+  const openLinkDialogRef = useRef<HTMLDialogElement | null>(null);
   const deleteDialogRef = useRef<HTMLDialogElement | null>(null);
   const batchTagsDialogRef = useRef<HTMLDialogElement | null>(null);
   const batchProxyDialogRef = useRef<HTMLDialogElement | null>(null);
@@ -1647,6 +1685,7 @@ export default function WorkspaceShell() {
     logDialogOpen ||
     downloadsDialogOpen ||
     exportDialog.open ||
+    openLinkDialog.open ||
     deleteDialog.open ||
     batchTagsDialog.open ||
     batchProxyDialog.open ||
@@ -2931,6 +2970,90 @@ export default function WorkspaceShell() {
     [formatErrorMessage, pushUiToast, recordAccountUsed, scheduleCreditsSyncFromOpenTab, t]
   );
 
+  const openLinkForAccount = useCallback(
+    (accountId: string) => {
+      const account = accounts.find((a) => a.id === accountId) ?? null;
+      if (account?.sealed) {
+        const message = t("errorAccountSealed");
+        setError(message);
+        pushUiToast("error", message);
+        return;
+      }
+      setOpenLinkInlineError(null);
+      setOpenLinkDialog({ open: true, accountId, url: "" });
+    },
+    [accounts, pushUiToast, t]
+  );
+
+  const confirmOpenLink = useCallback(async () => {
+    if (!openLinkDialog.open) return;
+    const accountId = openLinkDialog.accountId;
+    const normalizedUrl = normalizeFlowithUrl(openLinkDialog.url);
+
+    if (!normalizedUrl) {
+      setOpenLinkInlineError(t("errorInvalidLink"));
+      return;
+    }
+
+    const account = accounts.find((a) => a.id === accountId) ?? null;
+    if (!account) {
+      const message = t("errorAccountNotFound");
+      setError(message);
+      pushUiToast("error", message);
+      return;
+    }
+    if (account.sealed) {
+      const message = t("errorAccountSealed");
+      setError(message);
+      pushUiToast("error", message);
+      return;
+    }
+
+    setError(null);
+    setBusy(true);
+    try {
+      await pushViewportBounds();
+
+      let ensuredOpen = openTabIds.includes(accountId);
+      if (ensuredOpen) {
+        try {
+          await window.desktop.workspace.setActiveTab(accountId);
+        } catch {
+          ensuredOpen = false;
+        }
+      }
+
+      if (!ensuredOpen) {
+        await window.desktop.workspace.openTab(accountId);
+        setOpenTabIds((prev) => (prev.includes(accountId) ? prev : [...prev, accountId]));
+      }
+
+      setActiveTabId(accountId);
+      recordAccountUsed(accountId);
+      scheduleCreditsSyncFromOpenTab(accountId);
+
+      await window.desktop.workspace.navigate(accountId, normalizedUrl);
+      setOpenLinkDialog({ open: false });
+      pushUiToast("success", t("toastLinkOpened"));
+    } catch (e) {
+      const message = formatErrorMessage(e);
+      setError(message);
+      pushUiToast("error", message);
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    accounts,
+    formatErrorMessage,
+    openLinkDialog,
+    openTabIds,
+    pushUiToast,
+    pushViewportBounds,
+    recordAccountUsed,
+    scheduleCreditsSyncFromOpenTab,
+    t,
+  ]);
+
   const runAuthDebug = useCallback(async () => {
     if (!focusedAccountId) return;
     setError(null);
@@ -3310,6 +3433,25 @@ export default function WorkspaceShell() {
       // ignore dialog show/close failures in non-standard runtimes
     }
   }, [exportDialog.open]);
+
+  useEffect(() => {
+    const dlg = openLinkDialogRef.current;
+    if (!dlg) return;
+    try {
+      if (openLinkDialog.open) {
+        if (!dlg.open) dlg.showModal();
+      } else if (dlg.open) {
+        dlg.close();
+      }
+    } catch {
+      // ignore dialog show/close failures in non-standard runtimes
+    }
+  }, [openLinkDialog.open]);
+
+  useEffect(() => {
+    if (!openLinkDialog.open) return;
+    setOpenLinkInlineError(null);
+  }, [openLinkDialog.open]);
 
   useEffect(() => {
     const dlg = deleteDialogRef.current;
@@ -4841,6 +4983,13 @@ export default function WorkspaceShell() {
               >
                 {t("reload")}
               </button>
+              <button
+                className="btn"
+                onClick={() => focusedAccountId && openLinkForAccount(focusedAccountId)}
+                disabled={busy || !focusedAccountId || Boolean(focusedAccount?.sealed)}
+              >
+                {t("openLink")}
+              </button>
               <button className="btn btn-danger" onClick={openDeleteDialog} disabled={busy || !focusedAccountId}>
                 {t("deleteAccount")}
               </button>
@@ -5368,6 +5517,89 @@ export default function WorkspaceShell() {
 	          </div>
 	        ) : null}
 	      </dialog>
+
+        <dialog
+          ref={openLinkDialogRef}
+          onCancel={(e) => {
+            e.preventDefault();
+            setOpenLinkDialog({ open: false });
+            setOpenLinkInlineError(null);
+          }}
+          onClose={() => {
+            setOpenLinkDialog({ open: false });
+            setOpenLinkInlineError(null);
+          }}
+          aria-label={t("openLinkTitle")}
+        >
+          {openLinkDialog.open ? (
+            <div className="modal">
+              <div className="modal-header">
+                <div>
+                  <div className="modal-title">{t("openLinkTitle")}</div>
+                  <div className="modal-note">{t("openLinkNote")}</div>
+                </div>
+                <button
+                  className="btn btn-icon"
+                  title={t("close")}
+                  onClick={() => {
+                    setOpenLinkDialog({ open: false });
+                    setOpenLinkInlineError(null);
+                  }}
+                  disabled={busy}
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="modal-grid">
+                <input
+                  className="input mono"
+                  value={openLinkDialog.url}
+                  onChange={(e) => {
+                    setOpenLinkInlineError(null);
+                    setOpenLinkDialog((prev) => (prev.open ? { ...prev, url: e.target.value } : prev));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      void confirmOpenLink();
+                    }
+                  }}
+                  placeholder={t("openLinkPlaceholder")}
+                  disabled={busy}
+                />
+                {openLinkInlineError ? (
+                  <div
+                    className="muted"
+                    style={{ marginTop: 8, fontSize: 11, color: "rgba(248, 113, 113, 1)", whiteSpace: "pre-wrap" }}
+                  >
+                    {openLinkInlineError}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="modal-actions">
+                <button
+                  className="btn"
+                  onClick={() => {
+                    setOpenLinkDialog({ open: false });
+                    setOpenLinkInlineError(null);
+                  }}
+                  disabled={busy}
+                >
+                  {t("cancel")}
+                </button>
+                <button
+                  className="btn btn-primary"
+                  onClick={() => void confirmOpenLink()}
+                  disabled={busy || !openLinkDialog.url.trim()}
+                >
+                  {t("openLink")}
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </dialog>
 
       <dialog
         ref={deleteDialogRef}
